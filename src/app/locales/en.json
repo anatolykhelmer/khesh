@@ -1,0 +1,181 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "backToAccounts": "Back to accounts",
+    "kind": "Kind",
+    "choiceAccount": "Account — holds entries",
+    "choiceGroup": "Group — holds other accounts",
+    "expand": "Expand {{name}}",
+    "collapse": "Collapse {{name}}"
+  },
+  "app": {
+    "loading": "Loading…"
+  },
+  "nav": {
+    "ariaLabel": "Main",
+    "dashboard": "Dashboard",
+    "accounts": "Accounts",
+    "journal": "Journal",
+    "new": "+ New"
+  },
+  "banner": {
+    "dismiss": "Dismiss"
+  },
+  "onboarding": {
+    "languageTitle": "Choose language",
+    "languageListLabel": "Language",
+    "languageEnglish": "English",
+    "languageHebrew": "עברית",
+    "currencyTitle": "Choose home currency",
+    "currencySubtitle": "Used for your household books.",
+    "currencyListLabel": "Home currency",
+    "continue": "Continue"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "couldNotLoadTotals": "Could not load totals.",
+    "income": "Income",
+    "expenses": "Expenses"
+  },
+  "accounts": {
+    "title": "Accounts",
+    "couldNotLoad": "Could not load accounts.",
+    "addAccount": "Add account",
+    "rootAssets": "Assets",
+    "rootLiabilities": "Liabilities",
+    "rootIncome": "Income",
+    "rootExpenses": "Expenses"
+  },
+  "accountDetail": {
+    "titleFallback": "Account",
+    "notFound": "Account not found.",
+    "kindLabel": "Kind",
+    "currencyLabel": "Currency",
+    "balanceLabel": "Balance",
+    "nestedLabel": "Nested",
+    "nameLabel": "Name",
+    "kindAccount": "Account",
+    "kindGroup": "Group",
+    "rootNotice": "Root categories can't be moved, converted, or deleted.",
+    "parentLabel": "Parent",
+    "saveChanges": "Save changes",
+    "addNested": "Add nested",
+    "entries": "Entries",
+    "deleteConfirm": "Delete {{name}}?"
+  },
+  "accountForm": {
+    "title": "New account",
+    "parentLabel": "Parent",
+    "nameLabel": "Name",
+    "currencyLabel": "Currency",
+    "openingBalanceLabel": "Opening balance (optional)",
+    "saveAccount": "Save account"
+  },
+  "journal": {
+    "title": "Journal",
+    "couldNotLoad": "Could not load journal.",
+    "allTime": "All time",
+    "thisMonth": "This month",
+    "filterByAccount": "Filter by account",
+    "allAccounts": "All accounts",
+    "reset": "Reset",
+    "noEntriesYet": "No entries yet",
+    "noEntriesMatch": "No entries match this filter",
+    "openingBalance": "Opening balance",
+    "transfer": "Transfer",
+    "opening": "Opening",
+    "categoriesCount": "{{count}} categories"
+  },
+  "entryDetail": {
+    "titleEntry": "Entry",
+    "titleOpening": "Opening",
+    "notFound": "Entry not found.",
+    "backToJournal": "Back to journal",
+    "dateLabel": "Date",
+    "descriptionLabel": "Description",
+    "fromLabel": "From",
+    "toLabel": "To",
+    "toLabelIndexed": "To {{index}}",
+    "rateLabel": "Rate",
+    "totalLabel": "Total",
+    "amountLabel": "Amount",
+    "deleteConfirm": "Delete this entry?"
+  },
+  "transferForm": {
+    "titleEdit": "Edit entry",
+    "titleNew": "New entry",
+    "onlyStandardEditable": "Only standard transfers can be edited.",
+    "notEnoughAccounts": "Add at least two leaf accounts before posting.",
+    "dateLabel": "Date",
+    "descriptionLabel": "Description",
+    "fromLabel": "From",
+    "fromAccountAria": "From account",
+    "selectPlaceholder": "Select…",
+    "sentLabel": "Sent ({{currency}})",
+    "toLegend": "To",
+    "lineAccountAria": "Line {{index}} account",
+    "receivedAria": "Received ({{currency}})",
+    "lineAmountAria": "Line {{index}} amount",
+    "removeLineAria": "Remove line {{index}}",
+    "addSplit": "+ Add split",
+    "mixedCurrencies": "All To lines must use the same currency",
+    "ratePrefix": "Rate:",
+    "totalPrefix": "Total:",
+    "save": "Save",
+    "errors": {
+      "chooseAccounts": "Choose From and To accounts",
+      "duplicateAccount": "Each split line needs a different account",
+      "enterSentAmount": "Enter the amount leaving the source account"
+    }
+  },
+  "accountPicker": {
+    "search": "Search",
+    "searchAria": "Search {{label}}",
+    "noMatch": "No accounts match"
+  },
+  "errors": {
+    "ACCOUNT_NAME_INVALID": "Enter an account name",
+    "ACCOUNT_NAME_DUPLICATE": "That account name is already used here",
+    "ACCOUNT_PARENT_INVALID": "Choose a valid parent account",
+    "ACCOUNT_PARENT_NOT_PLACEHOLDER": "Accounts must be created under a category",
+    "ACCOUNT_TYPE_MISMATCH": "Account type must match its category",
+    "ACCOUNT_NOT_FOUND": "Account not found",
+    "ACCOUNT_IS_PLACEHOLDER": "Pick a leaf account, not a category",
+    "ACCOUNT_IS_SYSTEM": "That account can't be changed",
+    "ACCOUNT_HAS_CHILDREN": "Remove the nested accounts first",
+    "ACCOUNT_HAS_POSTINGS": "This account already has entries — delete them first",
+    "ACCOUNT_CYCLE": "An account can't be moved inside itself",
+    "ACCOUNT_TYPE_LOCKED": "Type can't change once the account has entries",
+    "ACCOUNT_CURRENCY_LOCKED": "Currency can't change once the account has entries",
+    "ENTRY_NOT_FOUND": "Entry not found",
+    "ENTRY_AMOUNT_INVALID": "Enter a valid amount",
+    "ENTRY_DATE_INVALID": "Enter a valid date",
+    "ENTRY_UNBALANCED": "Debits and credits must balance",
+    "ENTRY_TOO_FEW_ACCOUNTS": "Choose two different accounts",
+    "ENTRY_FX_CURRENCY_COUNT": "Cross-currency entries need exactly one To line",
+    "INVALID_CURRENCY_CODE": "Choose a valid currency",
+    "BOOK_NAME_INVALID": "Book name is invalid",
+    "BOOK_INVALID": "Could not update the books",
+    "STORAGE_UNAVAILABLE": "Storage is unavailable",
+    "STORAGE_WRITE_FAILED": "Couldn't save — try again",
+    "unknown": "Something went wrong"
+  },
+  "months": {
+    "january": "January",
+    "february": "February",
+    "march": "March",
+    "april": "April",
+    "may": "May",
+    "june": "June",
+    "july": "July",
+    "august": "August",
+    "september": "September",
+    "october": "October",
+    "november": "November",
+    "december": "December"
+  }
+}

@@ -1,0 +1,596 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.4;
+  color: #18181b;
+  background: #f4f4f5;
+  --tap: 44px;
+  --max: 480px;
+  --border: #e4e4e7;
+  --muted: #71717a;
+  --bg: #ffffff;
+  --fg: #18181b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+.app-shell {
+  max-width: var(--max);
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.app-content {
+  flex: 1;
+  padding: 16px 16px calc(16px + var(--tap) + 12px);
+}
+
+.screen {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.onboarding {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100dvh;
+  justify-content: center;
+}
+
+.brand {
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 0;
+}
+
+.currency-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+
+.choice,
+.primary,
+button {
+  font: inherit;
+}
+
+.choice {
+  min-height: var(--tap);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  text-align: start;
+  padding: 0 14px;
+}
+
+.choice.selected {
+  border-color: var(--fg);
+  font-weight: 600;
+}
+
+.primary {
+  min-height: var(--tap);
+  border: none;
+  border-radius: 8px;
+  background: var(--fg);
+  color: #fff;
+  padding: 0 16px;
+  width: 100%;
+}
+
+.primary:disabled {
+  opacity: 0.5;
+}
+
+.bottom-tabs {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0;
+  width: 100%;
+  max-width: var(--max);
+  display: flex;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.tab {
+  flex: 1;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--muted);
+  border-top: 2px solid transparent;
+}
+
+.tab.active {
+  color: var(--fg);
+  font-weight: 600;
+  border-top-color: var(--fg);
+}
+
+.banner {
+  max-width: var(--max);
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #fef2f2;
+  color: #991b1b;
+  border-bottom: 1px solid #fecaca;
+}
+
+.account-list,
+.journal-list,
+.account-children {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+
+.account-row,
+.journal-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--tap);
+  align-items: center;
+  padding: 10px 0;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  text-align: start;
+  text-decoration: none;
+  color: inherit;
+  font: inherit;
+}
+
+.account-link {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--tap);
+  text-decoration: none;
+  color: inherit;
+}
+
+.twisty {
+  width: 28px;
+  min-height: var(--tap);
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+  font: inherit;
+}
+
+.twisty.spacer {
+  display: inline-block;
+}
+
+[dir="rtl"] .twisty {
+  transform: scaleX(-1);
+}
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin: 16px 0;
+  font-weight: 600;
+}
+
+.stack-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.stack-form label,
+.stack-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.stack-form input,
+.stack-form select {
+  min-height: var(--tap);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 12px;
+  font: inherit;
+  background: var(--bg);
+}
+
+.secondary,
+.link-button,
+.danger {
+  min-height: var(--tap);
+  border-radius: 8px;
+  padding: 0 16px;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.secondary,
+.link-button {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.link-button.primary {
+  border: none;
+  background: var(--fg);
+  color: #fff;
+}
+
+.danger {
+  border: none;
+  background: #991b1b;
+  color: #fff;
+}
+
+.choice-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px 12px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.choice-group legend {
+  font-size: 0.9rem;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.split-line {
+  display: flex;
+  gap: 8px;
+}
+
+.split-line input {
+  width: 96px;
+}
+
+.split-line button {
+  padding: 0 12px;
+}
+
+.stack-form .inline-choice {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.button-row.wrap {
+  flex-wrap: wrap;
+}
+
+.detail-list {
+  margin: 16px 0;
+}
+
+.detail-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-list dt {
+  color: var(--muted);
+}
+
+.detail-list dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.journal-title {
+  font-weight: 600;
+}
+
+.journal-amount {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.filter-bar button {
+  flex: none;
+}
+
+.back-link {
+  display: inline-block;
+  margin-top: 16px;
+  color: var(--muted);
+}
+
+.picker-trigger {
+  min-height: var(--tap);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 12px;
+  font: inherit;
+  background: var(--bg);
+  color: var(--fg);
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filter-bar .picker-trigger,
+.split-line .picker-trigger {
+  flex: 1;
+  min-width: 0;
+}
+
+dialog.picker {
+  width: 100%;
+  max-width: var(--max);
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0 auto;
+  padding: 0;
+  border: none;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* A closed <dialog> is display:none; only the open one becomes a flex column. */
+dialog.picker[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+dialog.picker::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+/* The page behind the sheet must not scroll under it on iOS. */
+body:has(dialog.picker[open]) {
+  overflow: hidden;
+}
+
+/*
+ * Everything inside the sheet is scoped under `dialog.picker`, and not by taste: the
+ * dialog is a DOM descendant of the control that opened it, so unscoped rules would
+ * lose to the surrounding layout — `.filter-bar button { flex: none }` would flatten
+ * the rows, and `.split-line input { width: 96px }` would shrink the search field.
+ */
+dialog.picker .picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+dialog.picker .picker-head h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+dialog.picker .picker-head .secondary {
+  padding: 0 16px;
+  flex: none;
+}
+
+dialog.picker .picker-search-row {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+dialog.picker .picker-search {
+  width: 100%;
+  min-height: var(--tap);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 12px;
+  font: inherit;
+  background: var(--bg);
+}
+
+dialog.picker .picker-tree {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 8px 12px 24px;
+}
+
+dialog.picker .picker-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+dialog.picker .picker-name {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: start;
+  padding: 0 8px;
+}
+
+dialog.picker .picker-name[aria-current="true"] {
+  font-weight: 600;
+}
+
+dialog.picker .picker-name:disabled {
+  color: var(--muted);
+}
+
+dialog.picker .picker-currency {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+dialog.picker .picker-empty {
+  color: var(--muted);
+  padding: 16px 8px;
+}
+
+dialog.picker .twisty {
+  padding: 0;
+}
+
+.crumb {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+
+.crumb a {
+  color: inherit;
+}
+
+.pills {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: 0 0 12px;
+}
+
+.pill {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 2px 10px;
+  min-height: var(--tap);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.pill.on {
+  border-color: var(--fg);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.stats-total {
+  text-align: center;
+  font-weight: 600;
+  margin: 8px 0 12px;
+}
+
+.stats-pie {
+  display: block;
+  width: 200px;
+  height: 200px;
+  margin: 0 auto 16px;
+}
+
+.stats-pie path {
+  cursor: pointer;
+}
+
+.stats-legend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.stats-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 10px 0;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.stats-row .muted {
+  margin-left: auto;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.stats-link {
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+}

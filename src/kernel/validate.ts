@@ -1,0 +1,183 @@
+import { siblingNameTaken, wouldCreateCycle } from "./book-utils";
+import { isCurrencyCode } from "./currency";
+import { isCalendarDate } from "./dates";
+import { validatePostings } from "./entry-validation";
+import type { LedgerError } from "./errors";
+import { err, ok, type Result } from "./result";
+import type { Account, AccountType, Book, JournalEntryKind, PostingSide } from "./types";
+
+const ACCOUNT_TYPES = new Set<AccountType>([
+  "asset",
+  "liability",
+  "equity",
+  "income",
+  "expense",
+]);
+const POSTING_SIDES = new Set<PostingSide>(["debit", "credit"]);
+const JOURNAL_KINDS = new Set<JournalEntryKind>(["standard", "opening"]);
+
+function isAccountRecord(value: unknown): value is Account {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function validateBook(book: Book): Result<true> {
+  const violations: LedgerError[] = [];
+
+  if (book.schemaVersion !== 1) {
+    violations.push({
+      code: "BOOK_INVALID_SCHEMA_VERSION",
+      message: `Unsupported schemaVersion ${String(book.schemaVersion)}`,
+      details: { schemaVersion: book.schemaVersion },
+    });
+  }
+  if (typeof book.name !== "string" || book.name.trim().length === 0) {
+    violations.push({ code: "BOOK_NAME_INVALID", message: "Book name must be non-empty" });
+  }
+  if (!isCurrencyCode(book.homeCurrency)) {
+    violations.push({
+      code: "INVALID_CURRENCY_CODE",
+      message: `Invalid homeCurrency ${String(book.homeCurrency)}`,
+    });
+  }
+
+  const ids = new Set<string>();
+  for (const account of book.accounts) {
+    if (!isAccountRecord(account)) {
+      violations.push({ code: "BOOK_INVALID", message: "Invalid account element" });
+      continue;
+    }
+    if (ids.has(account.id)) {
+      violations.push({
+        code: "ACCOUNT_ID_DUPLICATE",
+        message: `Duplicate account id ${account.id}`,
+        details: { id: account.id },
+      });
+    }
+    ids.add(account.id);
+    if (typeof account.name !== "string" || account.name.trim().length === 0) {
+      violations.push({
+        code: "ACCOUNT_NAME_INVALID",
+        message: "Account name must be non-empty",
+        details: { id: account.id },
+      });
+    }
+    if (!ACCOUNT_TYPES.has(account.type)) {
+      violations.push({
+        code: "BOOK_INVALID",
+        message: `Invalid account type ${String(account.type)}`,
+        details: { id: account.id },
+      });
+    }
+    if (!isCurrencyCode(account.currency)) {
+      violations.push({
+        code: "INVALID_CURRENCY_CODE",
+        message: `Invalid account currency ${String(account.currency)}`,
+        details: { id: account.id },
+      });
+    }
+    if (account.parentId !== null) {
+      const parent = book.accounts.find((item) => isAccountRecord(item) && item.id === account.parentId);
+      if (!parent) {
+        violations.push({
+          code: "ACCOUNT_PARENT_INVALID",
+          message: "Parent account not found",
+          details: { id: account.id, parentId: account.parentId },
+        });
+      } else {
+        if (!parent.isPlaceholder) {
+          violations.push({
+            code: "ACCOUNT_PARENT_NOT_PLACEHOLDER",
+            message: "Only placeholder accounts may have children",
+            details: { id: account.id },
+          });
+        }
+        if (parent.type !== account.type) {
+          violations.push({
+            code: "ACCOUNT_TYPE_MISMATCH",
+            message: "Child type must match parent type",
+            details: { id: account.id },
+          });
+        }
+        if (wouldCreateCycle(book, account.id, account.parentId)) {
+          violations.push({
+            code: "ACCOUNT_CYCLE",
+            message: "Account parent cycle",
+            details: { id: account.id },
+          });
+        }
+      }
+    }
+    if (siblingNameTaken(book, account.parentId, account.name, account.id)) {
+      violations.push({
+        code: "ACCOUNT_NAME_DUPLICATE",
+        message: "Account name already used among siblings",
+        details: { id: account.id, name: account.name },
+      });
+    }
+  }
+
+  const entryIds = new Set<string>();
+  for (const entry of book.journal) {
+    if (!entry || typeof entry !== "object") {
+      violations.push({ code: "BOOK_INVALID", message: "Invalid journal entry element" });
+      continue;
+    }
+    if (entryIds.has(entry.id)) {
+      violations.push({
+        code: "ENTRY_ID_DUPLICATE",
+        message: `Duplicate journal id ${entry.id}`,
+        details: { id: entry.id },
+      });
+    }
+    entryIds.add(entry.id);
+    if (!isCalendarDate(entry.date)) {
+      violations.push({
+        code: "ENTRY_DATE_INVALID",
+        message: `Invalid date ${entry.date}`,
+        details: { id: entry.id },
+      });
+    }
+    if (!JOURNAL_KINDS.has(entry.kind)) {
+      violations.push({
+        code: "BOOK_INVALID",
+        message: `Invalid entry kind ${String(entry.kind)}`,
+        details: { id: entry.id },
+      });
+      continue;
+    }
+    if (!Array.isArray(entry.postings)) {
+      violations.push({
+        code: "BOOK_INVALID",
+        message: "Journal entry missing postings array",
+        details: { id: entry.id },
+      });
+      continue;
+    }
+    for (const posting of entry.postings) {
+      if (!posting || typeof posting !== "object") {
+        violations.push({
+          code: "BOOK_INVALID",
+          message: "Invalid posting element",
+          details: { id: entry.id },
+        });
+        continue;
+      }
+      if (!POSTING_SIDES.has(posting.side)) {
+        violations.push({
+          code: "BOOK_INVALID",
+          message: `Invalid posting side ${String(posting.side)}`,
+          details: { id: entry.id },
+        });
+      }
+    }
+    const postingCheck = validatePostings(book, entry.postings, entry.kind, entry.fx);
+    if (!postingCheck.ok) {
+      violations.push(postingCheck.error);
+    }
+  }
+
+  if (violations.length > 0) {
+    return err("BOOK_INVALID", "Book failed validation", { violations });
+  }
+  return ok(true);
+}

@@ -1,0 +1,181 @@
+{
+  "common": {
+    "cancel": "ביטול",
+    "delete": "מחיקה",
+    "edit": "עריכה",
+    "previousMonth": "חודש קודם",
+    "nextMonth": "חודש הבא",
+    "backToAccounts": "חזרה לחשבונות",
+    "kind": "סוג",
+    "choiceAccount": "חשבון — מכיל תנועות",
+    "choiceGroup": "קבוצה — מכילה חשבונות נוספים",
+    "expand": "הרחב את {{name}}",
+    "collapse": "כווץ את {{name}}"
+  },
+  "app": {
+    "loading": "טוען…"
+  },
+  "nav": {
+    "ariaLabel": "ראשי",
+    "dashboard": "לוח בקרה",
+    "accounts": "חשבונות",
+    "journal": "יומן",
+    "new": "+ חדש"
+  },
+  "banner": {
+    "dismiss": "סגור"
+  },
+  "onboarding": {
+    "languageTitle": "בחר שפה",
+    "languageListLabel": "שפה",
+    "languageEnglish": "English",
+    "languageHebrew": "עברית",
+    "currencyTitle": "בחר מטבע בית",
+    "currencySubtitle": "משמש עבור ספרי משק הבית שלך.",
+    "currencyListLabel": "מטבע בית",
+    "continue": "המשך"
+  },
+  "dashboard": {
+    "title": "לוח בקרה",
+    "couldNotLoadTotals": "לא ניתן היה לטעון את הסיכומים.",
+    "income": "הכנסות",
+    "expenses": "הוצאות"
+  },
+  "accounts": {
+    "title": "חשבונות",
+    "couldNotLoad": "לא ניתן היה לטעון את החשבונות.",
+    "addAccount": "הוספת חשבון",
+    "rootAssets": "נכסים",
+    "rootLiabilities": "התחייבויות",
+    "rootIncome": "הכנסות",
+    "rootExpenses": "הוצאות"
+  },
+  "accountDetail": {
+    "titleFallback": "חשבון",
+    "notFound": "החשבון לא נמצא.",
+    "kindLabel": "סוג",
+    "currencyLabel": "מטבע",
+    "balanceLabel": "יתרה",
+    "nestedLabel": "מקוננים",
+    "nameLabel": "שם",
+    "kindAccount": "חשבון",
+    "kindGroup": "קבוצה",
+    "rootNotice": "לא ניתן להעביר, להמיר או למחוק קטגוריות שורש.",
+    "parentLabel": "הורה",
+    "saveChanges": "שמירת שינויים",
+    "addNested": "הוספת חשבון מקונן",
+    "entries": "תנועות",
+    "deleteConfirm": "למחוק את {{name}}?"
+  },
+  "accountForm": {
+    "title": "חשבון חדש",
+    "parentLabel": "הורה",
+    "nameLabel": "שם",
+    "currencyLabel": "מטבע",
+    "openingBalanceLabel": "יתרת פתיחה (אופציונלי)",
+    "saveAccount": "שמירת חשבון"
+  },
+  "journal": {
+    "title": "יומן",
+    "couldNotLoad": "לא ניתן היה לטעון את היומן.",
+    "allTime": "כל הזמנים",
+    "thisMonth": "החודש",
+    "filterByAccount": "סינון לפי חשבון",
+    "allAccounts": "כל החשבונות",
+    "reset": "איפוס",
+    "noEntriesYet": "אין עדיין תנועות",
+    "noEntriesMatch": "אין תנועות התואמות את הסינון",
+    "openingBalance": "יתרת פתיחה",
+    "transfer": "העברה",
+    "opening": "פתיחה",
+    "categoriesCount": "{{count}} קטגוריות"
+  },
+  "entryDetail": {
+    "titleEntry": "תנועה",
+    "titleOpening": "פתיחה",
+    "notFound": "התנועה לא נמצאה.",
+    "backToJournal": "חזרה ליומן",
+    "dateLabel": "תאריך",
+    "descriptionLabel": "תיאור",
+    "fromLabel": "מ",
+    "toLabel": "אל",
+    "toLabelIndexed": "אל {{index}}",
+    "rateLabel": "שער",
+    "totalLabel": "סה\"כ",
+    "amountLabel": "סכום",
+    "deleteConfirm": "למחוק את התנועה הזו?"
+  },
+  "transferForm": {
+    "titleEdit": "עריכת תנועה",
+    "titleNew": "תנועה חדשה",
+    "onlyStandardEditable": "ניתן לערוך רק העברות רגילות.",
+    "notEnoughAccounts": "יש להוסיף לפחות שני חשבונות עלים לפני רישום.",
+    "dateLabel": "תאריך",
+    "descriptionLabel": "תיאור",
+    "fromLabel": "מ",
+    "fromAccountAria": "חשבון מקור",
+    "selectPlaceholder": "בחר…",
+    "sentLabel": "נשלח ({{currency}})",
+    "toLegend": "אל",
+    "lineAccountAria": "חשבון שורה {{index}}",
+    "receivedAria": "התקבל ({{currency}})",
+    "lineAmountAria": "סכום שורה {{index}}",
+    "removeLineAria": "הסרת שורה {{index}}",
+    "addSplit": "+ הוספת פיצול",
+    "mixedCurrencies": "כל שורות ה\"אל\" חייבות להיות באותו מטבע",
+    "ratePrefix": "שער:",
+    "totalPrefix": "סה\"כ:",
+    "save": "שמירה",
+    "errors": {
+      "chooseAccounts": "יש לבחור חשבונות מקור ויעד",
+      "duplicateAccount": "כל שורת פיצול חייבת להיות בחשבון שונה",
+      "enterSentAmount": "יש להזין את הסכום היוצא מחשבון המקור"
+    }
+  },
+  "accountPicker": {
+    "search": "חיפוש",
+    "searchAria": "חיפוש {{label}}",
+    "noMatch": "לא נמצאו חשבונות תואמים"
+  },
+  "errors": {
+    "ACCOUNT_NAME_INVALID": "נא להזין שם חשבון",
+    "ACCOUNT_NAME_DUPLICATE": "שם החשבון הזה כבר בשימוש כאן",
+    "ACCOUNT_PARENT_INVALID": "נא לבחור חשבון הורה תקין",
+    "ACCOUNT_PARENT_NOT_PLACEHOLDER": "יש ליצור חשבונות תחת קטגוריה",
+    "ACCOUNT_TYPE_MISMATCH": "סוג החשבון חייב להתאים לקטגוריה שלו",
+    "ACCOUNT_NOT_FOUND": "החשבון לא נמצא",
+    "ACCOUNT_IS_PLACEHOLDER": "יש לבחור חשבון עלה, לא קטגוריה",
+    "ACCOUNT_IS_SYSTEM": "לא ניתן לשנות את החשבון הזה",
+    "ACCOUNT_HAS_CHILDREN": "יש להסיר קודם את החשבונות המקוננים",
+    "ACCOUNT_HAS_POSTINGS": "לחשבון הזה כבר יש תנועות — יש למחוק אותן קודם",
+    "ACCOUNT_CYCLE": "לא ניתן להעביר חשבון לתוך עצמו",
+    "ACCOUNT_TYPE_LOCKED": "לא ניתן לשנות סוג לאחר שיש לחשבון תנועות",
+    "ACCOUNT_CURRENCY_LOCKED": "לא ניתן לשנות מטבע לאחר שיש לחשבון תנועות",
+    "ENTRY_NOT_FOUND": "התנועה לא נמצאה",
+    "ENTRY_AMOUNT_INVALID": "נא להזין סכום תקין",
+    "ENTRY_DATE_INVALID": "נא להזין תאריך תקין",
+    "ENTRY_UNBALANCED": "חובה וזכות חייבים להיות מאוזנים",
+    "ENTRY_TOO_FEW_ACCOUNTS": "נא לבחור שני חשבונות שונים",
+    "ENTRY_FX_CURRENCY_COUNT": "תנועות בין מטבעות דורשות שורת \"אל\" אחת בדיוק",
+    "INVALID_CURRENCY_CODE": "נא לבחור מטבע תקין",
+    "BOOK_NAME_INVALID": "שם הספר אינו תקין",
+    "BOOK_INVALID": "לא ניתן היה לעדכן את הספרים",
+    "STORAGE_UNAVAILABLE": "האחסון אינו זמין",
+    "STORAGE_WRITE_FAILED": "השמירה נכשלה — נסה שוב",
+    "unknown": "משהו השתבש"
+  },
+  "months": {
+    "january": "ינואר",
+    "february": "פברואר",
+    "march": "מרץ",
+    "april": "אפריל",
+    "may": "מאי",
+    "june": "יוני",
+    "july": "יולי",
+    "august": "אוגוסט",
+    "september": "ספטמבר",
+    "october": "אוקטובר",
+    "november": "נובמבר",
+    "december": "דצמבר"
+  }
+}

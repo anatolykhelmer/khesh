@@ -1,0 +1,56 @@
+import { Navigate, Route, Routes } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { Banner } from "./components/Banner";
+import { BottomTabs } from "./components/BottomTabs";
+import { useLedger } from "./ledger-context";
+import { AccountDetailScreen } from "./screens/AccountDetailScreen";
+import { AccountFormScreen } from "./screens/AccountFormScreen";
+import { AccountsScreen } from "./screens/AccountsScreen";
+import { DashboardScreen } from "./screens/DashboardScreen";
+import { EntryDetailScreen } from "./screens/EntryDetailScreen";
+import { JournalScreen } from "./screens/JournalScreen";
+import { OnboardingScreen } from "./screens/OnboardingScreen";
+import { StatsScreen } from "./screens/StatsScreen";
+import { TransferFormScreen } from "./screens/TransferFormScreen";
+
+function Shell() {
+  return (
+    <div className="app-shell">
+      <div className="app-content">
+        <Routes>
+          <Route path="/dashboard" element={<DashboardScreen />} />
+          <Route path="/stats" element={<StatsScreen />} />
+          <Route path="/accounts" element={<AccountsScreen />} />
+          <Route path="/accounts/new" element={<AccountFormScreen />} />
+          <Route path="/accounts/:accountId" element={<AccountDetailScreen />} />
+          <Route path="/journal" element={<JournalScreen />} />
+          <Route path="/new" element={<TransferFormScreen key="new" />} />
+          <Route path="/journal/:entryId" element={<EntryDetailScreen />} />
+          <Route path="/journal/:entryId/edit" element={<TransferFormScreen key="edit" />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </div>
+      <BottomTabs />
+    </div>
+  );
+}
+
+export function App() {
+  const { t } = useTranslation();
+  const { book, loading, error, clearError } = useLedger();
+
+  if (loading) {
+    return (
+      <main className="screen">
+        <p>{t("app.loading")}</p>
+      </main>
+    );
+  }
+
+  return (
+    <>
+      {error ? <Banner message={error} onDismiss={clearError} /> : null}
+      {book ? <Shell /> : <OnboardingScreen />}
+    </>
+  );
+}

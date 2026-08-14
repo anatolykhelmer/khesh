@@ -208,6 +208,14 @@ button {
   transform: scaleX(-1);
 }
 
+.flow-arrow {
+  display: inline-block;
+}
+
+[dir="rtl"] .flow-arrow {
+  transform: scaleX(-1);
+}
+
 .month-nav {
   display: flex;
   align-items: center;

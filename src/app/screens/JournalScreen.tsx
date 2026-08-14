@@ -134,19 +134,22 @@ export function JournalScreen() {
               if (shape.fx) {
                 subtitle = (
                   <>
-                    {fromPath} → {toPath} · <Ltr>{formatMinor(shape.fromAmount, shape.fx.baseCurrency)}</Ltr>
+                    {fromPath} <span className="flow-arrow">→</span> {toPath} ·{" "}
+                    <Ltr>{formatMinor(shape.fromAmount, shape.fx.baseCurrency)}</Ltr>
                   </>
                 );
               } else if (shape.lines.length === 1) {
                 subtitle = (
                   <>
-                    {fromPath} → {toPath}
+                    {fromPath} <span className="flow-arrow">→</span> {toPath}
                   </>
                 );
               } else {
                 subtitle = (
                   <>
-                    {fromPath} → {t("journal.categoriesCount", { count: shape.lines.length })}
+                    {fromPath}{" "}
+                    <span className="flow-arrow">→</span>{" "}
+                    {t("journal.categoriesCount", { count: shape.lines.length })}
                   </>
                 );
               }

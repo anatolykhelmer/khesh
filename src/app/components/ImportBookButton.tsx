@@ -8,9 +8,17 @@ type Props = {
   confirmText?: string;
   onSuccess?: () => void;
   disabled?: boolean;
+  /** Notified with the component's busy state, so a parent can disable other controls during import. */
+  onBusyChange?: (busy: boolean) => void;
 };
 
-export function ImportBookButton({ label, confirmText, onSuccess, disabled }: Props) {
+export function ImportBookButton({
+  label,
+  confirmText,
+  onSuccess,
+  disabled,
+  onBusyChange,
+}: Props) {
   const { app, setBook, setError } = useLedger();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -23,6 +31,7 @@ export function ImportBookButton({ label, confirmText, onSuccess, disabled }: Pr
     if (confirmText !== undefined && !confirm(confirmText)) return;
 
     setBusy(true);
+    onBusyChange?.(true);
     try {
       const result = await app.importJson(await file.text());
       if (!result.ok) {
@@ -34,6 +43,7 @@ export function ImportBookButton({ label, confirmText, onSuccess, disabled }: Pr
       onSuccess?.();
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   }
 

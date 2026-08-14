@@ -80,7 +80,11 @@ export function OnboardingScreen() {
       <button type="button" className="primary" disabled={busy} onClick={onContinue}>
         {t("onboarding.continue")}
       </button>
-      <ImportBookButton label={t("onboarding.restore")} disabled={busy} />
+      <ImportBookButton
+        label={t("onboarding.restore")}
+        disabled={busy}
+        onBusyChange={setBusy}
+      />
     </main>
   );
 }

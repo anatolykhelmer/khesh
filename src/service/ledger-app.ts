@@ -28,6 +28,8 @@ import {
 import type { PostingInput } from "../kernel/entry-validation";
 import { err, ok, type Result } from "../kernel/result";
 import type { LedgerRepository } from "../ports/ledger-repository";
+import { importJson as importBookJson } from "../adapters/import-book";
+import { bookToJson } from "../adapters/json-codec";
 import i18n from "../app/i18n";
 import { todayCalendarDate } from "./dates";
 
@@ -220,6 +222,14 @@ export function createLedgerApp(repo: LedgerRepository) {
   return {
     async boot(): Promise<Result<Book | null>> {
       return repo.load();
+    },
+
+    exportJson(book: Book): string {
+      return bookToJson(book);
+    },
+
+    async importJson(raw: string): Promise<Result<Book>> {
+      return importBookJson(repo, raw);
     },
 
     async createHousehold(homeCurrency: CurrencyCode): Promise<Result<Book>> {

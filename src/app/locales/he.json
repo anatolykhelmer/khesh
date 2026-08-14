@@ -33,14 +33,24 @@
     "currencyTitle": "בחר מטבע בית",
     "currencySubtitle": "משמש עבור ספרי משק הבית שלך.",
     "currencyListLabel": "מטבע בית",
-    "continue": "המשך"
+    "continue": "המשך",
+    "restore": "שחזור מגיבוי"
   },
   "dashboard": {
     "title": "לוח בקרה",
     "couldNotLoadTotals": "לא ניתן היה לטעון את הסיכומים.",
     "income": "הכנסות",
     "expenses": "הוצאות",
-    "viewStats": "סטטיסטיקה"
+    "viewStats": "סטטיסטיקה",
+    "settings": "הגדרות"
+  },
+  "settings": {
+    "title": "הגדרות",
+    "exportButton": "ייצוא גיבוי",
+    "exportHint": "מוריד את כל הספר כקובץ JSON.",
+    "importButton": "ייבוא גיבוי",
+    "importHint": "מחליף את הספר הנוכחי בתוכן הקובץ.",
+    "importConfirm": "הייבוא יחליף את הספר במכשיר הזה. להמשיך?"
   },
   "accounts": {
     "title": "חשבונות",
@@ -164,6 +174,9 @@
     "BOOK_INVALID": "לא ניתן היה לעדכן את הספרים",
     "STORAGE_UNAVAILABLE": "האחסון אינו זמין",
     "STORAGE_WRITE_FAILED": "השמירה נכשלה — נסה שוב",
+    "JSON_PARSE_FAILED": "הקובץ אינו JSON תקין",
+    "JSON_INVALID_BOOK": "הקובץ אינו גיבוי של Khesh",
+    "BOOK_INVALID_SCHEMA_VERSION": "הגיבוי נוצר בגרסה לא תואמת",
     "unknown": "משהו השתבש"
   },
   "months": {

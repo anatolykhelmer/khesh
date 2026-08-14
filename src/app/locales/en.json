@@ -33,14 +33,24 @@
     "currencyTitle": "Choose home currency",
     "currencySubtitle": "Used for your household books.",
     "currencyListLabel": "Home currency",
-    "continue": "Continue"
+    "continue": "Continue",
+    "restore": "Restore from backup"
   },
   "dashboard": {
     "title": "Dashboard",
     "couldNotLoadTotals": "Could not load totals.",
     "income": "Income",
     "expenses": "Expenses",
-    "viewStats": "Statistics"
+    "viewStats": "Statistics",
+    "settings": "Settings"
+  },
+  "settings": {
+    "title": "Settings",
+    "exportButton": "Export backup",
+    "exportHint": "Downloads your whole book as a JSON file.",
+    "importButton": "Import backup",
+    "importHint": "Replaces the current book with the contents of the file.",
+    "importConfirm": "Importing replaces the book on this device. Continue?"
   },
   "accounts": {
     "title": "Accounts",
@@ -164,6 +174,9 @@
     "BOOK_INVALID": "Could not update the books",
     "STORAGE_UNAVAILABLE": "Storage is unavailable",
     "STORAGE_WRITE_FAILED": "Couldn't save — try again",
+    "JSON_PARSE_FAILED": "That file isn't valid JSON",
+    "JSON_INVALID_BOOK": "That file isn't a Khesh backup",
+    "BOOK_INVALID_SCHEMA_VERSION": "That backup was made by an incompatible version",
     "unknown": "Something went wrong"
   },
   "months": {

@@ -19,6 +19,16 @@ describe("errorMessage", () => {
     }
   });
 
+  it("covers the import codes rather than falling back", () => {
+    for (const code of [
+      "JSON_PARSE_FAILED",
+      "JSON_INVALID_BOOK",
+      "BOOK_INVALID_SCHEMA_VERSION",
+    ]) {
+      expect(errorMessage(code)).not.toBe("Something went wrong");
+    }
+  });
+
   it("falls back for unknown codes", () => {
     expect(errorMessage("NOT_A_REAL_CODE")).toBe("Something went wrong");
   });

@@ -1,9 +1,16 @@
-import { accountPath, type Book, type FxSpec } from "../kernel";
+import {
+  accountPath,
+  isOpeningBalancesGroupId,
+  isOpeningBalancesLeafId,
+  type Book,
+  type FxSpec,
+} from "../kernel";
 import { minorToMajor } from "../service/money";
+import { currencySymbol } from "./currencies";
 import i18n from "./i18n";
 
 export function formatMinor(minor: number, currency: string): string {
-  return `${minorToMajor(minor)} ${currency}`;
+  return `${minorToMajor(minor)} ${currencySymbol(currency)}`;
 }
 
 /**
@@ -20,6 +27,14 @@ export function formatRate(fx: FxSpec): string {
  * anywhere an account is shown out of tree context it needs its path to stay unambiguous.
  */
 export function accountPathLabel(book: Book, id: string): string {
+  if (isOpeningBalancesGroupId(id)) {
+    return i18n.t("accounts.openingBalances");
+  }
+  if (isOpeningBalancesLeafId(id)) {
+    const account = book.accounts.find((a) => a.id === id);
+    const label = account ? currencySymbol(account.currency) : id;
+    return `${i18n.t("accounts.openingBalances")}:${label}`;
+  }
   const path = accountPath(book, id);
   return path.ok ? path.value : id;
 }

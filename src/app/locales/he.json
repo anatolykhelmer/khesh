@@ -48,7 +48,8 @@
     "rootAssets": "נכסים",
     "rootLiabilities": "התחייבויות",
     "rootIncome": "הכנסות",
-    "rootExpenses": "הוצאות"
+    "rootExpenses": "הוצאות",
+    "openingBalances": "יתרות פתיחה"
   },
   "accountDetail": {
     "titleFallback": "חשבון",

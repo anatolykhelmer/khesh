@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { currentYearMonth, formatYearMonth, monthRange } from "../../service/dates";
 import { formatMinor, monthLabel } from "../format";
+import { currencySymbol } from "../currencies";
 import { Ltr } from "../components/Ltr";
 import { useLedger } from "../ledger-context";
 
@@ -69,7 +70,7 @@ export function DashboardScreen() {
       ) : (
         rows.map(([currency, totals]) => (
           <section key={currency}>
-            <h2>{currency}</h2>
+            <h2>{currencySymbol(currency)}</h2>
             <dl className="detail-list">
               <div>
                 <dt>{t("dashboard.income")}</dt>

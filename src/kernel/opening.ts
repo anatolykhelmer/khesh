@@ -12,8 +12,16 @@ function obLeafId(currency: string): string {
   return `sys:ob:${currency}`;
 }
 
+export function isOpeningBalancesGroupId(id: string): boolean {
+  return id === OB_PARENT_ID;
+}
+
+export function isOpeningBalancesLeafId(id: string): boolean {
+  return id.startsWith("sys:ob:");
+}
+
 function isSystemObId(id: string): boolean {
-  return id === OB_PARENT_ID || id.startsWith("sys:ob:");
+  return isOpeningBalancesGroupId(id) || isOpeningBalancesLeafId(id);
 }
 
 function obNameCollision(book: Book, parentId: string | null, name: string): boolean {
@@ -31,19 +39,19 @@ function opposite(side: PostingSide): PostingSide {
   return side === "debit" ? "credit" : "debit";
 }
 
-function ensureObAccounts(book: Book, currency: string): Result<void> {
+function ensureObAccounts(book: Book, currency: string, groupName: string): Result<void> {
   if (!book.accounts.some((account) => account.id === OB_PARENT_ID)) {
-    if (obNameCollision(book, null, OB_PARENT_NAME)) {
+    if (obNameCollision(book, null, groupName)) {
       return err(
         "ACCOUNT_NAME_DUPLICATE",
         "Cannot create Opening Balances system account: name already used among root accounts",
-        { name: OB_PARENT_NAME },
+        { name: groupName },
       );
     }
     book.accounts.push({
       id: OB_PARENT_ID,
       parentId: null,
-      name: OB_PARENT_NAME,
+      name: groupName,
       type: "equity",
       currency: book.homeCurrency,
       isPlaceholder: true,
@@ -82,7 +90,7 @@ function ensureObAccounts(book: Book, currency: string): Result<void> {
 
 export function recordOpeningBalance(
   book: Book,
-  input: { accountId: string; amount: MinorUnits; date: string },
+  input: { accountId: string; amount: MinorUnits; date: string; groupName?: string },
 ): Result<Book> {
   if (!isCalendarDate(input.date)) {
     return err("ENTRY_DATE_INVALID", `Invalid date ${input.date}`, { date: input.date });
@@ -119,7 +127,7 @@ export function recordOpeningBalance(
   }
 
   const next = cloneBook(book);
-  const obAccounts = ensureObAccounts(next, target.currency);
+  const obAccounts = ensureObAccounts(next, target.currency, input.groupName ?? OB_PARENT_NAME);
   if (!obAccounts.ok) return obAccounts;
   const side = targetSide(target.type);
   const postings = [
@@ -132,7 +140,7 @@ export function recordOpeningBalance(
   const entry = {
     id: entryId,
     date: input.date,
-    description: "Opening balance",
+    description: "",
     kind: "opening" as const,
     postings,
   };

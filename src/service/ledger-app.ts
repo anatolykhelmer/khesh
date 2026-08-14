@@ -290,6 +290,7 @@ export function createLedgerApp(repo: LedgerRepository) {
           accountId: leaf.id,
           amount: openingAmount,
           date: input.openingDate ?? todayCalendarDate(),
+          groupName: i18n.t("accounts.openingBalances"),
         });
         if (!opened.ok) {
           const saved = await commit(repo, next);

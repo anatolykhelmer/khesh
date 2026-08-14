@@ -48,7 +48,8 @@
     "rootAssets": "Assets",
     "rootLiabilities": "Liabilities",
     "rootIncome": "Income",
-    "rootExpenses": "Expenses"
+    "rootExpenses": "Expenses",
+    "openingBalances": "Opening Balances"
   },
   "accountDetail": {
     "titleFallback": "Account",

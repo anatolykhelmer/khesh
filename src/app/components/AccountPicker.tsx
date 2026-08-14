@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AccountNode } from "../../kernel";
 import { expandedForSelection, pathOf, visibleRows } from "../account-tree";
+import { currencySymbol } from "../currencies";
 
 type Props = {
   /** From `app.accountTree(book)`, which has already dropped `sys:` accounts. */
@@ -156,7 +157,7 @@ export function AccountPicker({
                   <span>
                     {row.name}
                     {row.isGroup ? null : (
-                      <span className="picker-currency"> {row.currency}</span>
+                      <span className="picker-currency"> {currencySymbol(row.currency)}</span>
                     )}
                   </span>
                   {row.id === value ? <span aria-hidden="true">✓</span> : null}

@@ -23,7 +23,7 @@ describe("recordOpeningBalance", () => {
     expect(book.accounts.some((a) => a.id === "sys:ob:ILS" && a.type === "equity")).toBe(true);
     const entry = book.journal.find((e) => e.id === `opening:${cashId}`);
     expect(entry?.kind).toBe("opening");
-    expect(entry?.description).toBe("Opening balance");
+    expect(entry?.description).toBe("");
     expect(entry?.postings).toEqual([
       { accountId: cashId, side: "debit", amount: 10000 },
       { accountId: "sys:ob:ILS", side: "credit", amount: 10000 },

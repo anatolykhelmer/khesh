@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "../../service/error-messages";
 import { accountPathLabel, formatMinor } from "../format";
+import { currencySymbol } from "../currencies";
 import { Ltr } from "../components/Ltr";
 import { useLedger } from "../ledger-context";
 
@@ -116,7 +117,7 @@ export function AccountDetailScreen() {
         {currentAccount.isPlaceholder ? null : (
           <div>
             <dt>{t("accountDetail.currencyLabel")}</dt>
-            <dd>{currentAccount.currency}</dd>
+            <dd>{currencySymbol(currentAccount.currency)}</dd>
           </div>
         )}
         <div>

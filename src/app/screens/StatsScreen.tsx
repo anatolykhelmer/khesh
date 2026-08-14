@@ -2,6 +2,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { monthRange, shiftYearMonth } from "../../service/dates";
 import { pieArcs } from "../expense-pie";
+import { currencySymbol } from "../currencies";
 import { formatMinor, monthLabel } from "../format";
 import { useLedger } from "../ledger-context";
 import { expenseRootId, parseStatsState, toStatsParams } from "../stats-state";
@@ -105,7 +106,7 @@ export function StatsScreen() {
               className={code === breakdown.currency ? "pill on" : "pill"}
               onClick={() => write({ ...state, currency: code })}
             >
-              {code}
+              {currencySymbol(code)}
             </button>
           ))}
         </div>

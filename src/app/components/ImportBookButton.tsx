@@ -23,15 +23,18 @@ export function ImportBookButton({ label, confirmText, onSuccess, disabled }: Pr
     if (confirmText !== undefined && !confirm(confirmText)) return;
 
     setBusy(true);
-    const result = await app.importJson(await file.text());
-    setBusy(false);
-    if (!result.ok) {
-      setError(errorMessage(result.error.code));
-      return;
+    try {
+      const result = await app.importJson(await file.text());
+      if (!result.ok) {
+        setError(errorMessage(result.error.code));
+        return;
+      }
+      setError(null);
+      setBook(result.value);
+      onSuccess?.();
+    } finally {
+      setBusy(false);
     }
-    setError(null);
-    setBook(result.value);
-    onSuccess?.();
   }
 
   return (

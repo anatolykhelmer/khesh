@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { CurrencyCode } from "../../kernel";
 import { errorMessage } from "../../service/error-messages";
 import { CURRENCIES } from "../currencies";
+import { ImportBookButton } from "../components/ImportBookButton";
 import type { AppLanguage } from "../i18n";
 import { setLanguage } from "../i18n";
 import { useLedger } from "../ledger-context";
@@ -79,6 +80,7 @@ export function OnboardingScreen() {
       <button type="button" className="primary" disabled={busy} onClick={onContinue}>
         {t("onboarding.continue")}
       </button>
+      <ImportBookButton label={t("onboarding.restore")} disabled={busy} />
     </main>
   );
 }

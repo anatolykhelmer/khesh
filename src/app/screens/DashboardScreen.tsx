@@ -43,7 +43,12 @@ export function DashboardScreen() {
 
   return (
     <main className="screen">
-      <h1>{t("dashboard.title")}</h1>
+      <div className="screen-head">
+        <h1>{t("dashboard.title")}</h1>
+        <Link className="secondary link-button" to={`/stats?month=${formatYearMonth({ year, month })}`}>
+          {t("dashboard.viewStats")}
+        </Link>
+      </div>
       <div className="month-nav">
         <button
           type="button"

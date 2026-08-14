@@ -216,6 +216,13 @@ button {
   transform: scaleX(-1);
 }
 
+.screen-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .month-nav {
   display: flex;
   align-items: center;

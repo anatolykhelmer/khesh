@@ -39,7 +39,8 @@
     "title": "Dashboard",
     "couldNotLoadTotals": "Could not load totals.",
     "income": "Income",
-    "expenses": "Expenses"
+    "expenses": "Expenses",
+    "viewStats": "Statistics"
   },
   "accounts": {
     "title": "Accounts",

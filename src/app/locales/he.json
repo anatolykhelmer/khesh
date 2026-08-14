@@ -39,7 +39,8 @@
     "title": "לוח בקרה",
     "couldNotLoadTotals": "לא ניתן היה לטעון את הסיכומים.",
     "income": "הכנסות",
-    "expenses": "הוצאות"
+    "expenses": "הוצאות",
+    "viewStats": "סטטיסטיקה"
   },
   "accounts": {
     "title": "חשבונות",

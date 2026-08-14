@@ -10,6 +10,7 @@ import { DashboardScreen } from "./screens/DashboardScreen";
 import { EntryDetailScreen } from "./screens/EntryDetailScreen";
 import { JournalScreen } from "./screens/JournalScreen";
 import { OnboardingScreen } from "./screens/OnboardingScreen";
+import { SettingsScreen } from "./screens/SettingsScreen";
 import { StatsScreen } from "./screens/StatsScreen";
 import { TransferFormScreen } from "./screens/TransferFormScreen";
 
@@ -20,6 +21,7 @@ function Shell() {
         <Routes>
           <Route path="/dashboard" element={<DashboardScreen />} />
           <Route path="/stats" element={<StatsScreen />} />
+          <Route path="/settings" element={<SettingsScreen />} />
           <Route path="/accounts" element={<AccountsScreen />} />
           <Route path="/accounts/new" element={<AccountFormScreen />} />
           <Route path="/accounts/:accountId" element={<AccountDetailScreen />} />

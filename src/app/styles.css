@@ -609,3 +609,16 @@ dialog.picker .twisty {
   font-weight: inherit;
   text-decoration: none;
 }
+
+.head-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 24px;
+}

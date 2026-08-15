@@ -33,7 +33,8 @@ export function ImportBookButton({
     setBusy(true);
     onBusyChange?.(true);
     try {
-      const result = await app.importJson(await file.text());
+      const raw = await file.text();
+      const result = await app.importJson(raw);
       if (!result.ok) {
         setError(errorMessage(result.error.code));
         return;
@@ -41,6 +42,8 @@ export function ImportBookButton({
       setError(null);
       setBook(result.value);
       onSuccess?.();
+    } catch {
+      setError(errorMessage("FILE_READ_FAILED"));
     } finally {
       setBusy(false);
       onBusyChange?.(false);

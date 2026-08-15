@@ -24,6 +24,7 @@ describe("errorMessage", () => {
       "JSON_PARSE_FAILED",
       "JSON_INVALID_BOOK",
       "BOOK_INVALID_SCHEMA_VERSION",
+      "FILE_READ_FAILED",
     ]) {
       expect(errorMessage(code)).not.toBe("Something went wrong");
     }

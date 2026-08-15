@@ -31,7 +31,8 @@ export type LedgerErrorCode =
   | "JSON_PARSE_FAILED"
   | "JSON_INVALID_BOOK"
   | "STORAGE_UNAVAILABLE"
-  | "STORAGE_WRITE_FAILED";
+  | "STORAGE_WRITE_FAILED"
+  | "FILE_READ_FAILED";
 
 export interface LedgerError {
   code: LedgerErrorCode;

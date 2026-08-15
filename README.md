@@ -4,7 +4,7 @@ Offline-first household ledger using double-entry bookkeeping. Frontend-only (Vi
 
 ## Privacy
 
-No accounts, no server, no telemetry. Data never leaves the browser unless you export it yourself (import/export UI is not shipped yet).
+No accounts, no server, no telemetry. Data never leaves the browser unless you export it yourself from Settings.
 
 ## Disclaimer
 

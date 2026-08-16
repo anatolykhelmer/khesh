@@ -43,11 +43,24 @@ export function DashboardScreen() {
 
   const monthBudget = app.budgetReport(currentBook, "month", range);
   const yearBudget = app.budgetReport(currentBook, "year", yearRange(year));
-  const budgetRows = [
-    ...(monthBudget.ok ? monthBudget.value.rows : []),
-    ...(yearBudget.ok ? yearBudget.value.rows : []),
-  ];
-  const overCount = budgetRows.filter((row) => row.remaining < 0).length;
+  const monthRows = monthBudget.ok ? monthBudget.value.rows : [];
+  const yearRows = yearBudget.ok ? yearBudget.value.rows : [];
+  const budgetRows = [...monthRows, ...yearRows];
+  // A category can carry both a monthly and an annual limit, so it can appear in both
+  // reports' rows. Count the distinct accounts that are over budget in either report,
+  // not the rows, or such a category would be counted twice.
+  const overAccountIds = new Set(
+    budgetRows.filter((row) => row.remaining < 0).map((row) => row.accountId),
+  );
+  const overCount = overAccountIds.size;
+  const monthOverCount = monthRows.filter((row) => row.remaining < 0).length;
+  // If the monthly report itself has no overruns, an overrun must be coming from the
+  // annual report alone — link to the year view so the click doesn't land on a screen
+  // with nothing red on it.
+  const budgetHref =
+    monthOverCount === 0 && overCount > 0
+      ? `/budget?period=year&year=${year}`
+      : `/budget?period=month&month=${formatYearMonth({ year, month })}`;
 
   return (
     <main className="screen">
@@ -86,7 +99,7 @@ export function DashboardScreen() {
       <p className="budget-summary">
         <Link
           className={overCount > 0 ? "budget-summary-link over" : "budget-summary-link"}
-          to={`/budget?period=month&month=${formatYearMonth({ year, month })}`}
+          to={budgetHref}
         >
           {budgetRows.length === 0
             ? t("dashboard.budgetSetLimits")

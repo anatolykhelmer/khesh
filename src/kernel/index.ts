@@ -12,8 +12,8 @@ export {
 } from "./opening";
 export { validateBook } from "./validate";
 export { normalizeBook } from "./normalize";
-export { accountPath, balance, balanceAsOf, chart, journal, periodBreakdown, periodTotals, trialBalance } from "./queries";
-export type { PeriodBreakdown, PeriodSlice, PeriodTotals } from "./queries";
+export { accountPath, balance, balanceAsOf, budgetReport, chart, journal, periodBreakdown, periodTotals, trialBalance } from "./queries";
+export type { BudgetReport, BudgetRow, PeriodBreakdown, PeriodSlice, PeriodTotals } from "./queries";
 export type {
   Account,
   AccountBalance,

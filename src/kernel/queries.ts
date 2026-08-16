@@ -7,6 +7,8 @@ import type {
   AccountNode,
   AccountType,
   Book,
+  Budget,
+  BudgetPeriod,
   CurrencyCode,
   MinorUnits,
   TrialBalance,
@@ -325,6 +327,101 @@ export function periodBreakdown(
     currencies,
     ancestors,
   });
+}
+
+export type BudgetRow = {
+  accountId: string;
+  name: string;
+  path: string;
+  isGroup: boolean;
+  currency: CurrencyCode;
+  limit: MinorUnits;
+  spent: MinorUnits;
+  remaining: number;
+};
+
+export type BudgetReport = {
+  period: BudgetPeriod;
+  rows: BudgetRow[];
+  unbudgeted: Record<CurrencyCode, MinorUnits>;
+};
+
+/**
+ * A leaf is covered when a limit of the report's period and the leaf's own currency
+ * sits on the leaf itself or on any account above it.
+ */
+function coveredByScope(book: Book, leaf: Account, scope: Set<string> | undefined): boolean {
+  if (!scope) return false;
+  const seen = new Set<string>();
+  let current: Account | undefined = leaf;
+  while (current) {
+    if (seen.has(current.id)) return false;
+    seen.add(current.id);
+    if (scope.has(current.id)) return true;
+    current = current.parentId ? findAccount(book, current.parentId) : undefined;
+  }
+  return false;
+}
+
+export function budgetReport(
+  book: Book,
+  period: BudgetPeriod,
+  range: { from: string; to: string },
+): Result<BudgetReport> {
+  if (!isCalendarDate(range.from)) {
+    return err("ENTRY_DATE_INVALID", `Invalid date ${range.from}`, { date: range.from });
+  }
+  if (!isCalendarDate(range.to)) {
+    return err("ENTRY_DATE_INVALID", `Invalid date ${range.to}`, { date: range.to });
+  }
+
+  const leafAmount = new Map<string, number>();
+  for (const account of book.accounts) {
+    if (account.isPlaceholder || account.type !== "expense") continue;
+    leafAmount.set(account.id, periodSigned(book, account, range));
+  }
+
+  const inPeriod = book.budgets.filter((budget: Budget) => budget.period === period);
+
+  const rows: BudgetRow[] = [];
+  for (const budget of inPeriod) {
+    const account = findAccount(book, budget.accountId);
+    if (!account) continue;
+    const path = accountPath(book, account.id);
+    const spent = subtreeAmount(book, account, budget.currency, leafAmount) as MinorUnits;
+    rows.push({
+      accountId: account.id,
+      name: account.name,
+      path: path.ok ? path.value : account.name,
+      isGroup: account.isPlaceholder,
+      currency: budget.currency,
+      limit: budget.limit,
+      spent,
+      remaining: budget.limit - spent,
+    });
+  }
+  rows.sort((a, b) => b.spent / b.limit - a.spent / a.limit || a.path.localeCompare(b.path));
+
+  const scopeByCurrency = new Map<CurrencyCode, Set<string>>();
+  for (const budget of inPeriod) {
+    const scope = scopeByCurrency.get(budget.currency) ?? new Set<string>();
+    scope.add(budget.accountId);
+    scopeByCurrency.set(budget.currency, scope);
+  }
+
+  const unbudgeted: Record<CurrencyCode, MinorUnits> = {};
+  for (const account of book.accounts) {
+    if (account.isPlaceholder || account.type !== "expense") continue;
+    const amount = leafAmount.get(account.id) ?? 0;
+    if (amount === 0) continue;
+    if (coveredByScope(book, account, scopeByCurrency.get(account.currency))) continue;
+    unbudgeted[account.currency] = ((unbudgeted[account.currency] ?? 0) + amount) as MinorUnits;
+  }
+  for (const code of Object.keys(unbudgeted)) {
+    if (unbudgeted[code] === 0) delete unbudgeted[code];
+  }
+
+  return ok({ period, rows, unbudgeted });
 }
 
 export function journal(

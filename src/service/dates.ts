@@ -42,3 +42,8 @@ export function shiftYearMonth(period: YearMonth, delta: number): YearMonth {
 export function formatYearMonth(period: YearMonth): string {
   return `${period.year}-${String(period.month).padStart(2, "0")}`;
 }
+
+/** First and last calendar-date of the given year, as YYYY-MM-DD strings. */
+export function yearRange(year: number): { from: string; to: string } {
+  return { from: `${year}-01-01`, to: `${year}-12-31` };
+}

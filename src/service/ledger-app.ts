@@ -1,6 +1,7 @@
 import {
   accountPath,
   balance,
+  budgetReport,
   chart,
   createAccount,
   createBook,
@@ -11,6 +12,8 @@ import {
   periodTotals,
   postEntry,
   recordOpeningBalance,
+  removeBudget,
+  setBudget,
   updateAccount,
   updateEntry as kernelUpdateEntry,
   type Account,
@@ -18,6 +21,8 @@ import {
   type AccountNode,
   type AccountType,
   type Book,
+  type BudgetPeriod,
+  type BudgetReport,
   type CurrencyCode,
   type FxSpec,
   type JournalEntry,
@@ -429,6 +434,37 @@ export function createLedgerApp(repo: LedgerRepository) {
       currency?: CurrencyCode,
     ): Result<PeriodBreakdown> {
       return periodBreakdown(book, range, accountId, currency);
+    },
+
+    async setBudget(
+      book: Book,
+      input: {
+        accountId: string;
+        period: BudgetPeriod;
+        currency: CurrencyCode;
+        limit: MinorUnits;
+      },
+    ): Promise<Result<Book>> {
+      const result = setBudget(book, input);
+      if (!result.ok) return result;
+      return commit(repo, result.value);
+    },
+
+    async removeBudget(
+      book: Book,
+      input: { accountId: string; period: BudgetPeriod; currency: CurrencyCode },
+    ): Promise<Result<Book>> {
+      const result = removeBudget(book, input);
+      if (!result.ok) return result;
+      return commit(repo, result.value);
+    },
+
+    budgetReport(
+      book: Book,
+      period: BudgetPeriod,
+      range: { from: string; to: string },
+    ): Result<BudgetReport> {
+      return budgetReport(book, period, range);
     },
 
     accountTree(book: Book): Result<AccountNode[]> {

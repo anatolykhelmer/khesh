@@ -4,6 +4,7 @@ import {
   formatYearMonth,
   monthRange,
   shiftYearMonth,
+  yearRange,
 } from "../../src/service/dates";
 
 describe("currentYearMonth", () => {
@@ -55,5 +56,11 @@ describe("formatYearMonth", () => {
 
   it("leaves a two-digit month alone", () => {
     expect(formatYearMonth({ year: 2026, month: 11 })).toBe("2026-11");
+  });
+});
+
+describe("yearRange", () => {
+  it("spans the whole calendar year", () => {
+    expect(yearRange(2026)).toEqual({ from: "2026-01-01", to: "2026-12-31" });
   });
 });

@@ -1,4 +1,4 @@
-import { createAccount } from "../../src/kernel/accounts";
+import { createAccount, deleteAccount } from "../../src/kernel/accounts";
 import { removeBudget, setBudget } from "../../src/kernel/budgets";
 import { createBook } from "../../src/kernel/create-book";
 import type { AccountType, Book } from "../../src/kernel/types";
@@ -157,5 +157,21 @@ describe("removeBudget", () => {
     expect(
       unwrapErr(removeBudget(book, { accountId: food, period: "month", currency: "ILS" })).code,
     ).toBe("BUDGET_NOT_FOUND");
+  });
+});
+
+describe("deleteAccount and budgets", () => {
+  it("drops the limits of the account it deletes", () => {
+    const { book, food, expenses } = fixture();
+    let next = unwrap(
+      setBudget(book, { accountId: food, period: "month", currency: "ILS", limit: 400000 }),
+    );
+    next = unwrap(
+      setBudget(next, { accountId: expenses, period: "month", currency: "ILS", limit: 900000 }),
+    );
+    const deleted = unwrap(deleteAccount(next, food));
+    expect(deleted.budgets).toEqual([
+      { accountId: expenses, period: "month", currency: "ILS", limit: 900000 },
+    ]);
   });
 });

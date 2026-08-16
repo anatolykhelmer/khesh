@@ -2,6 +2,7 @@ import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { validateBook } from "../../src/kernel/validate";
+import type { Book } from "../../src/kernel/types";
 import { unwrap, unwrapErr } from "../helpers";
 
 describe("validateBook", () => {
@@ -110,5 +111,100 @@ describe("validateBook", () => {
     expect(error.code).toBe("BOOK_INVALID");
     const codes = (error.details?.violations as { code: string }[]).map((v) => v.code);
     expect(codes.length).toBeGreaterThan(1);
+  });
+});
+
+describe("validateBook budgets", () => {
+  function fixture() {
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+
+    book = unwrap(
+      createAccount(book, {
+        parentId: null,
+        name: "Expenses",
+        type: "expense",
+        currency: "ILS",
+        isPlaceholder: true,
+      }),
+    );
+    const expensesId = book.accounts[book.accounts.length - 1].id;
+
+    book = unwrap(
+      createAccount(book, {
+        parentId: expensesId,
+        name: "Food",
+        type: "expense",
+        currency: "ILS",
+        isPlaceholder: false,
+      }),
+    );
+    const foodId = book.accounts[book.accounts.length - 1].id;
+
+    book = unwrap(
+      createAccount(book, {
+        parentId: null,
+        name: "Cash",
+        type: "asset",
+        currency: "ILS",
+        isPlaceholder: false,
+      }),
+    );
+    const cashId = book.accounts[book.accounts.length - 1].id;
+
+    return { book, food: foodId, cash: cashId };
+  }
+
+  function withBudgets(book: Book, budgets: unknown[]): Book {
+    return { ...book, budgets: budgets as Book["budgets"] };
+  }
+
+  it("rejects a limit on an unknown account", () => {
+    const { book } = fixture();
+    const violated = unwrapErr(
+      validateBook(
+        withBudgets(book, [
+          { accountId: "nope", period: "month", currency: "ILS", limit: 100 },
+        ]),
+      ),
+    );
+    expect(violated.code).toBe("BOOK_INVALID");
+    expect(JSON.stringify(violated.details)).toContain("ACCOUNT_NOT_FOUND");
+  });
+
+  it("rejects a limit on a non-expense account", () => {
+    const { book, cash } = fixture();
+    const violated = unwrapErr(
+      validateBook(
+        withBudgets(book, [
+          { accountId: cash, period: "month", currency: "ILS", limit: 100 },
+        ]),
+      ),
+    );
+    expect(JSON.stringify(violated.details)).toContain("ACCOUNT_TYPE_MISMATCH");
+  });
+
+  it("rejects a duplicate key", () => {
+    const { book, food } = fixture();
+    const violated = unwrapErr(
+      validateBook(
+        withBudgets(book, [
+          { accountId: food, period: "month", currency: "ILS", limit: 100 },
+          { accountId: food, period: "month", currency: "ILS", limit: 200 },
+        ]),
+      ),
+    );
+    expect(JSON.stringify(violated.details)).toContain("BUDGET_DUPLICATE");
+  });
+
+  it("rejects a non-positive limit", () => {
+    const { book, food } = fixture();
+    const violated = unwrapErr(
+      validateBook(
+        withBudgets(book, [
+          { accountId: food, period: "month", currency: "ILS", limit: 0 },
+        ]),
+      ),
+    );
+    expect(JSON.stringify(violated.details)).toContain("BUDGET_LIMIT_INVALID");
   });
 });

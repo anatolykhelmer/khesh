@@ -176,6 +176,64 @@ export function validateBook(book: Book): Result<true> {
     }
   }
 
+  if (!Array.isArray(book.budgets)) {
+    violations.push({ code: "BOOK_INVALID", message: "Book budgets must be an array" });
+  } else {
+    const budgetKeys = new Set<string>();
+    for (const budget of book.budgets) {
+      if (!budget || typeof budget !== "object") {
+        violations.push({ code: "BOOK_INVALID", message: "Invalid budget element" });
+        continue;
+      }
+      const account = book.accounts.find(
+        (item) => isAccountRecord(item) && item.id === budget.accountId,
+      );
+      if (!account) {
+        violations.push({
+          code: "ACCOUNT_NOT_FOUND",
+          message: "Budget references a missing account",
+          details: { accountId: budget.accountId },
+        });
+      } else if (account.type !== "expense") {
+        violations.push({
+          code: "ACCOUNT_TYPE_MISMATCH",
+          message: "Budgets cover expense accounts only",
+          details: { accountId: budget.accountId },
+        });
+      }
+      if (budget.period !== "month" && budget.period !== "year") {
+        violations.push({
+          code: "BOOK_INVALID",
+          message: `Invalid budget period ${String(budget.period)}`,
+          details: { accountId: budget.accountId },
+        });
+      }
+      if (!isCurrencyCode(budget.currency)) {
+        violations.push({
+          code: "INVALID_CURRENCY_CODE",
+          message: `Invalid budget currency ${String(budget.currency)}`,
+          details: { accountId: budget.accountId },
+        });
+      }
+      if (!Number.isInteger(budget.limit) || budget.limit <= 0) {
+        violations.push({
+          code: "BUDGET_LIMIT_INVALID",
+          message: "Limit must be an integer greater than zero",
+          details: { accountId: budget.accountId, limit: budget.limit },
+        });
+      }
+      const key = `${budget.accountId}|${String(budget.period)}|${String(budget.currency)}`;
+      if (budgetKeys.has(key)) {
+        violations.push({
+          code: "BUDGET_DUPLICATE",
+          message: "Duplicate budget for the same account, period and currency",
+          details: { accountId: budget.accountId },
+        });
+      }
+      budgetKeys.add(key);
+    }
+  }
+
   if (violations.length > 0) {
     return err("BOOK_INVALID", "Book failed validation", { violations });
   }

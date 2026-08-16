@@ -187,5 +187,7 @@ export function deleteAccount(book: Book, id: string): Result<Book> {
   }
   const next = cloneBook(book);
   next.accounts = next.accounts.filter((item) => item.id !== id);
+  // A limit without its account is meaningless, so it goes with the account.
+  next.budgets = next.budgets.filter((budget) => budget.accountId !== id);
   return ok(next);
 }

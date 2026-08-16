@@ -172,6 +172,8 @@
     "INVALID_CURRENCY_CODE": "Choose a valid currency",
     "BOOK_NAME_INVALID": "Book name is invalid",
     "BOOK_INVALID": "That data failed validation — it may be corrupt",
+    "BUDGET_LIMIT_INVALID": "Enter a limit greater than zero",
+    "BUDGET_NOT_FOUND": "That limit no longer exists",
     "STORAGE_UNAVAILABLE": "Storage is unavailable",
     "STORAGE_WRITE_FAILED": "Couldn't save — try again",
     "FILE_READ_FAILED": "Couldn't read that file — try choosing it again",

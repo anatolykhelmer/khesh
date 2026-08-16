@@ -4,6 +4,7 @@ export { ok, err } from "./result";
 export { createBook } from "./create-book";
 export { createAccount, updateAccount, deleteAccount } from "./accounts";
 export { deleteEntry, postEntry, updateEntry } from "./journal";
+export { removeBudget, setBudget } from "./budgets";
 export {
   recordOpeningBalance,
   isOpeningBalancesGroupId,

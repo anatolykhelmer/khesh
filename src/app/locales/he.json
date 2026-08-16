@@ -172,6 +172,8 @@
     "INVALID_CURRENCY_CODE": "נא לבחור מטבע תקין",
     "BOOK_NAME_INVALID": "שם הספר אינו תקין",
     "BOOK_INVALID": "האימות נכשל — ייתכן שהנתונים פגומים",
+    "BUDGET_LIMIT_INVALID": "יש להזין מגבלה גדולה מאפס",
+    "BUDGET_NOT_FOUND": "המגבלה כבר לא קיימת",
     "STORAGE_UNAVAILABLE": "האחסון אינו זמין",
     "STORAGE_WRITE_FAILED": "השמירה נכשלה — נסה שוב",
     "FILE_READ_FAILED": "קריאת הקובץ נכשלה — נסה לבחור אותו שוב",

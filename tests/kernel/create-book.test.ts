@@ -25,4 +25,9 @@ describe("createBook", () => {
       "INVALID_CURRENCY_CODE",
     );
   });
+
+  it("seeds an empty budget list", () => {
+    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    expect(book.budgets).toEqual([]);
+  });
 });

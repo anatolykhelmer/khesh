@@ -146,4 +146,35 @@ describe("json codec", () => {
     const error = unwrapErr(jsonToBook(raw));
     expect(error.code).toBe("BOOK_INVALID");
   });
+
+  it("gives a pre-budget snapshot an empty budget list", () => {
+    const legacy = JSON.stringify({
+      schemaVersion: 1,
+      name: "Home",
+      homeCurrency: "ILS",
+      accounts: [],
+      journal: [],
+    });
+    expect(unwrap(jsonToBook(legacy)).budgets).toEqual([]);
+  });
+
+  it("round-trips budgets", () => {
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    book = unwrap(
+      createAccount(book, {
+        parentId: null,
+        name: "Food",
+        type: "expense",
+        currency: "ILS",
+        isPlaceholder: false,
+      }),
+    );
+    book = {
+      ...book,
+      budgets: [
+        { accountId: book.accounts[0].id, period: "month", currency: "ILS", limit: 400000 },
+      ],
+    };
+    expect(unwrap(jsonToBook(bookToJson(book)))).toEqual(book);
+  });
 });

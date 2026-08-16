@@ -21,5 +21,6 @@ export function createBook(input: {
     homeCurrency: input.homeCurrency,
     accounts: [],
     journal: [],
+    budgets: [],
   });
 }

@@ -10,6 +10,16 @@ export interface Book {
   homeCurrency: CurrencyCode;
   accounts: Account[];
   journal: JournalEntry[];
+  budgets: Budget[];
+}
+
+export type BudgetPeriod = "month" | "year";
+
+export interface Budget {
+  accountId: string;
+  period: BudgetPeriod;
+  currency: CurrencyCode;
+  limit: MinorUnits;
 }
 
 export interface Account {

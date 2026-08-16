@@ -4,6 +4,7 @@ import { importJson } from "../../src/adapters/import-book";
 import { createBook } from "../../src/kernel/create-book";
 import { bookToJson } from "../../src/adapters/json-codec";
 import { unwrap, unwrapErr } from "../helpers";
+import type { Book } from "../../src/kernel/types";
 
 describe("IndexedDbRepository", () => {
   it("load returns null when empty", async () => {
@@ -33,5 +34,18 @@ describe("IndexedDbRepository", () => {
       ),
     );
     expect(unwrap(await repo.load())?.name).toBe("Other");
+  });
+
+  it("loads a pre-budget snapshot with an empty budget list", async () => {
+    const repo = createIndexedDbRepository("khesh-test-legacy-budgets");
+    const legacy = {
+      schemaVersion: 1,
+      name: "Home",
+      homeCurrency: "ILS",
+      accounts: [],
+      journal: [],
+    };
+    unwrap(await repo.save(legacy as unknown as Book));
+    expect(unwrap(await repo.load())?.budgets).toEqual([]);
   });
 });

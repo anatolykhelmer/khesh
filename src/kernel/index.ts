@@ -10,6 +10,7 @@ export {
   isOpeningBalancesLeafId,
 } from "./opening";
 export { validateBook } from "./validate";
+export { normalizeBook } from "./normalize";
 export { accountPath, balance, balanceAsOf, chart, journal, periodBreakdown, periodTotals, trialBalance } from "./queries";
 export type { PeriodBreakdown, PeriodSlice, PeriodTotals } from "./queries";
 export type {
@@ -18,6 +19,8 @@ export type {
   AccountNode,
   AccountType,
   Book,
+  Budget,
+  BudgetPeriod,
   CurrencyCode,
   FxSpec,
   JournalEntry,

@@ -1,6 +1,7 @@
 import { err, ok, type Result } from "../kernel/result";
 import type { Account, Book, JournalEntry, Posting } from "../kernel/types";
 import { validateBook } from "../kernel/validate";
+import { normalizeBook } from "../kernel/normalize";
 
 const ACCOUNT_TYPES = new Set<Account["type"]>([
   "asset",
@@ -63,7 +64,8 @@ function isBookShape(value: unknown): value is Book {
     Array.isArray(value.accounts) &&
     value.accounts.every(isAccountShape) &&
     Array.isArray(value.journal) &&
-    value.journal.every(isJournalEntryShape)
+    value.journal.every(isJournalEntryShape) &&
+    (!("budgets" in value) || Array.isArray(value.budgets))
   );
 }
 
@@ -86,7 +88,8 @@ export function jsonToBook(raw: string): Result<Book> {
       schemaVersion: parsed.schemaVersion,
     });
   }
-  const validated = validateBook(parsed);
+  const book = normalizeBook(parsed);
+  const validated = validateBook(book);
   if (!validated.ok) return validated;
-  return ok(parsed);
+  return ok(book);
 }

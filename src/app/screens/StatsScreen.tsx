@@ -2,6 +2,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { monthRange, shiftYearMonth } from "../../service/dates";
 import { pieArcs } from "../expense-pie";
+import { Ltr } from "../components/Ltr";
 import { currencySymbol } from "../currencies";
 import { formatMinor, monthLabel } from "../format";
 import { useLedger } from "../ledger-context";
@@ -28,8 +29,8 @@ export function StatsScreen() {
   if (!accountId) {
     return (
       <main className="screen">
-        <h1>Statistics</h1>
-        <p className="muted">Could not load statistics.</p>
+        <h1>{t("stats.title")}</h1>
+        <p className="muted">{t("stats.couldNotLoad")}</p>
       </main>
     );
   }
@@ -45,8 +46,8 @@ export function StatsScreen() {
   if (!result.ok) {
     return (
       <main className="screen">
-        <h1>Statistics</h1>
-        <p className="muted">Could not load statistics.</p>
+        <h1>{t("stats.title")}</h1>
+        <p className="muted">{t("stats.couldNotLoad")}</p>
       </main>
     );
   }
@@ -57,8 +58,8 @@ export function StatsScreen() {
 
   return (
     <main className="screen">
-      <h1>Statistics</h1>
-      <nav className="crumb" aria-label="Account">
+      <h1>{t("stats.title")}</h1>
+      <nav className="crumb" aria-label={t("stats.breadcrumbLabel")}>
         {breakdown.ancestors.map((node, index) => (
           <span key={node.id}>
             {index > 0 ? " › " : null}
@@ -80,7 +81,7 @@ export function StatsScreen() {
         <button
           type="button"
           className="twisty"
-          aria-label="Previous month"
+          aria-label={t("common.previousMonth")}
           onClick={() => write({ ...state, period: shiftYearMonth(state.period, -1) })}
         >
           ◂
@@ -91,7 +92,7 @@ export function StatsScreen() {
         <button
           type="button"
           className="twisty"
-          aria-label="Next month"
+          aria-label={t("common.nextMonth")}
           onClick={() => write({ ...state, period: shiftYearMonth(state.period, 1) })}
         >
           ▸
@@ -113,7 +114,9 @@ export function StatsScreen() {
       ) : null}
       {showPie ? (
         <>
-          <p className="stats-total">{formatMinor(breakdown.total, breakdown.currency)}</p>
+          <p className="stats-total">
+            <Ltr>{formatMinor(breakdown.total, breakdown.currency)}</Ltr>
+          </p>
           <svg className="stats-pie" viewBox="0 0 200 200" aria-hidden="true">
             {arcs.map((arc, index) => (
               <path
@@ -130,21 +133,28 @@ export function StatsScreen() {
                 <button
                   type="button"
                   className="stats-row"
-                  aria-label={`${child.name}, ${formatMinor(child.amount, breakdown.currency)}`}
+                  aria-label={t("stats.rowLabel", {
+                    name: child.name,
+                    amount: formatMinor(child.amount, breakdown.currency),
+                  })}
                   onClick={() => write({ ...state, accountId: child.id })}
                 >
                   <span className="swatch" style={{ background: PIE_COLORS[index % PIE_COLORS.length] }} />
                   <span>{child.name}</span>
-                  <span className="muted">{formatMinor(child.amount, breakdown.currency)}</span>
+                  <span className="muted">
+                    <Ltr>{formatMinor(child.amount, breakdown.currency)}</Ltr>
+                  </span>
                 </button>
               </li>
             ))}
           </ul>
         </>
       ) : breakdown.total > 0 ? (
-        <p className="stats-total">{formatMinor(breakdown.total, breakdown.currency)}</p>
+        <p className="stats-total">
+          <Ltr>{formatMinor(breakdown.total, breakdown.currency)}</Ltr>
+        </p>
       ) : (
-        <p className="muted">No expenses this month.</p>
+        <p className="muted">{t("stats.empty")}</p>
       )}
     </main>
   );

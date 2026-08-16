@@ -591,11 +591,11 @@ dialog.picker .twisty {
   background: transparent;
   font: inherit;
   color: inherit;
-  text-align: left;
+  text-align: start;
 }
 
 .stats-row .muted {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .swatch {

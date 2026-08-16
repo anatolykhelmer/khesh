@@ -76,6 +76,13 @@
     "deleteConfirm": "למחוק את המגבלה על {{name}}?",
     "backToBudget": "חזרה לתקציב"
   },
+  "stats": {
+    "title": "סטטיסטיקה",
+    "couldNotLoad": "לא ניתן היה לטעון את הסטטיסטיקה.",
+    "breadcrumbLabel": "חשבון",
+    "empty": "אין הוצאות החודש.",
+    "rowLabel": "{{name}}, {{amount}}"
+  },
   "settings": {
     "title": "הגדרות",
     "exportButton": "ייצוא גיבוי",

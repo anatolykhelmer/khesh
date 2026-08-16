@@ -76,6 +76,13 @@
     "deleteConfirm": "Delete the limit on {{name}}?",
     "backToBudget": "Back to budget"
   },
+  "stats": {
+    "title": "Statistics",
+    "couldNotLoad": "Could not load statistics.",
+    "breadcrumbLabel": "Account",
+    "empty": "No expenses this month.",
+    "rowLabel": "{{name}}, {{amount}}"
+  },
   "settings": {
     "title": "Settings",
     "exportButton": "Export backup",

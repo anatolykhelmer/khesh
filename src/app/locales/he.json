@@ -42,7 +42,39 @@
     "income": "הכנסות",
     "expenses": "הוצאות",
     "viewStats": "סטטיסטיקה",
-    "settings": "הגדרות"
+    "settings": "הגדרות",
+    "budgetSetLimits": "תקציב: הגדרת מגבלות",
+    "budgetOnPlan": "תקציב: בתוך התוכנית",
+    "budgetOver": "תקציב: {{count}} קטגוריות בחריגה"
+  },
+  "budget": {
+    "title": "תקציב",
+    "couldNotLoad": "לא ניתן לטעון את התקציב.",
+    "periodMonth": "חודשי",
+    "periodYear": "שנתי",
+    "previousPeriod": "התקופה הקודמת",
+    "nextPeriod": "התקופה הבאה",
+    "empty": "עדיין לא הוגדרו מגבלות.",
+    "remaining": "נותרו",
+    "over": "חריגה של",
+    "unbudgeted": "הוצאות ללא מגבלה:",
+    "addLimit": "הוספת מגבלה",
+    "backToDashboard": "חזרה ללוח"
+  },
+  "budgetForm": {
+    "newTitle": "מגבלה חדשה",
+    "editTitle": "עריכת מגבלה",
+    "categoryLabel": "קטגוריה",
+    "categoryPlaceholder": "בחירת קטגוריה",
+    "periodLabel": "תקופה",
+    "currencyLabel": "מטבע",
+    "amountLabel": "סכום המגבלה",
+    "save": "שמירת מגבלה",
+    "replacesExisting": "לקטגוריה הזו כבר יש מגבלה לתקופה ולמטבע האלה — השמירה תחליף את הסכום.",
+    "notFound": "המגבלה כבר לא קיימת.",
+    "deleteLimit": "מחיקת מגבלה",
+    "deleteConfirm": "למחוק את המגבלה על {{name}}?",
+    "backToBudget": "חזרה לתקציב"
   },
   "settings": {
     "title": "הגדרות",

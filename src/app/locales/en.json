@@ -42,7 +42,39 @@
     "income": "Income",
     "expenses": "Expenses",
     "viewStats": "Statistics",
-    "settings": "Settings"
+    "settings": "Settings",
+    "budgetSetLimits": "Budget: set limits",
+    "budgetOnPlan": "Budget: on plan",
+    "budgetOver": "Budget: {{count}} categories over"
+  },
+  "budget": {
+    "title": "Budget",
+    "couldNotLoad": "Could not load the budget.",
+    "periodMonth": "Monthly",
+    "periodYear": "Annual",
+    "previousPeriod": "Previous period",
+    "nextPeriod": "Next period",
+    "empty": "No limits set yet.",
+    "remaining": "Remaining",
+    "over": "Over by",
+    "unbudgeted": "Unbudgeted spending:",
+    "addLimit": "Add limit",
+    "backToDashboard": "Back to dashboard"
+  },
+  "budgetForm": {
+    "newTitle": "New limit",
+    "editTitle": "Edit limit",
+    "categoryLabel": "Category",
+    "categoryPlaceholder": "Choose a category",
+    "periodLabel": "Period",
+    "currencyLabel": "Currency",
+    "amountLabel": "Limit amount",
+    "save": "Save limit",
+    "replacesExisting": "This category already has a limit for that period and currency — saving replaces its amount.",
+    "notFound": "That limit no longer exists.",
+    "deleteLimit": "Delete limit",
+    "deleteConfirm": "Delete the limit on {{name}}?",
+    "backToBudget": "Back to budget"
   },
   "settings": {
     "title": "Settings",

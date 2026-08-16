@@ -1,4 +1,4 @@
-import type { BudgetPeriod } from "../kernel";
+import type { BudgetPeriod, CurrencyCode } from "../kernel";
 import {
   currentYearMonth,
   formatYearMonth,
@@ -37,6 +37,21 @@ export function toBudgetParams(state: BudgetState): URLSearchParams {
   params.set("period", state.period);
   if (state.period === "year") params.set("year", String(state.year));
   else params.set("month", formatYearMonth({ year: state.year, month: state.month }));
+  return params;
+}
+
+/**
+ * The edit screen's URL carries the budget's own key *and* the period the user was
+ * viewing, so leaving that screen can put them back where they came from.
+ * The two share the `period` param: a report only ever lists budgets of its own period.
+ */
+export function toBudgetEditParams(
+  state: BudgetState,
+  key: { accountId: string; currency: CurrencyCode },
+): URLSearchParams {
+  const params = toBudgetParams(state);
+  params.set("account", key.accountId);
+  params.set("currency", key.currency);
   return params;
 }
 

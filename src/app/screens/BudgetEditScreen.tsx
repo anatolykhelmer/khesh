@@ -2,9 +2,9 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import type { BudgetPeriod } from "../../kernel";
 import { errorMessage } from "../../service/error-messages";
 import { majorToMinor, minorToMajor } from "../../service/money";
+import { parseBudgetState, toBudgetParams } from "../budget-state";
 import { accountPathLabel } from "../format";
 import { useLedger } from "../ledger-context";
 
@@ -15,8 +15,12 @@ export function BudgetEditScreen() {
   const { book, app, setBook, setError } = useLedger();
 
   const accountId = searchParams.get("account") ?? "";
-  const period: BudgetPeriod = searchParams.get("period") === "year" ? "year" : "month";
   const currency = searchParams.get("currency") ?? "";
+  // The URL carries the period the user was viewing on /budget; a report only lists
+  // budgets of its own period, so that same value is this budget's period too.
+  const viewed = parseBudgetState(searchParams);
+  const period = viewed.period;
+  const backTo = `/budget?${toBudgetParams(viewed).toString()}`;
 
   const existing = book?.budgets.find(
     (budget) =>
@@ -37,7 +41,7 @@ export function BudgetEditScreen() {
       <main className="screen">
         <h1>{t("budgetForm.editTitle")}</h1>
         <p className="muted">{t("budgetForm.notFound")}</p>
-        <Link className="back-link" to="/budget">
+        <Link className="back-link" to={backTo}>
           {t("budgetForm.backToBudget")}
         </Link>
       </main>
@@ -60,7 +64,7 @@ export function BudgetEditScreen() {
     }
     setError(null);
     setBook(result.value);
-    navigate(`/budget?period=${period}`);
+    navigate(backTo);
   }
 
   async function onDelete() {
@@ -75,7 +79,7 @@ export function BudgetEditScreen() {
     }
     setError(null);
     setBook(result.value);
-    navigate(`/budget?period=${period}`);
+    navigate(backTo);
   }
 
   return (
@@ -111,10 +115,12 @@ export function BudgetEditScreen() {
           {t("budgetForm.save")}
         </button>
       </form>
-      <button type="button" className="danger" disabled={busy} onClick={onDelete}>
-        {t("budgetForm.deleteLimit")}
-      </button>
-      <Link className="back-link" to="/budget">
+      <div className="button-row">
+        <button type="button" className="danger" disabled={busy} onClick={onDelete}>
+          {t("budgetForm.deleteLimit")}
+        </button>
+      </div>
+      <Link className="back-link" to={backTo}>
         {t("budgetForm.backToBudget")}
       </Link>
     </main>

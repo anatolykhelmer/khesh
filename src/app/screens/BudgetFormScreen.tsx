@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { BudgetPeriod, CurrencyCode } from "../../kernel";
 import { errorMessage } from "../../service/error-messages";
 import { majorToMinor } from "../../service/money";
+import { parseBudgetState, setPeriodKind, toBudgetParams } from "../budget-state";
 import { AccountPicker } from "../components/AccountPicker";
 import { CURRENCIES } from "../currencies";
 import { useLedger } from "../ledger-context";
@@ -15,10 +16,12 @@ export function BudgetFormScreen() {
   const navigate = useNavigate();
   const { book, app, setBook, setError } = useLedger();
 
+  // The period the user was viewing on /budget, carried in the URL so leaving this
+  // screen returns them to it rather than to the current month.
+  const viewed = parseBudgetState(searchParams);
+
   const [accountId, setAccountId] = useState<string | null>(null);
-  const [period, setPeriod] = useState<BudgetPeriod>(
-    searchParams.get("period") === "year" ? "year" : "month",
-  );
+  const [period, setPeriod] = useState<BudgetPeriod>(viewed.period);
   const [currency, setCurrency] = useState<CurrencyCode>(book?.homeCurrency ?? "ILS");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
@@ -64,7 +67,9 @@ export function BudgetFormScreen() {
     }
     setError(null);
     setBook(result.value);
-    navigate(`/budget?period=${period}`);
+    // Land on the period the new limit belongs to — showing the month view after
+    // creating an annual limit would land on a screen the limit isn't on.
+    navigate(`/budget?${toBudgetParams(setPeriodKind(viewed, period)).toString()}`);
   }
 
   return (
@@ -131,7 +136,7 @@ export function BudgetFormScreen() {
           {t("budgetForm.save")}
         </button>
       </form>
-      <Link className="back-link" to="/budget">
+      <Link className="back-link" to={`/budget?${toBudgetParams(viewed).toString()}`}>
         {t("budgetForm.backToBudget")}
       </Link>
     </main>

@@ -4,6 +4,7 @@ import {
   parseBudgetState,
   setPeriodKind,
   shiftBudgetState,
+  toBudgetEditParams,
   toBudgetParams,
 } from "../../src/app/budget-state";
 
@@ -59,6 +60,28 @@ describe("toBudgetParams", () => {
     expect(toBudgetParams({ period: "year", year: 2026, month: 3 }).toString()).toBe(
       "period=year&year=2026",
     );
+  });
+});
+
+describe("toBudgetEditParams", () => {
+  it("carries the viewed month alongside the budget's key", () => {
+    const params = toBudgetEditParams(
+      { period: "month", year: 2026, month: 3 },
+      { accountId: "acc-1", currency: "ILS" },
+    );
+    expect(parseBudgetState(params, NOW)).toEqual({ period: "month", year: 2026, month: 3 });
+    expect(params.get("account")).toBe("acc-1");
+    expect(params.get("currency")).toBe("ILS");
+  });
+
+  it("carries the viewed year alongside the budget's key", () => {
+    const params = toBudgetEditParams(
+      { period: "year", year: 2024, month: 3 },
+      { accountId: "acc-2", currency: "USD" },
+    );
+    expect(parseBudgetState(params, NOW)).toEqual({ period: "year", year: 2024, month: 8 });
+    expect(params.get("account")).toBe("acc-2");
+    expect(params.get("currency")).toBe("USD");
   });
 });
 

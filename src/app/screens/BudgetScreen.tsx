@@ -5,6 +5,7 @@ import {
   parseBudgetState,
   setPeriodKind,
   shiftBudgetState,
+  toBudgetEditParams,
   toBudgetParams,
   type BudgetState,
 } from "../budget-state";
@@ -88,9 +89,8 @@ export function BudgetScreen() {
           {report.rows.map((row) => {
             const used = Math.max(0, Math.min(100, Math.round((row.spent / row.limit) * 100)));
             const over = row.remaining < 0;
-            const to = `/budget/edit?${new URLSearchParams({
-              account: row.accountId,
-              period: state.period,
+            const to = `/budget/edit?${toBudgetEditParams(state, {
+              accountId: row.accountId,
               currency: row.currency,
             }).toString()}`;
             return (
@@ -120,7 +120,10 @@ export function BudgetScreen() {
           {t("budget.unbudgeted")} <Ltr>{formatMinor(amount, currency)}</Ltr>
         </p>
       ))}
-      <Link className="secondary link-button budget-add" to={`/budget/new?period=${state.period}`}>
+      <Link
+        className="secondary link-button budget-add"
+        to={`/budget/new?${toBudgetParams(state).toString()}`}
+      >
         {t("budget.addLimit")}
       </Link>
       <Link className="back-link" to="/dashboard">

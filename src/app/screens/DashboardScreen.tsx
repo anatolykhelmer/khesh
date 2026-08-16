@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { currentYearMonth, formatYearMonth, monthRange } from "../../service/dates";
+import { currentYearMonth, formatYearMonth, monthRange, yearRange } from "../../service/dates";
 import { formatMinor, monthLabel } from "../format";
 import { currencySymbol } from "../currencies";
 import { Ltr } from "../components/Ltr";
@@ -41,6 +41,14 @@ export function DashboardScreen() {
       })
     : [];
 
+  const monthBudget = app.budgetReport(currentBook, "month", range);
+  const yearBudget = app.budgetReport(currentBook, "year", yearRange(year));
+  const budgetRows = [
+    ...(monthBudget.ok ? monthBudget.value.rows : []),
+    ...(yearBudget.ok ? yearBudget.value.rows : []),
+  ];
+  const overCount = budgetRows.filter((row) => row.remaining < 0).length;
+
   return (
     <main className="screen">
       <div className="screen-head">
@@ -75,6 +83,18 @@ export function DashboardScreen() {
           ▸
         </button>
       </div>
+      <p className="budget-summary">
+        <Link
+          className={overCount > 0 ? "budget-summary-link over" : "budget-summary-link"}
+          to={`/budget?period=month&month=${formatYearMonth({ year, month })}`}
+        >
+          {budgetRows.length === 0
+            ? t("dashboard.budgetSetLimits")
+            : overCount > 0
+              ? t("dashboard.budgetOver", { count: overCount })
+              : t("dashboard.budgetOnPlan")}
+        </Link>
+      </p>
       {rows.length === 0 ? (
         <p className="muted">{t("dashboard.couldNotLoadTotals")}</p>
       ) : (

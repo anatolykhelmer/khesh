@@ -686,3 +686,18 @@ dialog.picker .twisty {
 .budget-add {
   margin-top: 16px;
 }
+
+.budget-summary {
+  text-align: center;
+  margin: 0 0 12px;
+}
+
+.budget-summary-link {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.budget-summary-link.over {
+  color: var(--over);
+  font-weight: 600;
+}

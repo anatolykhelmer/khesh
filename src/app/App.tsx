@@ -6,6 +6,8 @@ import { useLedger } from "./ledger-context";
 import { AccountDetailScreen } from "./screens/AccountDetailScreen";
 import { AccountFormScreen } from "./screens/AccountFormScreen";
 import { AccountsScreen } from "./screens/AccountsScreen";
+import { BudgetEditScreen } from "./screens/BudgetEditScreen";
+import { BudgetFormScreen } from "./screens/BudgetFormScreen";
 import { BudgetScreen } from "./screens/BudgetScreen";
 import { DashboardScreen } from "./screens/DashboardScreen";
 import { EntryDetailScreen } from "./screens/EntryDetailScreen";
@@ -23,6 +25,8 @@ function Shell() {
           <Route path="/dashboard" element={<DashboardScreen />} />
           <Route path="/stats" element={<StatsScreen />} />
           <Route path="/budget" element={<BudgetScreen />} />
+          <Route path="/budget/new" element={<BudgetFormScreen />} />
+          <Route path="/budget/edit" element={<BudgetEditScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
           <Route path="/accounts" element={<AccountsScreen />} />
           <Route path="/accounts/new" element={<AccountFormScreen />} />

@@ -32,6 +32,23 @@ export function siblingNameTaken(
   );
 }
 
+/**
+ * Walks parent links upward from `startId`, yielding each ancestor nearest-first.
+ * The starting account is not yielded. Stops on a repeat visit, so a book that
+ * skipped validation and holds a parent cycle cannot spin here forever.
+ */
+export function* ancestorsOf(book: Book, startId: string): Generator<Account> {
+  const seen = new Set<string>([startId]);
+  let current = findAccount(book, startId)?.parentId ?? null;
+  while (current !== null && !seen.has(current)) {
+    seen.add(current);
+    const account = findAccount(book, current);
+    if (!account) return;
+    yield account;
+    current = account.parentId;
+  }
+}
+
 export function wouldCreateCycle(book: Book, accountId: string, newParentId: string): boolean {
   let current: string | null = newParentId;
   const seen = new Set<string>();

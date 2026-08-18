@@ -1,4 +1,4 @@
-import { findAccount } from "./book-utils";
+import { ancestorsOf, findAccount } from "./book-utils";
 import { isCalendarDate } from "./dates";
 import { err, ok, type Result } from "./result";
 import type {
@@ -58,15 +58,8 @@ function descendants(book: Book, rootId: string): Account[] {
 export function accountPath(book: Book, id: string): Result<string> {
   const account = findAccount(book, id);
   if (!account) return err("ACCOUNT_NOT_FOUND", "Account not found", { id });
-  const names: string[] = [];
-  let current: Account | undefined = account;
-  const seen = new Set<string>();
-  while (current) {
-    if (seen.has(current.id)) break;
-    seen.add(current.id);
-    names.unshift(current.name);
-    current = current.parentId ? findAccount(book, current.parentId) : undefined;
-  }
+  const names = [account.name];
+  for (const ancestor of ancestorsOf(book, id)) names.unshift(ancestor.name);
   return ok(names.join(":"));
 }
 
@@ -311,10 +304,8 @@ export function periodBreakdown(
   }
 
   const ancestors: Array<{ id: string; name: string }> = [];
-  let current = account.parentId ? findAccount(book, account.parentId) : undefined;
-  while (current) {
-    ancestors.unshift({ id: current.id, name: current.name });
-    current = current.parentId ? findAccount(book, current.parentId) : undefined;
+  for (const ancestor of ancestorsOf(book, account.id)) {
+    ancestors.unshift({ id: ancestor.id, name: ancestor.name });
   }
 
   return ok({
@@ -352,13 +343,9 @@ export type BudgetReport = {
  */
 function coveredByScope(book: Book, leaf: Account, scope: Set<string> | undefined): boolean {
   if (!scope) return false;
-  const seen = new Set<string>();
-  let current: Account | undefined = leaf;
-  while (current) {
-    if (seen.has(current.id)) return false;
-    seen.add(current.id);
-    if (scope.has(current.id)) return true;
-    current = current.parentId ? findAccount(book, current.parentId) : undefined;
+  if (scope.has(leaf.id)) return true;
+  for (const ancestor of ancestorsOf(book, leaf.id)) {
+    if (scope.has(ancestor.id)) return true;
   }
   return false;
 }

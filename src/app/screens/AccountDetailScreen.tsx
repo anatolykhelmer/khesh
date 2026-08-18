@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { errorMessage } from "../../service/error-messages";
 import { accountPathLabel, formatAccountBalance } from "../format";
 import { currencySymbol } from "../currencies";
+import { AccountKindChoice } from "../components/AccountKindChoice";
 import { Ltr } from "../components/Ltr";
 import { useLedger } from "../ledger-context";
 
@@ -144,27 +145,7 @@ export function AccountDetailScreen() {
                   ))}
                 </select>
               </label>
-              <fieldset className="choice-group">
-                <legend>{t("common.kind")}</legend>
-                <label className="inline-choice">
-                  <input
-                    type="radio"
-                    name="kind"
-                    checked={!isPlaceholder}
-                    onChange={() => setIsPlaceholder(false)}
-                  />
-                  {t("common.choiceAccount")}
-                </label>
-                <label className="inline-choice">
-                  <input
-                    type="radio"
-                    name="kind"
-                    checked={isPlaceholder}
-                    onChange={() => setIsPlaceholder(true)}
-                  />
-                  {t("common.choiceGroup")}
-                </label>
-              </fieldset>
+              <AccountKindChoice value={isPlaceholder} onChange={setIsPlaceholder} />
             </>
           )}
           <button type="submit" className="primary" disabled={busy || !name.trim()}>

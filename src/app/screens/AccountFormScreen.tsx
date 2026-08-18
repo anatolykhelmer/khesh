@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { CurrencyCode } from "../../kernel";
 import { errorMessage } from "../../service/error-messages";
 import { majorToMinor } from "../../service/money";
+import { AccountKindChoice } from "../components/AccountKindChoice";
 import { CURRENCIES } from "../currencies";
 import { useLedger } from "../ledger-context";
 
@@ -81,27 +82,7 @@ export function AccountFormScreen() {
           {t("accountForm.nameLabel")}
           <input value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
-        <fieldset className="choice-group">
-          <legend>{t("common.kind")}</legend>
-          <label className="inline-choice">
-            <input
-              type="radio"
-              name="kind"
-              checked={!isPlaceholder}
-              onChange={() => setIsPlaceholder(false)}
-            />
-            {t("common.choiceAccount")}
-          </label>
-          <label className="inline-choice">
-            <input
-              type="radio"
-              name="kind"
-              checked={isPlaceholder}
-              onChange={() => setIsPlaceholder(true)}
-            />
-            {t("common.choiceGroup")}
-          </label>
-        </fieldset>
+        <AccountKindChoice value={isPlaceholder} onChange={setIsPlaceholder} />
         {isPlaceholder ? null : (
           <>
             <label>

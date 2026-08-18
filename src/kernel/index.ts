@@ -10,6 +10,7 @@ export {
   isOpeningBalancesGroupId,
   isOpeningBalancesLeafId,
 } from "./opening";
+export { descendants } from "./book-utils";
 export { validateBook } from "./validate";
 export { normalizeBook } from "./normalize";
 export { accountPath, balance, balanceAsOf, budgetReport, chart, journal, periodBreakdown, periodTotals, trialBalance } from "./queries";

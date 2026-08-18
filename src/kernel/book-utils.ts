@@ -33,6 +33,25 @@ export function siblingNameTaken(
 }
 
 /**
+ * Every account below `rootId`, depth-first. Skips accounts already visited, so a
+ * book that skipped validation and holds a parent cycle cannot recurse forever.
+ */
+export function descendants(book: Book, rootId: string): Account[] {
+  const result: Account[] = [];
+  const seen = new Set<string>([rootId]);
+  const walk = (parentId: string) => {
+    for (const account of book.accounts) {
+      if (account.parentId !== parentId || seen.has(account.id)) continue;
+      seen.add(account.id);
+      result.push(account);
+      walk(account.id);
+    }
+  };
+  walk(rootId);
+  return result;
+}
+
+/**
  * Walks parent links upward from `startId`, yielding each ancestor nearest-first.
  * The starting account is not yielded. Stops on a repeat visit, so a book that
  * skipped validation and holds a parent cycle cannot spin here forever.

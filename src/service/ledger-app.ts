@@ -7,6 +7,7 @@ import {
   createBook,
   deleteAccount,
   deleteEntry as kernelDeleteEntry,
+  descendants,
   journal,
   periodBreakdown,
   periodTotals,
@@ -77,19 +78,6 @@ function withoutSystemAccounts(nodes: AccountNode[]): AccountNode[] {
   return nodes
     .filter((node) => !isSystemAccountId(node.id))
     .map((node) => ({ ...node, children: withoutSystemAccounts(node.children) }));
-}
-
-function descendantIds(book: Book, rootId: string): Set<string> {
-  const ids = new Set<string>();
-  const walk = (parentId: string) => {
-    for (const account of book.accounts) {
-      if (account.parentId !== parentId || ids.has(account.id)) continue;
-      ids.add(account.id);
-      walk(account.id);
-    }
-  };
-  walk(rootId);
-  return ids;
 }
 
 function currencyOf(book: Book, accountId: string): string | null {
@@ -485,7 +473,9 @@ export function createLedgerApp(repo: LedgerRepository) {
         ? book.accounts.find((a) => a.id === input.forAccountId)
         : undefined;
       const type = subject?.type ?? input?.type;
-      const blocked = subject ? descendantIds(book, subject.id) : new Set<string>();
+      const blocked = subject
+        ? new Set(descendants(book, subject.id).map((a) => a.id))
+        : new Set<string>();
       if (subject) blocked.add(subject.id);
 
       return book.accounts

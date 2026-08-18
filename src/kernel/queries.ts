@@ -1,4 +1,4 @@
-import { ancestorsOf, findAccount } from "./book-utils";
+import { ancestorsOf, descendants, findAccount } from "./book-utils";
 import { isCalendarDate } from "./dates";
 import { err, ok, type Result } from "./result";
 import type {
@@ -40,19 +40,6 @@ function leafTotals(
     }
   }
   return { debit, credit };
-}
-
-function descendants(book: Book, rootId: string): Account[] {
-  const result: Account[] = [];
-  const walk = (parentId: string) => {
-    for (const account of book.accounts) {
-      if (account.parentId !== parentId) continue;
-      result.push(account);
-      walk(account.id);
-    }
-  };
-  walk(rootId);
-  return result;
 }
 
 export function accountPath(book: Book, id: string): Result<string> {

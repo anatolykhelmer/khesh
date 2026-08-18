@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { currentYearMonth, formatYearMonth, monthRange, yearRange } from "../../service/dates";
+import {
+  currentYearMonth,
+  formatYearMonth,
+  monthRange,
+  shiftYearMonth,
+  yearRange,
+} from "../../service/dates";
 import { formatMinor, monthLabel } from "../format";
 import { currencySymbol } from "../currencies";
 import { Ltr } from "../components/Ltr";
@@ -17,18 +23,7 @@ export function DashboardScreen() {
   const currentBook = book;
 
   function shiftMonth(delta: number) {
-    setYearMonth((current) => {
-      let { year, month } = current;
-      month += delta;
-      if (month < 1) {
-        month = 12;
-        year -= 1;
-      } else if (month > 12) {
-        month = 1;
-        year += 1;
-      }
-      return { year, month };
-    });
+    setYearMonth((current) => shiftYearMonth(current, delta));
   }
 
   const range = monthRange(year, month);

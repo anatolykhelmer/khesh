@@ -2,7 +2,9 @@ import {
   accountPath,
   isOpeningBalancesGroupId,
   isOpeningBalancesLeafId,
+  type AccountBalance,
   type Book,
+  type CurrencyCode,
   type FxSpec,
 } from "../kernel";
 import { minorToMajor } from "../service/money";
@@ -54,4 +56,25 @@ export function monthLabel(month: number): string {
  * shift the displayed day backward in negative-UTC-offset timezones. */
 export function formatDate(isoDate: string): string {
   return new Intl.DateTimeFormat(i18n.language).format(new Date(`${isoDate}T00:00:00`));
+}
+
+/**
+ * A leaf shows its one amount. A group shows every non-zero currency it holds, home
+ * currency first and the rest alphabetically, joined with " · ". A group holding
+ * nothing still shows a zero rather than an empty string.
+ */
+export function formatAccountBalance(
+  balance: AccountBalance,
+  homeCurrency: CurrencyCode,
+): string {
+  if (balance.kind === "leaf") return formatMinor(balance.amount, balance.currency);
+  const parts = Object.entries(balance.balances)
+    .filter(([, amount]) => amount !== 0)
+    .sort(([a], [b]) => {
+      if (a === homeCurrency) return -1;
+      if (b === homeCurrency) return 1;
+      return a.localeCompare(b);
+    })
+    .map(([currency, amount]) => formatMinor(amount, currency));
+  return parts.length === 0 ? formatMinor(0, homeCurrency) : parts.join(" · ");
 }

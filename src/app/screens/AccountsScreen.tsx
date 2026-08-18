@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { AccountNode } from "../../kernel";
-import { formatMinor } from "../format";
+import { formatAccountBalance } from "../format";
 import { Ltr } from "../components/Ltr";
 import { useLedger } from "../ledger-context";
 
@@ -27,19 +27,7 @@ export function AccountsScreen() {
   function balanceLabel(accountId: string): string {
     const result = app.balanceOf(currentBook, accountId);
     if (!result.ok) return "—";
-    const bal = result.value;
-    if (bal.kind === "leaf") {
-      return formatMinor(bal.amount, bal.currency);
-    }
-    const parts = Object.entries(bal.balances)
-      .filter(([, amount]) => amount !== 0)
-      .sort(([a], [b]) => {
-        if (a === currentBook.homeCurrency) return -1;
-        if (b === currentBook.homeCurrency) return 1;
-        return a.localeCompare(b);
-      })
-      .map(([currency, amount]) => formatMinor(amount, currency));
-    return parts.length === 0 ? formatMinor(0, currentBook.homeCurrency) : parts.join(" · ");
+    return formatAccountBalance(result.value, currentBook.homeCurrency);
   }
 
   function renderNodes(nodes: AccountNode[], depth: number) {

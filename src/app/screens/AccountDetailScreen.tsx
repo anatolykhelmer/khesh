@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "../../service/error-messages";
-import { accountPathLabel, formatMinor } from "../format";
+import { accountPathLabel, formatAccountBalance } from "../format";
 import { currencySymbol } from "../currencies";
 import { Ltr } from "../components/Ltr";
 import { useLedger } from "../ledger-context";
@@ -55,17 +55,7 @@ export function AccountDetailScreen() {
   function balanceLabel(): string {
     const result = app.balanceOf(currentBook, currentAccount.id);
     if (!result.ok) return "—";
-    const bal = result.value;
-    if (bal.kind === "leaf") return formatMinor(bal.amount, bal.currency);
-    const parts = Object.entries(bal.balances)
-      .filter(([, amount]) => amount !== 0)
-      .sort(([a], [b]) => {
-        if (a === currentBook.homeCurrency) return -1;
-        if (b === currentBook.homeCurrency) return 1;
-        return a.localeCompare(b);
-      })
-      .map(([currency, amount]) => formatMinor(amount, currency));
-    return parts.length === 0 ? formatMinor(0, currentBook.homeCurrency) : parts.join(" · ");
+    return formatAccountBalance(result.value, currentBook.homeCurrency);
   }
 
   async function onSave(event: FormEvent) {

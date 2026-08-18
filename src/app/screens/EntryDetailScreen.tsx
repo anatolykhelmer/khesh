@@ -1,18 +1,17 @@
-import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { inferEntryLines } from "../../service/ledger-app";
-import { errorMessage } from "../../service/error-messages";
 import { Ltr } from "../components/Ltr";
 import { accountPathLabel, formatDate, formatMinor, formatRate } from "../format";
 import { useLedger } from "../ledger-context";
+import { useLedgerMutation } from "../use-ledger-mutation";
 
 export function EntryDetailScreen() {
   const { t } = useTranslation();
   const { entryId } = useParams<{ entryId: string }>();
   const navigate = useNavigate();
-  const { book, app, setBook, setError } = useLedger();
-  const [busy, setBusy] = useState(false);
+  const { book, app } = useLedger();
+  const { busy, run } = useLedgerMutation();
 
   if (!book || !entryId) return null;
 
@@ -36,16 +35,10 @@ export function EntryDetailScreen() {
 
   async function onDelete() {
     if (!confirm(t("entryDetail.deleteConfirm"))) return;
-    setBusy(true);
-    const result = await app.deleteEntry(currentBook, currentEntry.id);
-    setBusy(false);
-    if (!result.ok) {
-      setError(errorMessage(result.error.code));
-      return;
-    }
-    setError(null);
-    setBook(result.value);
-    navigate("/journal");
+    await run(
+      () => app.deleteEntry(currentBook, currentEntry.id),
+      () => navigate("/journal"),
+    );
   }
 
   return (

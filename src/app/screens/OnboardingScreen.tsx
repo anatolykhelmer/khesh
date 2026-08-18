@@ -1,21 +1,25 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { CurrencyCode } from "../../kernel";
-import { errorMessage } from "../../service/error-messages";
 import { CURRENCIES } from "../currencies";
 import { ImportBookButton } from "../components/ImportBookButton";
 import type { AppLanguage } from "../i18n";
 import { setLanguage } from "../i18n";
 import { useLedger } from "../ledger-context";
+import { useLedgerMutation } from "../use-ledger-mutation";
 
 export function OnboardingScreen() {
   const { t, i18n } = useTranslation();
-  const { app, setBook, setError } = useLedger();
+  const { app } = useLedger();
+  const { busy: saving, run } = useLedgerMutation();
   const [language, setLanguageChoice] = useState<AppLanguage>(
     i18n.language === "he" ? "he" : "en",
   );
   const [currency, setCurrency] = useState<CurrencyCode>("ILS");
-  const [busy, setBusy] = useState(false);
+  // The import button drives its own async work, so the screen's disabled state is
+  // the union of both: either one running must gate the other.
+  const [importing, setImporting] = useState(false);
+  const busy = saving || importing;
 
   function chooseLanguage(next: AppLanguage) {
     setLanguageChoice(next);
@@ -24,15 +28,7 @@ export function OnboardingScreen() {
 
   async function onContinue() {
     setLanguage(language);
-    setBusy(true);
-    const result = await app.createHousehold(currency);
-    setBusy(false);
-    if (!result.ok) {
-      setError(errorMessage(result.error.code));
-      return;
-    }
-    setError(null);
-    setBook(result.value);
+    await run(() => app.createHousehold(currency));
   }
 
   return (
@@ -83,7 +79,7 @@ export function OnboardingScreen() {
       <ImportBookButton
         label={t("onboarding.restore")}
         disabled={busy}
-        onBusyChange={setBusy}
+        onBusyChange={setImporting}
       />
     </main>
   );

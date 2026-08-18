@@ -10,6 +10,7 @@ import { majorToMinor, minorToMajor } from "../../service/money";
 import { Ltr } from "../components/Ltr";
 import { formatMinor, formatRate } from "../format";
 import { useLedger } from "../ledger-context";
+import { useLedgerMutation } from "../use-ledger-mutation";
 import { AccountPicker } from "../components/AccountPicker";
 
 type LineDraft = { toAccountId: string; amount: string };
@@ -20,7 +21,8 @@ export function TransferFormScreen() {
   const { t } = useTranslation();
   const { entryId } = useParams<{ entryId?: string }>();
   const navigate = useNavigate();
-  const { book, app, setBook, setError } = useLedger();
+  const { book, app, setError } = useLedger();
+  const { busy, run } = useLedgerMutation();
 
   const existing = book && entryId ? book.journal.find((e) => e.id === entryId) : undefined;
   const existingShape = existing ? inferEntryLines(existing) : null;
@@ -41,7 +43,6 @@ export function TransferFormScreen() {
       ? minorToMajor(existingShape.fromAmount)
       : "",
   );
-  const [busy, setBusy] = useState(false);
 
   const nodes = useMemo(() => {
     if (!book) return [];
@@ -179,19 +180,13 @@ export function TransferFormScreen() {
       lines: parsed,
     };
 
-    setBusy(true);
-    const result = entryId
-      ? await app.updateEntry(currentBook, entryId, input)
-      : await app.addEntry(currentBook, input);
-    setBusy(false);
-
-    if (!result.ok) {
-      setError(errorMessage(result.error.code));
-      return;
-    }
-    setError(null);
-    setBook(result.value);
-    navigate("/journal");
+    await run(
+      () =>
+        entryId
+          ? app.updateEntry(currentBook, entryId, input)
+          : app.addEntry(currentBook, input),
+      () => navigate("/journal"),
+    );
   }
 
   const canSubmit = leafCount >= 2;

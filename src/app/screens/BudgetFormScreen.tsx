@@ -9,12 +9,14 @@ import { parseBudgetState, setPeriodKind, toBudgetParams } from "../budget-state
 import { AccountPicker } from "../components/AccountPicker";
 import { CURRENCIES } from "../currencies";
 import { useLedger } from "../ledger-context";
+import { useLedgerMutation } from "../use-ledger-mutation";
 
 export function BudgetFormScreen() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { book, app, setBook, setError } = useLedger();
+  const { book, app, setError } = useLedger();
+  const { busy, run } = useLedgerMutation();
 
   // The period the user was viewing on /budget, carried in the URL so leaving this
   // screen returns them to it rather than to the current month.
@@ -24,7 +26,6 @@ export function BudgetFormScreen() {
   const [period, setPeriod] = useState<BudgetPeriod>(viewed.period);
   const [currency, setCurrency] = useState<CurrencyCode>(book?.homeCurrency ?? "ILS");
   const [amount, setAmount] = useState("");
-  const [busy, setBusy] = useState(false);
 
   const nodes = useMemo(() => {
     if (!book) return [];
@@ -58,18 +59,12 @@ export function BudgetFormScreen() {
       setError(errorMessage("BUDGET_LIMIT_INVALID"));
       return;
     }
-    setBusy(true);
-    const result = await app.setBudget(currentBook, { accountId, period, currency, limit });
-    setBusy(false);
-    if (!result.ok) {
-      setError(errorMessage(result.error.code));
-      return;
-    }
-    setError(null);
-    setBook(result.value);
-    // Land on the period the new limit belongs to — showing the month view after
-    // creating an annual limit would land on a screen the limit isn't on.
-    navigate(`/budget?${toBudgetParams(setPeriodKind(viewed, period)).toString()}`);
+    await run(
+      () => app.setBudget(currentBook, { accountId, period, currency, limit }),
+      // Land on the period the new limit belongs to — showing the month view after
+      // creating an annual limit would land on a screen the limit isn't on.
+      () => navigate(`/budget?${toBudgetParams(setPeriodKind(viewed, period)).toString()}`),
+    );
   }
 
   return (

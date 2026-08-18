@@ -2,18 +2,19 @@ import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { errorMessage } from "../../service/error-messages";
 import { accountPathLabel, formatAccountBalance } from "../format";
 import { currencySymbol } from "../currencies";
 import { AccountKindChoice } from "../components/AccountKindChoice";
 import { Ltr } from "../components/Ltr";
 import { useLedger } from "../ledger-context";
+import { useLedgerMutation } from "../use-ledger-mutation";
 
 export function AccountDetailScreen() {
   const { t } = useTranslation();
   const { accountId } = useParams<{ accountId: string }>();
   const navigate = useNavigate();
-  const { book, app, setBook, setError } = useLedger();
+  const { book, app } = useLedger();
+  const { busy, run } = useLedgerMutation();
 
   const account = book?.accounts.find((a) => a.id === accountId);
   const moveOptions = useMemo(
@@ -25,7 +26,6 @@ export function AccountDetailScreen() {
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState("");
   const [isPlaceholder, setIsPlaceholder] = useState(false);
-  const [busy, setBusy] = useState(false);
 
   if (!book || !accountId) return null;
 
@@ -61,35 +61,24 @@ export function AccountDetailScreen() {
 
   async function onSave(event: FormEvent) {
     event.preventDefault();
-    setBusy(true);
-    const result = await app.editAccount(currentBook, {
-      id: currentAccount.id,
-      name,
-      parentId: isRoot ? undefined : parentId,
-      isPlaceholder: isRoot ? undefined : isPlaceholder,
-    });
-    setBusy(false);
-    if (!result.ok) {
-      setError(errorMessage(result.error.code));
-      return;
-    }
-    setError(null);
-    setBook(result.value);
-    setEditing(false);
+    await run(
+      () =>
+        app.editAccount(currentBook, {
+          id: currentAccount.id,
+          name,
+          parentId: isRoot ? undefined : parentId,
+          isPlaceholder: isRoot ? undefined : isPlaceholder,
+        }),
+      () => setEditing(false),
+    );
   }
 
   async function onDelete() {
     if (!confirm(t("accountDetail.deleteConfirm", { name: currentAccount.name }))) return;
-    setBusy(true);
-    const result = await app.removeAccount(currentBook, currentAccount.id);
-    setBusy(false);
-    if (!result.ok) {
-      setError(errorMessage(result.error.code));
-      return;
-    }
-    setError(null);
-    setBook(result.value);
-    navigate("/accounts");
+    await run(
+      () => app.removeAccount(currentBook, currentAccount.id),
+      () => navigate("/accounts"),
+    );
   }
 
   return (

@@ -7,12 +7,14 @@ import { majorToMinor, minorToMajor } from "../../service/money";
 import { parseBudgetState, toBudgetParams } from "../budget-state";
 import { accountPathLabel } from "../format";
 import { useLedger } from "../ledger-context";
+import { useLedgerMutation } from "../use-ledger-mutation";
 
 export function BudgetEditScreen() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { book, app, setBook, setError } = useLedger();
+  const { book, app, setError } = useLedger();
+  const { busy, run } = useLedgerMutation();
 
   const accountId = searchParams.get("account") ?? "";
   const currency = searchParams.get("currency") ?? "";
@@ -30,7 +32,6 @@ export function BudgetEditScreen() {
   );
 
   const [amount, setAmount] = useState(existing ? minorToMajor(existing.limit) : "");
-  const [busy, setBusy] = useState(false);
 
   if (!book) return null;
 
@@ -55,31 +56,19 @@ export function BudgetEditScreen() {
       setError(errorMessage("BUDGET_LIMIT_INVALID"));
       return;
     }
-    setBusy(true);
-    const result = await app.setBudget(currentBook, { accountId, period, currency, limit });
-    setBusy(false);
-    if (!result.ok) {
-      setError(errorMessage(result.error.code));
-      return;
-    }
-    setError(null);
-    setBook(result.value);
-    navigate(backTo);
+    await run(
+      () => app.setBudget(currentBook, { accountId, period, currency, limit }),
+      () => navigate(backTo),
+    );
   }
 
   async function onDelete() {
     const name = accountPathLabel(currentBook, accountId);
     if (!confirm(t("budgetForm.deleteConfirm", { name }))) return;
-    setBusy(true);
-    const result = await app.removeBudget(currentBook, { accountId, period, currency });
-    setBusy(false);
-    if (!result.ok) {
-      setError(errorMessage(result.error.code));
-      return;
-    }
-    setError(null);
-    setBook(result.value);
-    navigate(backTo);
+    await run(
+      () => app.removeBudget(currentBook, { accountId, period, currency }),
+      () => navigate(backTo),
+    );
   }
 
   return (

@@ -8,12 +8,14 @@ import { majorToMinor } from "../../service/money";
 import { AccountKindChoice } from "../components/AccountKindChoice";
 import { CURRENCIES } from "../currencies";
 import { useLedger } from "../ledger-context";
+import { useLedgerMutation } from "../use-ledger-mutation";
 
 export function AccountFormScreen() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { book, app, setBook, setError } = useLedger();
+  const { book, app, setError } = useLedger();
+  const { busy, run } = useLedgerMutation();
 
   const options = useMemo(() => (book ? app.parentOptions(book) : []), [book, app]);
   const [parentId, setParentId] = useState(searchParams.get("parent") ?? "");
@@ -21,7 +23,6 @@ export function AccountFormScreen() {
   const [isPlaceholder, setIsPlaceholder] = useState(false);
   const [currency, setCurrency] = useState<CurrencyCode>(book?.homeCurrency ?? "ILS");
   const [opening, setOpening] = useState("");
-  const [busy, setBusy] = useState(false);
 
   if (!book) return null;
 
@@ -35,29 +36,26 @@ export function AccountFormScreen() {
       setError(errorMessage("ENTRY_AMOUNT_INVALID"));
       return;
     }
-    setBusy(true);
-    const result = await app.addAccount(currentBook, {
-      parentId: selectedParent,
-      name,
-      isPlaceholder,
-      currency,
-      openingAmount:
-        !isPlaceholder && openingMinor && openingMinor > 0 ? openingMinor : undefined,
-    });
-    setBusy(false);
-    if (!result.ok) {
-      setError(errorMessage(result.error.code));
-      return;
-    }
-    setError(null);
-    setBook(result.value);
-    // An opening balance also creates the sys:ob accounts, so skip those when
-    // looking for the account we just added.
-    const known = new Set(currentBook.accounts.map((a) => a.id));
-    const created = result.value.accounts.find(
-      (a) => !known.has(a.id) && !a.id.startsWith("sys:"),
+    await run(
+      () =>
+        app.addAccount(currentBook, {
+          parentId: selectedParent,
+          name,
+          isPlaceholder,
+          currency,
+          openingAmount:
+            !isPlaceholder && openingMinor && openingMinor > 0 ? openingMinor : undefined,
+        }),
+      (nextBook) => {
+        // An opening balance also creates the sys:ob accounts, so skip those when
+        // looking for the account we just added.
+        const known = new Set(currentBook.accounts.map((a) => a.id));
+        const created = nextBook.accounts.find(
+          (a) => !known.has(a.id) && !a.id.startsWith("sys:"),
+        );
+        navigate(`/accounts/${created?.id ?? selectedParent}`);
+      },
     );
-    navigate(`/accounts/${created?.id ?? selectedParent}`);
   }
 
   return (

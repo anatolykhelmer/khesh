@@ -3,6 +3,7 @@ import {
   currentYearMonth,
   formatYearMonth,
   monthRange,
+  parseYearMonthParam,
   shiftYearMonth,
   yearRange,
 } from "../service/dates";
@@ -13,7 +14,6 @@ import {
  */
 export type BudgetState = { period: BudgetPeriod; year: number; month: number };
 
-const MONTH_PARAM = /^(\d{4})-(\d{2})$/;
 const YEAR_PARAM = /^\d{4}$/;
 
 export function parseBudgetState(params: URLSearchParams, now = new Date()): BudgetState {
@@ -23,13 +23,8 @@ export function parseBudgetState(params: URLSearchParams, now = new Date()): Bud
     const year = YEAR_PARAM.test(raw) ? Number(raw) : current.year;
     return { period: "year", year, month: current.month };
   }
-  const match = MONTH_PARAM.exec(params.get("month") ?? "");
-  if (!match) return { period: "month", year: current.year, month: current.month };
-  const month = Number(match[2]);
-  if (month < 1 || month > 12) {
-    return { period: "month", year: current.year, month: current.month };
-  }
-  return { period: "month", year: Number(match[1]), month };
+  const { year, month } = parseYearMonthParam(params.get("month"), now);
+  return { period: "month", year, month };
 }
 
 export function toBudgetParams(state: BudgetState): URLSearchParams {

@@ -47,3 +47,18 @@ export function formatYearMonth(period: YearMonth): string {
 export function yearRange(year: number): { from: string; to: string } {
   return { from: `${year}-01-01`, to: `${year}-12-31` };
 }
+
+const YEAR_MONTH_PARAM = /^(\d{4})-(\d{2})$/;
+
+/**
+ * Read a "YYYY-MM" query-string value. Anything unusable — absent, malformed, or a
+ * month outside 1-12 — falls back to the current month rather than surfacing an
+ * error: a bad URL is not a user mistake.
+ */
+export function parseYearMonthParam(raw: string | null, now = new Date()): YearMonth {
+  const match = raw === null ? null : YEAR_MONTH_PARAM.exec(raw);
+  if (!match) return currentYearMonth(now);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return currentYearMonth(now);
+  return { year: Number(match[1]), month };
+}

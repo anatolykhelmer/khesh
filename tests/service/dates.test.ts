@@ -3,6 +3,7 @@ import {
   currentYearMonth,
   formatYearMonth,
   monthRange,
+  parseYearMonthParam,
   shiftYearMonth,
   yearRange,
 } from "../../src/service/dates";
@@ -62,5 +63,27 @@ describe("formatYearMonth", () => {
 describe("yearRange", () => {
   it("spans the whole calendar year", () => {
     expect(yearRange(2026)).toEqual({ from: "2026-01-01", to: "2026-12-31" });
+  });
+});
+
+describe("parseYearMonthParam", () => {
+  const NOW = new Date(2026, 7, 16); // August 2026, local time
+
+  it("reads a well-formed YYYY-MM value", () => {
+    expect(parseYearMonthParam("2025-03", NOW)).toEqual({ year: 2025, month: 3 });
+  });
+
+  it("falls back to the current month when the value is absent", () => {
+    expect(parseYearMonthParam(null, NOW)).toEqual({ year: 2026, month: 8 });
+  });
+
+  it("falls back to the current month on a malformed value", () => {
+    expect(parseYearMonthParam("nope", NOW)).toEqual({ year: 2026, month: 8 });
+    expect(parseYearMonthParam("2026-3", NOW)).toEqual({ year: 2026, month: 8 });
+  });
+
+  it("rejects an out-of-range month", () => {
+    expect(parseYearMonthParam("2026-13", NOW)).toEqual({ year: 2026, month: 8 });
+    expect(parseYearMonthParam("2026-00", NOW)).toEqual({ year: 2026, month: 8 });
   });
 });

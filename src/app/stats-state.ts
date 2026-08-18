@@ -1,5 +1,5 @@
 import type { Book, CurrencyCode } from "../kernel";
-import { currentYearMonth, formatYearMonth, type YearMonth } from "../service/dates";
+import { formatYearMonth, parseYearMonthParam, type YearMonth } from "../service/dates";
 
 export type StatsState = {
   period: YearMonth;
@@ -7,15 +7,13 @@ export type StatsState = {
   currency: CurrencyCode | null;
 };
 
-const MONTH_PARAM = /^(\d{4})-(\d{2})$/;
-
 export function parseStatsState(
   params: URLSearchParams,
   book: Book,
   now = new Date(),
 ): StatsState {
   return {
-    period: parsePeriod(params.get("month"), now),
+    period: parseYearMonthParam(params.get("month"), now),
     accountId: parseAccountId(params.get("account"), book),
     currency: parseCurrency(params.get("currency")),
   };
@@ -35,14 +33,6 @@ export function toStatsParams(state: StatsState): URLSearchParams {
   if (state.accountId) params.set("account", state.accountId);
   if (state.currency) params.set("currency", state.currency);
   return params;
-}
-
-function parsePeriod(raw: string | null, now: Date): YearMonth {
-  const match = raw === null ? null : MONTH_PARAM.exec(raw);
-  if (!match) return currentYearMonth(now);
-  const month = Number(match[2]);
-  if (month < 1 || month > 12) return currentYearMonth(now);
-  return { year: Number(match[1]), month };
 }
 
 function parseAccountId(raw: string | null, book: Book): string | null {

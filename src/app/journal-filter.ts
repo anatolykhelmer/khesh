@@ -1,13 +1,11 @@
 import type { Book } from "../kernel";
-import { currentYearMonth, monthRange, type YearMonth } from "../service/dates";
+import { currentYearMonth, monthRange, parseYearMonthParam, type YearMonth } from "../service/dates";
 
 export type JournalFilterState = {
   /** null means all time. */
   period: YearMonth | null;
   accountId: string | null;
 };
-
-const MONTH_PARAM = /^(\d{4})-(\d{2})$/;
 
 /**
  * Read filter state out of the query string. Anything unusable falls back to the
@@ -27,11 +25,7 @@ export function parseJournalFilter(
 
 function parsePeriod(raw: string | null, now: Date): YearMonth | null {
   if (raw === "all") return null;
-  const match = raw === null ? null : MONTH_PARAM.exec(raw);
-  if (!match) return currentYearMonth(now);
-  const month = Number(match[2]);
-  if (month < 1 || month > 12) return currentYearMonth(now);
-  return { year: Number(match[1]), month };
+  return parseYearMonthParam(raw, now);
 }
 
 function parseAccountId(raw: string | null, book: Book): string | null {

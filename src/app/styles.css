@@ -153,6 +153,21 @@ button {
   border-bottom: 1px solid #fecaca;
 }
 
+.banner.info {
+  background: var(--bg);
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+}
+
+.banner.info span {
+  flex: 1;
+}
+
+.banner .secondary {
+  flex: none;
+}
+
 .account-list,
 .journal-list,
 .account-children {

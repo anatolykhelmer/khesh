@@ -16,6 +16,7 @@ import { OnboardingScreen } from "./screens/OnboardingScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { StatsScreen } from "./screens/StatsScreen";
 import { TransferFormScreen } from "./screens/TransferFormScreen";
+import { useAppUpdate } from "./use-app-update";
 
 function Shell() {
   return (
@@ -46,6 +47,7 @@ function Shell() {
 export function App() {
   const { t } = useTranslation();
   const { book, loading, error, clearError } = useLedger();
+  const { needRefresh, reload, dismiss } = useAppUpdate();
 
   if (loading) {
     return (
@@ -58,6 +60,15 @@ export function App() {
   return (
     <>
       {error ? <Banner message={error} onDismiss={clearError} /> : null}
+      {needRefresh ? (
+        <Banner
+          tone="info"
+          message={t("app.updateAvailable")}
+          actionLabel={t("app.updateAction")}
+          onAction={reload}
+          onDismiss={dismiss}
+        />
+      ) : null}
       {book ? <Shell /> : <OnboardingScreen />}
     </>
   );

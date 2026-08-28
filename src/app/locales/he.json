@@ -13,7 +13,9 @@
     "collapse": "כווץ את {{name}}"
   },
   "app": {
-    "loading": "טוען…"
+    "loading": "טוען…",
+    "updateAvailable": "גרסה חדשה זמינה",
+    "updateAction": "רענן"
   },
   "nav": {
     "ariaLabel": "ראשי",

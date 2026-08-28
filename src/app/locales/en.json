@@ -13,7 +13,9 @@
     "collapse": "Collapse {{name}}"
   },
   "app": {
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "updateAvailable": "New version available",
+    "updateAction": "Reload"
   },
   "nav": {
     "ariaLabel": "Main",

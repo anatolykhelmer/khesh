@@ -63,5 +63,5 @@ function homeLimit(
  */
 function percentOf(spent: MinorUnits, limit: MinorUnits): number {
   if (limit <= 0) return 100;
-  return Math.min(100, Math.round((spent / limit) * 100));
+  return Math.max(0, Math.min(100, Math.round((spent / limit) * 100)));
 }

@@ -126,41 +126,38 @@ describe("heroState", () => {
     });
   });
 
-  it("does not divide by a zero limit", () => {
+  it("floors the bar at zero when refunds outweigh spending", () => {
     const f = fixture();
-    const book = spend(f.book, f.cash, f.groceries, 500);
-    // The kernel refuses a non-positive limit (budgets.ts, validate.ts), so this report
-    // cannot come from a valid book. heroState takes a report as a parameter, though, and
-    // cannot validate it — the guard exists so a degenerate one renders 100% rather than
-    // "NaN%" in the user's face.
-    const report: BudgetReport = {
-      period: "month",
-      rows: [
-        {
-          accountId: f.food,
-          name: "Food",
-          path: "Expenses:Food",
-          isGroup: true,
-          currency: "ILS",
-          limit: 0,
-          spent: 500,
-          remaining: 0,
-        },
-      ],
-      unbudgeted: {},
-    };
-    expect(heroState(book, unwrap(periodTotals(book, MONTH)), report)).toEqual({
+    // Refund: credit the expense account, debit cash — the mirror of `spend`.
+    let book = unwrap(
+      postEntry(f.book, {
+        date: "2026-08-12",
+        description: "returned the blender",
+        postings: [
+          { accountId: f.cash, side: "debit", amount: 200 },
+          { accountId: f.groceries, side: "credit", amount: 200 },
+        ],
+      }),
+    );
+    book = unwrap(
+      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 1000 }),
+    );
+    expect(hero(book)).toEqual({
       kind: "budgeted",
-      spent: 500,
-      limit: 0,
-      pct: 100,
-      over: true,
+      spent: -200,
+      limit: 1000,
+      pct: 0,
+      over: false,
     });
   });
 
   it("shows a zero-limit month with no spending as 100%, not NaN", () => {
     const f = fixture();
     const book = spend(f.book, f.cash, f.groceries, 500);
+    // The kernel refuses a non-positive limit (budgets.ts, validate.ts), so this report
+    // cannot come from a valid book. heroState takes a report as a parameter, though, and
+    // cannot validate it — the guard exists so a degenerate one renders 100% rather than
+    // "NaN%" in the user's face.
     const report: BudgetReport = {
       period: "month",
       rows: [

@@ -8,7 +8,6 @@ import { formatMinor, monthLabel } from "../format";
 import { useLedger } from "../ledger-context";
 import { expenseRootId, parseStatsState, toStatsParams } from "../stats-state";
 
-const PIE_COLORS = ["#18181b", "#3f3f46", "#52525b", "#71717a", "#a1a1aa", "#d4d4d8"];
 const PIE = { cx: 100, cy: 100, r: 90 };
 
 export function StatsScreen() {
@@ -121,8 +120,8 @@ export function StatsScreen() {
             {arcs.map((arc, index) => (
               <path
                 key={arc.id}
+                className={`cat-${index % 6}`}
                 d={arc.d}
-                fill={PIE_COLORS[index % PIE_COLORS.length]}
                 onClick={() => write({ ...state, accountId: arc.id })}
               />
             ))}
@@ -139,7 +138,7 @@ export function StatsScreen() {
                   })}
                   onClick={() => write({ ...state, accountId: child.id })}
                 >
-                  <span className="swatch" style={{ background: PIE_COLORS[index % PIE_COLORS.length] }} />
+                  <span className={`swatch cat-${index % 6}`} />
                   <span>{child.name}</span>
                   <span className="muted">
                     <Ltr>{formatMinor(child.amount, breakdown.currency)}</Ltr>

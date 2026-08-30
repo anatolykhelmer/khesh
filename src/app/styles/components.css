@@ -654,3 +654,15 @@ dialog.picker .twisty {
   color: var(--neg);
   font-weight: 600;
 }
+
+/* Categorical ramp, shared by the stats pie and the dashboard's category dots.
+   Kept in CSS rather than a JS array so it follows the theme without a repaint. */
+.cat-0 { --cat: var(--cat-1); }
+.cat-1 { --cat: var(--cat-2); }
+.cat-2 { --cat: var(--cat-3); }
+.cat-3 { --cat: var(--cat-4); }
+.cat-4 { --cat: var(--cat-5); }
+.cat-5 { --cat: var(--cat-6); }
+
+.stats-pie path { fill: var(--cat); }
+.swatch { background: var(--cat); }

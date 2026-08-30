@@ -195,7 +195,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
-  font-size: 0.9rem;
+  font-size: var(--t-sm);
 }
 
 .stack-form input,
@@ -251,7 +251,7 @@ button {
 }
 
 .choice-group legend {
-  font-size: 0.9rem;
+  font-size: var(--t-sm);
   color: var(--ink-muted);
   padding: 0 var(--s-1);
 }
@@ -397,7 +397,7 @@ dialog.picker .picker-head {
 }
 
 dialog.picker .picker-head h2 {
-  font-size: 1rem;
+  font-size: var(--t-md);
   margin: 0;
 }
 
@@ -461,7 +461,7 @@ dialog.picker .picker-name:disabled {
 
 dialog.picker .picker-currency {
   color: var(--ink-muted);
-  font-size: 0.85rem;
+  font-size: var(--t-sm);
 }
 
 dialog.picker .picker-empty {
@@ -474,7 +474,7 @@ dialog.picker .twisty {
 }
 
 .crumb {
-  font-size: 0.9rem;
+  font-size: var(--t-sm);
   color: var(--ink-muted);
   margin: var(--s-2) 0 0;
 }
@@ -492,8 +492,8 @@ dialog.picker .twisty {
 
 .pill {
   font: inherit;
-  font-size: 0.85rem;
-  padding: 2px var(--s-3);
+  font-size: var(--t-sm);
+  padding: var(--s-1) var(--s-3);
   min-height: var(--tap);
   border: 1px solid var(--line);
   border-radius: var(--r-full);
@@ -599,7 +599,7 @@ dialog.picker .twisty {
 }
 
 .budget-figures {
-  font-size: 0.9rem;
+  font-size: var(--t-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -619,7 +619,7 @@ dialog.picker .twisty {
 }
 
 .budget-note {
-  font-size: 0.85rem;
+  font-size: var(--t-sm);
   color: var(--ink-muted);
 }
 
@@ -647,7 +647,7 @@ dialog.picker .twisty {
 
 .budget-summary-link {
   color: var(--ink-muted);
-  font-size: 0.9rem;
+  font-size: var(--t-sm);
 }
 
 .budget-summary-link.over {

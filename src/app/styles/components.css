@@ -564,11 +564,6 @@ dialog.picker .twisty {
   text-decoration: none;
 }
 
-.head-actions {
-  display: flex;
-  gap: var(--s-2);
-}
-
 .settings-section {
   display: flex;
   flex-direction: column;
@@ -641,21 +636,6 @@ dialog.picker .twisty {
   margin-top: var(--s-4);
 }
 
-.budget-summary {
-  text-align: center;
-  margin: 0 0 var(--s-3);
-}
-
-.budget-summary-link {
-  color: var(--ink-muted);
-  font-size: var(--t-sm);
-}
-
-.budget-summary-link.over {
-  color: var(--neg);
-  font-weight: 600;
-}
-
 /* Categorical ramp, shared by the stats pie and the dashboard's category dots.
    Kept in CSS rather than a JS array so it follows the theme without a repaint. */
 .cat-0 { --cat: var(--cat-1); }
@@ -667,3 +647,163 @@ dialog.picker .twisty {
 
 .stats-pie path { fill: var(--cat); }
 .swatch { background: var(--cat); }
+
+.dash-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.icon-button {
+  min-height: var(--tap);
+  min-width: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--ink-muted);
+  padding: 0;
+}
+
+.hero-label {
+  font-size: var(--t-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 var(--s-1);
+}
+
+.hero-amount {
+  display: block;
+  font-size: var(--t-hero);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  color: inherit;
+  text-decoration: none;
+}
+
+.hero-bar {
+  display: flex;
+  block-size: 6px;
+  border-radius: var(--r-full);
+  background: var(--line);
+  overflow: hidden;
+  margin: var(--s-3) 0 var(--s-2);
+}
+
+.hero-bar > span {
+  background: var(--accent);
+  border-radius: var(--r-full);
+}
+
+.hero-bar.over > span {
+  background: var(--neg);
+}
+
+/* No limit yet: the track is an outline, so the row keeps its height and the
+   layout does not jump when a limit is finally set. */
+.hero-bar.ghost {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.hero-note {
+  font-size: var(--t-sm);
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+.hero-note.over {
+  color: var(--neg);
+}
+
+.hero-note a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.stat-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-2);
+  margin: var(--s-4) 0;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-card);
+  padding: var(--s-2) var(--s-3);
+}
+
+.stat-card dt {
+  font-size: var(--t-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: var(--s-1);
+}
+
+.stat-card dd {
+  margin: 0;
+  font-size: var(--t-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card dd.pos { color: var(--pos); }
+.stat-card dd.neg { color: var(--neg); }
+
+.section-label {
+  font-size: var(--t-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: var(--s-5) 0 var(--s-2);
+}
+
+.cat-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: var(--tap);
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+  text-decoration: none;
+}
+
+.cat-row .amount {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.dash-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--s-7) var(--s-4) 0;
+}
+
+.dash-empty h2 {
+  margin: 0 0 var(--s-2);
+}
+
+.dash-empty p {
+  color: var(--ink-muted);
+  margin: 0 0 var(--s-5);
+  max-width: 28ch;
+}

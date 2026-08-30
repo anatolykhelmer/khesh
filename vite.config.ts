@@ -30,6 +30,10 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: "index.html",
+        // The default glob is js,css,html,ico,png,svg — without woff2 the
+        // self-hosted font is the one asset the service worker misses, and the
+        // first offline launch silently falls back to the system font.
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
       },
     }),
   ],

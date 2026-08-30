@@ -1,81 +1,16 @@
-:root {
-  color-scheme: light;
-  font-family: system-ui, -apple-system, sans-serif;
-  line-height: 1.4;
-  color: #18181b;
-  background: #f4f4f5;
-  --tap: 44px;
-  --max: 480px;
-  --border: #e4e4e7;
-  --muted: #71717a;
-  --bg: #ffffff;
-  --fg: #18181b;
-  --over: #991b1b;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-#root {
-  min-height: 100dvh;
-}
-
-.app-shell {
-  max-width: var(--max);
-  margin: 0 auto;
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-}
-
-.app-content {
-  flex: 1;
-  padding: 16px 16px calc(16px + var(--tap) + 12px);
-}
-
-.screen {
-  max-width: var(--max);
-  margin: 0 auto;
-  padding: 24px 16px;
-}
-
 .onboarding {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--s-3);
   min-height: 100dvh;
   justify-content: center;
-}
-
-.brand {
-  font-size: 0.85rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 0;
-}
-
-h1 {
-  font-size: 1.5rem;
-  margin: 0;
-}
-
-.muted {
-  color: var(--muted);
-  margin: 0;
 }
 
 .currency-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 8px 0 16px;
+  gap: var(--s-2);
+  margin: var(--s-2) 0 var(--s-4);
 }
 
 .choice,
@@ -86,25 +21,25 @@ button {
 
 .choice {
   min-height: var(--tap);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
   text-align: start;
-  padding: 0 14px;
+  padding: 0 var(--s-4);
 }
 
 .choice.selected {
-  border-color: var(--fg);
+  border-color: var(--accent);
   font-weight: 600;
 }
 
 .primary {
   min-height: var(--tap);
   border: none;
-  border-radius: 8px;
-  background: var(--fg);
-  color: #fff;
-  padding: 0 16px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 0 var(--s-4);
   width: 100%;
 }
 
@@ -120,8 +55,8 @@ button {
   width: 100%;
   max-width: var(--max);
   display: flex;
-  border-top: 1px solid var(--border);
-  background: var(--bg);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .tab {
@@ -131,14 +66,14 @@ button {
   align-items: center;
   justify-content: center;
   text-decoration: none;
-  color: var(--muted);
+  color: var(--ink-muted);
   border-top: 2px solid transparent;
 }
 
 .tab.active {
-  color: var(--fg);
+  color: var(--accent);
   font-weight: 600;
-  border-top-color: var(--fg);
+  border-top-color: var(--accent);
 }
 
 .banner {
@@ -146,17 +81,17 @@ button {
   margin: 0 auto;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 12px 16px;
-  background: #fef2f2;
-  color: #991b1b;
-  border-bottom: 1px solid #fecaca;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4);
+  background: var(--danger-bg);
+  color: var(--danger-ink);
+  border-bottom: 1px solid var(--danger-line);
 }
 
 .banner.info {
-  background: var(--bg);
-  color: var(--fg);
-  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
   align-items: center;
 }
 
@@ -173,20 +108,20 @@ button {
 .account-children {
   list-style: none;
   padding: 0;
-  margin: 16px 0;
+  margin: var(--s-4) 0;
 }
 
 .account-row,
 .journal-row {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--s-3);
   width: 100%;
   min-height: var(--tap);
   align-items: center;
-  padding: 10px 0;
+  padding: var(--s-3) 0;
   border: none;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line);
   background: transparent;
   text-align: start;
   text-decoration: none;
@@ -199,7 +134,7 @@ button {
   flex: 1;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: var(--s-3);
   min-height: var(--tap);
   text-decoration: none;
   color: inherit;
@@ -211,7 +146,7 @@ button {
   flex: none;
   border: none;
   background: transparent;
-  color: var(--muted);
+  color: var(--ink-muted);
   padding: 0;
   font: inherit;
 }
@@ -236,49 +171,49 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--s-3);
 }
 
 .month-nav {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  margin: 16px 0;
+  gap: var(--s-4);
+  margin: var(--s-4) 0;
   font-weight: 600;
 }
 
 .stack-form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 16px;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
 }
 
 .stack-form label,
 .stack-form-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--s-2);
   font-size: 0.9rem;
 }
 
 .stack-form input,
 .stack-form select {
   min-height: var(--tap);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 var(--s-3);
   font: inherit;
-  background: var(--bg);
+  background: var(--surface);
 }
 
 .secondary,
 .link-button,
 .danger {
   min-height: var(--tap);
-  border-radius: 8px;
-  padding: 0 16px;
+  border-radius: var(--r-sm);
+  padding: 0 var(--s-4);
   font: inherit;
   display: inline-flex;
   align-items: center;
@@ -288,42 +223,42 @@ button {
 
 .secondary,
 .link-button {
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--fg);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .link-button.primary {
   border: none;
-  background: var(--fg);
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 .danger {
-  border: none;
-  background: #991b1b;
-  color: #fff;
+  border: 1px solid var(--danger-line);
+  background: var(--danger-bg);
+  color: var(--danger-ink);
 }
 
 .choice-group {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: var(--s-2) var(--s-3) var(--s-3);
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--s-2);
 }
 
 .choice-group legend {
   font-size: 0.9rem;
-  color: var(--muted);
-  padding: 0 4px;
+  color: var(--ink-muted);
+  padding: 0 var(--s-1);
 }
 
 .split-line {
   display: flex;
-  gap: 8px;
+  gap: var(--s-2);
 }
 
 .split-line input {
@@ -331,20 +266,20 @@ button {
 }
 
 .split-line button {
-  padding: 0 12px;
+  padding: 0 var(--s-3);
 }
 
 .stack-form .inline-choice {
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: var(--s-2);
   min-height: var(--tap);
 }
 
 .button-row {
   display: flex;
-  gap: 8px;
-  margin-top: 16px;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
 }
 
 .button-row.wrap {
@@ -352,24 +287,25 @@ button {
 }
 
 .detail-list {
-  margin: 16px 0;
+  margin: var(--s-4) 0;
 }
 
 .detail-list div {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
+  gap: var(--s-3);
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .detail-list dt {
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .detail-list dd {
   margin: 0;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .journal-title {
@@ -384,8 +320,8 @@ button {
 .filter-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
+  gap: var(--s-2);
+  margin-bottom: var(--s-4);
 }
 
 .filter-bar button {
@@ -394,18 +330,18 @@ button {
 
 .back-link {
   display: inline-block;
-  margin-top: 16px;
-  color: var(--muted);
+  margin-top: var(--s-4);
+  color: var(--ink-muted);
 }
 
 .picker-trigger {
   min-height: var(--tap);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 var(--s-3);
   font: inherit;
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--surface);
+  color: var(--ink);
   text-align: start;
   white-space: nowrap;
   overflow: hidden;
@@ -426,8 +362,8 @@ dialog.picker {
   margin: 0 auto;
   padding: 0;
   border: none;
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--surface);
+  color: var(--ink);
 }
 
 /* A closed <dialog> is display:none; only the open one becomes a flex column. */
@@ -455,9 +391,9 @@ dialog.picker .picker-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--line);
 }
 
 dialog.picker .picker-head h2 {
@@ -466,23 +402,23 @@ dialog.picker .picker-head h2 {
 }
 
 dialog.picker .picker-head .secondary {
-  padding: 0 16px;
+  padding: 0 var(--s-4);
   flex: none;
 }
 
 dialog.picker .picker-search-row {
-  padding: 12px;
-  border-bottom: 1px solid var(--border);
+  padding: var(--s-3);
+  border-bottom: 1px solid var(--line);
 }
 
 dialog.picker .picker-search {
   width: 100%;
   min-height: var(--tap);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 var(--s-3);
   font: inherit;
-  background: var(--bg);
+  background: var(--surface);
 }
 
 dialog.picker .picker-tree {
@@ -490,13 +426,13 @@ dialog.picker .picker-tree {
   overflow-y: auto;
   list-style: none;
   margin: 0;
-  padding: 8px 12px 24px;
+  padding: var(--s-2) var(--s-3) var(--s-5);
 }
 
 dialog.picker .picker-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--s-1);
 }
 
 dialog.picker .picker-name {
@@ -506,13 +442,13 @@ dialog.picker .picker-name {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--s-2);
   border: none;
   background: transparent;
-  color: var(--fg);
+  color: var(--ink);
   font: inherit;
   text-align: start;
-  padding: 0 8px;
+  padding: 0 var(--s-2);
 }
 
 dialog.picker .picker-name[aria-current="true"] {
@@ -520,17 +456,17 @@ dialog.picker .picker-name[aria-current="true"] {
 }
 
 dialog.picker .picker-name:disabled {
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 dialog.picker .picker-currency {
-  color: var(--muted);
+  color: var(--ink-muted);
   font-size: 0.85rem;
 }
 
 dialog.picker .picker-empty {
-  color: var(--muted);
-  padding: 16px 8px;
+  color: var(--ink-muted);
+  padding: var(--s-4) var(--s-2);
 }
 
 dialog.picker .twisty {
@@ -539,8 +475,8 @@ dialog.picker .twisty {
 
 .crumb {
   font-size: 0.9rem;
-  color: var(--muted);
-  margin: 8px 0 0;
+  color: var(--ink-muted);
+  margin: var(--s-2) 0 0;
 }
 
 .crumb a {
@@ -549,39 +485,39 @@ dialog.picker .twisty {
 
 .pills {
   display: flex;
-  gap: 6px;
+  gap: var(--s-2);
   justify-content: center;
-  margin: 0 0 12px;
+  margin: 0 0 var(--s-3);
 }
 
 .pill {
   font: inherit;
   font-size: 0.85rem;
-  padding: 2px 10px;
+  padding: 2px var(--s-3);
   min-height: var(--tap);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  background: var(--surface);
+  color: var(--ink-muted);
 }
 
 .pill.on {
-  border-color: var(--fg);
-  color: var(--fg);
+  border-color: var(--accent);
+  color: var(--accent);
   font-weight: 600;
 }
 
 .stats-total {
   text-align: center;
   font-weight: 600;
-  margin: 8px 0 12px;
+  margin: var(--s-2) 0 var(--s-3);
 }
 
 .stats-pie {
   display: block;
   width: 200px;
   height: 200px;
-  margin: 0 auto 16px;
+  margin: 0 auto var(--s-4);
 }
 
 .stats-pie path {
@@ -597,16 +533,17 @@ dialog.picker .twisty {
 .stats-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--s-2);
   width: 100%;
   min-height: var(--tap);
-  padding: 10px 0;
+  padding: var(--s-3) 0;
   border: none;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line);
   background: transparent;
   font: inherit;
   color: inherit;
   text-align: start;
+  font-variant-numeric: tabular-nums;
 }
 
 .stats-row .muted {
@@ -616,7 +553,7 @@ dialog.picker .twisty {
 .swatch {
   width: 10px;
   height: 10px;
-  border-radius: 2px;
+  border-radius: var(--r-full);
   flex: none;
 }
 
@@ -628,15 +565,15 @@ dialog.picker .twisty {
 
 .head-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--s-2);
 }
 
 .settings-section {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
-  margin-top: 24px;
+  gap: var(--s-2);
+  margin-top: var(--s-5);
 }
 
 .budget-list {
@@ -649,9 +586,9 @@ dialog.picker .twisty {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: baseline;
-  gap: 4px 8px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
+  gap: var(--s-1) var(--s-2);
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--line);
   color: inherit;
   text-decoration: none;
 }
@@ -663,6 +600,7 @@ dialog.picker .twisty {
 
 .budget-figures {
   font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
 }
 
 /* A flex row lays the fill out from the inline start, so it mirrors in RTL on its
@@ -670,49 +608,49 @@ dialog.picker .twisty {
 .budget-bar {
   display: flex;
   block-size: 6px;
-  border-radius: 999px;
-  background: var(--border);
+  border-radius: var(--r-full);
+  background: var(--line);
   overflow: hidden;
 }
 
 .budget-bar > span {
-  background: var(--fg);
-  border-radius: 999px;
+  background: var(--accent);
+  border-radius: var(--r-full);
 }
 
 .budget-note {
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .budget-row.over .budget-bar > span {
-  background: var(--over);
+  background: var(--neg);
 }
 
 .budget-row.over .budget-figures,
 .budget-row.over .budget-note {
-  color: var(--over);
+  color: var(--neg);
 }
 
 .budget-unbudgeted {
-  margin-top: 12px;
+  margin-top: var(--s-3);
 }
 
 .budget-add {
-  margin-top: 16px;
+  margin-top: var(--s-4);
 }
 
 .budget-summary {
   text-align: center;
-  margin: 0 0 12px;
+  margin: 0 0 var(--s-3);
 }
 
 .budget-summary-link {
-  color: var(--muted);
+  color: var(--ink-muted);
   font-size: 0.9rem;
 }
 
 .budget-summary-link.over {
-  color: var(--over);
+  color: var(--neg);
   font-weight: 600;
 }

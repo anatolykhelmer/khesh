@@ -30,10 +30,12 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: "index.html",
-        // The default glob is js,css,html,ico,png,svg — without woff2 the
-        // self-hosted font is the one asset the service worker misses, and the
-        // first offline launch silently falls back to the system font.
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        // Workbox's default is **/*.{js,wasm,css,html}, and this project had no
+        // globPatterns at all, so the PWA icons were never actually precached and a
+        // self-hosted font would not be either. This list is that default plus the
+        // asset types the app really ships. Keep `wasm`: we replace the default rather
+        // than extend it, so anything dropped here is dropped silently and for good.
+        globPatterns: ["**/*.{js,wasm,css,html,ico,png,svg,woff2}"],
       },
     }),
   ],

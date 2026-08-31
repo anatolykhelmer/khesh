@@ -55,7 +55,8 @@
     "emptyTitle": "Nothing recorded yet",
     "emptyBody": "Add your first expense or income — this screen fills in as you go.",
     "emptyAction": "Add an entry",
-    "budgetOver": "Budget: {{count}} categories over"
+    "budgetOver_one": "Budget: 1 category over",
+    "budgetOver_other": "Budget: {{count}} categories over"
   },
   "budget": {
     "title": "Budget",

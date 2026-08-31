@@ -55,7 +55,8 @@
     "emptyTitle": "עדיין לא נרשם דבר",
     "emptyBody": "הוסיפו הוצאה או הכנסה ראשונה — המסך יתמלא תוך כדי.",
     "emptyAction": "הוספת תנועה",
-    "budgetOver": "תקציב: {{count}} קטגוריות בחריגה"
+    "budgetOver_one": "תקציב: קטגוריה אחת בחריגה",
+    "budgetOver_other": "תקציב: {{count}} קטגוריות בחריגה"
   },
   "budget": {
     "title": "תקציב",

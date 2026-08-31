@@ -11,8 +11,18 @@ import { minorToMajor } from "../service/money";
 import { currencySymbol } from "./currencies";
 import i18n from "./i18n";
 
+/**
+ * Fixed en-US grouping, deliberately: Israeli convention groups with commas and a dot
+ * decimal — identical output — while formatting through i18n.language would pull
+ * hidden bidi controls out of Hebrew ICU data into strings that already sit inside
+ * <Ltr>, and would tie unit tests to the runtime locale. Revisit only if a locale
+ * with different digit grouping ever ships. Forms keep the raw minorToMajor string.
+ */
+const GROUPED = new Intl.NumberFormat("en-US");
+
 export function formatMinor(minor: number, currency: string): string {
-  return `${minorToMajor(minor)} ${currencySymbol(currency)}`;
+  const [whole, frac] = minorToMajor(minor).split(".");
+  return `${GROUPED.format(Number(whole))}.${frac} ${currencySymbol(currency)}`;
 }
 
 /**

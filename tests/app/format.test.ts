@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatAccountBalance,
   formatDate,
+  formatMinor,
   formatRate,
   monthLabel,
 } from "../../src/app/format";
@@ -35,6 +36,28 @@ describe("monthLabel", () => {
     expect(monthLabel(1)).toBe("January");
     expect(monthLabel(8)).toBe("August");
     expect(monthLabel(12)).toBe("December");
+  });
+});
+
+describe("formatMinor", () => {
+  it("keeps sub-thousand output unchanged", () => {
+    expect(formatMinor(0, "ILS")).toBe("0.00 ₪");
+    expect(formatMinor(9520, "ILS")).toBe("95.20 ₪");
+    expect(formatMinor(99999, "ILS")).toBe("999.99 ₪");
+  });
+
+  it("groups thousands with commas", () => {
+    expect(formatMinor(120000, "ILS")).toBe("1,200.00 ₪");
+    expect(formatMinor(123456789, "ILS")).toBe("1,234,567.89 ₪");
+  });
+
+  it("keeps the sign ahead of the grouped digits", () => {
+    expect(formatMinor(-123456, "ILS")).toBe("-1,234.56 ₪");
+  });
+
+  it("keeps the sign when the integer part is zero", () => {
+    // "-0.50" splits to whole "-0"; Number("-0") is -0 and Intl must render its sign.
+    expect(formatMinor(-50, "ILS")).toBe("-0.50 ₪");
   });
 });
 

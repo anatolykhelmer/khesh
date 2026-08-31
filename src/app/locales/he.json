@@ -49,13 +49,12 @@
     "settings": "הגדרות",
     "ofBudget": "{{percent}}% מתוך",
     "overBudgetBy": "חריגה מהתקציב של",
+    "outsidePlan": "מחוץ לתוכנית:",
     "setLimit": "הגדרת מגבלה חודשית ←",
     "topCategories": "קטגוריות מובילות",
     "emptyTitle": "עדיין לא נרשם דבר",
     "emptyBody": "הוסיפו הוצאה או הכנסה ראשונה — המסך יתמלא תוך כדי.",
     "emptyAction": "הוספת תנועה",
-    "budgetSetLimits": "תקציב: הגדרת מגבלות",
-    "budgetOnPlan": "תקציב: בתוך התוכנית",
     "budgetOver": "תקציב: {{count}} קטגוריות בחריגה"
   },
   "budget": {

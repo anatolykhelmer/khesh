@@ -49,13 +49,12 @@
     "settings": "Settings",
     "ofBudget": "{{percent}}% of",
     "overBudgetBy": "Over budget by",
+    "outsidePlan": "outside plan:",
     "setLimit": "Set a monthly limit →",
     "topCategories": "Top categories",
     "emptyTitle": "Nothing recorded yet",
     "emptyBody": "Add your first expense or income — this screen fills in as you go.",
     "emptyAction": "Add an entry",
-    "budgetSetLimits": "Budget: set limits",
-    "budgetOnPlan": "Budget: on plan",
     "budgetOver": "Budget: {{count}} categories over"
   },
   "budget": {

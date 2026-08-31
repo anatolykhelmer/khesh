@@ -92,6 +92,23 @@ export function DashboardScreen() {
           .slice(0, TOP_CATEGORIES)
       : [];
 
+  const monthRows = monthBudget.value.rows;
+  const yearRows = yearBudget.ok ? yearBudget.value.rows : [];
+  // A category can carry both a monthly and an annual limit, so it can appear in both
+  // reports. Count distinct accounts, not rows, or such a category is counted twice —
+  // the bug fixed in 6d8a84a.
+  const overAccountIds = new Set(
+    [...monthRows, ...yearRows].filter((row) => row.remaining < 0).map((row) => row.accountId),
+  );
+  const overCount = overAccountIds.size;
+  const monthOverCount = monthRows.filter((row) => row.remaining < 0).length;
+  // If nothing is over monthly, the overrun must come from the annual report alone —
+  // link to the year view so the tap does not land on a screen with nothing red on it.
+  const budgetHref =
+    monthOverCount === 0 && overCount > 0
+      ? `/budget?period=year&year=${year}`
+      : `/budget?period=month&month=${period}`;
+
   return (
     <main className="screen">
       {header}
@@ -119,7 +136,11 @@ export function DashboardScreen() {
       </div>
 
       <p className="hero-label">{t("dashboard.spentIn", { month: monthLabel(month) })}</p>
-      <Link className="hero-amount num" to={`/stats?month=${period}&currency=${home}`}>
+      <Link
+        className="hero-amount num"
+        to={`/stats?month=${period}&currency=${home}`}
+        aria-label={`${t("dashboard.viewStats")}: ${formatMinor(hero.spent, home)}`}
+      >
         <Ltr>{formatMinor(hero.spent, home)}</Ltr>
       </Link>
 
@@ -132,7 +153,7 @@ export function DashboardScreen() {
             {hero.over ? (
               <>
                 {t("dashboard.overBudgetBy")}{" "}
-                <Ltr>{formatMinor(hero.spent - hero.limit, home)}</Ltr>
+                <Ltr>{formatMinor(hero.budgeted - hero.limit, home)}</Ltr>
               </>
             ) : (
               <>
@@ -140,6 +161,12 @@ export function DashboardScreen() {
                 <Ltr>{formatMinor(hero.limit, home)}</Ltr>
               </>
             )}
+            {hero.unbudgeted > 0 ? (
+              <>
+                {" · "}
+                {t("dashboard.outsidePlan")} <Ltr>{formatMinor(hero.unbudgeted, home)}</Ltr>
+              </>
+            ) : null}
           </p>
         </>
       ) : (
@@ -210,20 +237,9 @@ export function DashboardScreen() {
         </section>
       ))}
 
-      {yearBudget.ok && yearBudget.value.rows.some((row) => row.remaining < 0) ? (
+      {overCount > 0 ? (
         <p className="hero-note over">
-          <Link to={`/budget?period=year&year=${year}`}>
-            {/* A category can carry both a monthly and an annual limit, so it can appear in
-                both reports. Count distinct accounts, not rows, or it is counted twice —
-                the bug fixed in 6d8a84a. */}
-            {t("dashboard.budgetOver", {
-              count: new Set(
-                yearBudget.value.rows
-                  .filter((row) => row.remaining < 0)
-                  .map((row) => row.accountId),
-              ).size,
-            })}
-          </Link>
+          <Link to={budgetHref}>{t("dashboard.budgetOver", { count: overCount })}</Link>
         </p>
       ) : null}
     </main>

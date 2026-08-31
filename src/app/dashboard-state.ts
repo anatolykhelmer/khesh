@@ -6,7 +6,15 @@ import type { Book, BudgetReport, CurrencyCode, MinorUnits, PeriodTotals } from 
  * nothing else, so every branch the old screen carried inline lives here under test.
  */
 export type HeroState =
-  | { kind: "budgeted"; spent: MinorUnits; limit: MinorUnits; pct: number; over: boolean }
+  | {
+      kind: "budgeted";
+      spent: MinorUnits;
+      budgeted: MinorUnits;
+      unbudgeted: MinorUnits;
+      limit: MinorUnits;
+      pct: number;
+      over: boolean;
+    }
   | { kind: "unbudgeted"; spent: MinorUnits }
   | { kind: "empty" };
 
@@ -25,7 +33,22 @@ export function heroState(book: Book, totals: PeriodTotals, report: BudgetReport
   const limit = homeLimit(book, report, book.homeCurrency);
   if (limit === null) return { kind: "unbudgeted", spent };
 
-  return { kind: "budgeted", spent, limit, pct: percentOf(spent, limit), over: spent > limit };
+  // `spent` covers every expense in the home currency; `budgeted` is only the slice
+  // some limit actually reaches. The bar and its overrun compare against `budgeted`,
+  // not `spent` — otherwise unbudgeted spend (rent, say) would read as a budget
+  // overrun even though no limit was ever set for it.
+  const unbudgeted = (report.unbudgeted[book.homeCurrency] ?? 0) as MinorUnits;
+  const budgeted = (spent - unbudgeted) as MinorUnits;
+
+  return {
+    kind: "budgeted",
+    spent,
+    budgeted,
+    unbudgeted,
+    limit,
+    pct: percentOf(budgeted, limit),
+    over: budgeted > limit,
+  };
 }
 
 /**

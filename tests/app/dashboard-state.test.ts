@@ -25,7 +25,7 @@ function add(
   return { book: next, id: next.accounts[next.accounts.length - 1].id };
 }
 
-/** Cash ILS, and Expenses > Food > Groceries, all ILS. */
+/** Cash ILS, and Expenses > Food > Groceries, plus a Rent leaf no limit ever covers. */
 function fixture() {
   let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
   const cash = add(book, {
@@ -44,7 +44,52 @@ function fixture() {
     parentId: food.id, name: "Groceries", type: "expense", currency: "ILS", isPlaceholder: false,
   });
   book = groceries.book;
-  return { book, cash: cash.id, expenses: expenses.id, food: food.id, groceries: groceries.id };
+  const rent = add(book, {
+    parentId: expenses.id, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false,
+  });
+  book = rent.book;
+  return {
+    book,
+    cash: cash.id,
+    expenses: expenses.id,
+    food: food.id,
+    groceries: groceries.id,
+    rent: rent.id,
+  };
+}
+
+/**
+ * A wider tree for Item 1's nested-limit test:
+ *
+ * Expenses (group, no limit)
+ * ├── Food (group)        limit 1000
+ * │   ├── Groceries       limit 600
+ * │   └── Restaurants     no limit
+ * ├── Car (group)         limit 2000
+ * │   ├── Fuel            limit 1200
+ * │   └── Repairs         no limit
+ * └── Rent                no limit
+ */
+function fixtureWide() {
+  const f = fixture();
+  let book = f.book;
+  const restaurants = add(book, {
+    parentId: f.food, name: "Restaurants", type: "expense", currency: "ILS", isPlaceholder: false,
+  });
+  book = restaurants.book;
+  const car = add(book, {
+    parentId: f.expenses, name: "Car", type: "expense", currency: "ILS", isPlaceholder: true,
+  });
+  book = car.book;
+  const fuel = add(book, {
+    parentId: car.id, name: "Fuel", type: "expense", currency: "ILS", isPlaceholder: false,
+  });
+  book = fuel.book;
+  const repairs = add(book, {
+    parentId: car.id, name: "Repairs", type: "expense", currency: "ILS", isPlaceholder: false,
+  });
+  book = repairs.book;
+  return { ...f, book, restaurants: restaurants.id, car: car.id, fuel: fuel.id, repairs: repairs.id };
 }
 
 function spend(book: Book, from: string, to: string, amount: number): Book {
@@ -105,6 +150,8 @@ describe("heroState", () => {
     expect(hero(book)).toEqual({
       kind: "budgeted",
       spent: 9520,
+      budgeted: 9520,
+      unbudgeted: 0,
       limit: 12000,
       pct: 79,
       over: false,
@@ -120,6 +167,8 @@ describe("heroState", () => {
     expect(hero(book)).toEqual({
       kind: "budgeted",
       spent: 14000,
+      budgeted: 14000,
+      unbudgeted: 0,
       limit: 10000,
       pct: 100,
       over: true,
@@ -145,6 +194,8 @@ describe("heroState", () => {
     expect(hero(book)).toEqual({
       kind: "budgeted",
       spent: -200,
+      budgeted: -200,
+      unbudgeted: 0,
       limit: 1000,
       pct: 0,
       over: false,
@@ -175,7 +226,15 @@ describe("heroState", () => {
       unbudgeted: {},
     };
     const result = heroState(book, { ILS: { income: 0, expense: 0 } }, report);
-    expect(result).toEqual({ kind: "budgeted", spent: 0, limit: 0, pct: 100, over: false });
+    expect(result).toEqual({
+      kind: "budgeted",
+      spent: 0,
+      budgeted: 0,
+      unbudgeted: 0,
+      limit: 0,
+      pct: 100,
+      over: false,
+    });
   });
 
   it("counts a nested limit once, not twice", () => {
@@ -190,7 +249,15 @@ describe("heroState", () => {
       setBudget(book, { accountId: f.groceries, currency: "ILS", period: "month", limit: 6000 }),
     );
     const result = hero(book);
-    expect(result).toMatchObject({ kind: "budgeted", limit: 10000 });
+    expect(result).toEqual({
+      kind: "budgeted",
+      spent: 3000,
+      budgeted: 3000,
+      unbudgeted: 0,
+      limit: 10000,
+      pct: 30,
+      over: false,
+    });
   });
 
   it("ignores limits in a currency other than the home currency", () => {
@@ -210,5 +277,59 @@ describe("heroState", () => {
     );
     // Only a USD limit exists, so the ILS hero has no denominator.
     expect(hero(book)).toEqual({ kind: "unbudgeted", spent: 0 });
+  });
+
+  it("keeps the bar within limits when some spend falls outside every budget", () => {
+    const f = fixture();
+    // 700 inside Food's limit, 8000 on Rent, which no limit covers at all.
+    let book = spend(f.book, f.cash, f.groceries, 700);
+    book = spend(book, f.cash, f.rent, 8000);
+    book = unwrap(
+      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 1000 }),
+    );
+    expect(hero(book)).toEqual({
+      kind: "budgeted",
+      spent: 8700,
+      budgeted: 700,
+      unbudgeted: 8000,
+      limit: 1000,
+      pct: 70,
+      over: false,
+    });
+  });
+
+  it("separates budgeted spend from unbudgeted spend under nested limits", () => {
+    const f = fixtureWide();
+    let book = f.book;
+    book = spend(book, f.cash, f.groceries, 700);
+    book = spend(book, f.cash, f.restaurants, 200);
+    book = spend(book, f.cash, f.fuel, 1300);
+    book = spend(book, f.cash, f.repairs, 400);
+    book = spend(book, f.cash, f.rent, 8000);
+    book = unwrap(
+      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 1000 }),
+    );
+    book = unwrap(
+      setBudget(book, { accountId: f.groceries, currency: "ILS", period: "month", limit: 600 }),
+    );
+    book = unwrap(
+      setBudget(book, { accountId: f.car, currency: "ILS", period: "month", limit: 2000 }),
+    );
+    book = unwrap(
+      setBudget(book, { accountId: f.fuel, currency: "ILS", period: "month", limit: 1200 }),
+    );
+    // spent: 700 + 200 + 1300 + 400 + 8000 = 10600 (all expense leaves).
+    // unbudgeted: only Rent — every other leaf sits under a budgeted Food/Car group.
+    // budgeted: 10600 - 8000 = 2600.
+    // limit: Food (1000) + Car (2000); Groceries and Fuel are nested and dropped.
+    expect(hero(book)).toEqual({
+      kind: "budgeted",
+      spent: 10600,
+      budgeted: 2600,
+      unbudgeted: 8000,
+      limit: 3000,
+      pct: 87,
+      over: false,
+    });
   });
 });

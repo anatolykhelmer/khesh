@@ -137,7 +137,7 @@ export function DashboardScreen() {
 
       <p className="hero-label">{t("dashboard.spentIn", { month: monthLabel(month) })}</p>
       <Link
-        className="hero-amount num"
+        className="hero-amount"
         to={`/stats?month=${period}&currency=${home}`}
         aria-label={`${t("dashboard.viewStats")}: ${formatMinor(hero.spent, home)}`}
       >
@@ -147,7 +147,7 @@ export function DashboardScreen() {
       {hero.kind === "budgeted" ? (
         <>
           <div className={hero.over ? "hero-bar over" : "hero-bar"}>
-            <span style={{ width: `${hero.pct}%` }} />
+            <span style={{ inlineSize: `${hero.pct}%` }} />
           </div>
           <p className={hero.over ? "hero-note over" : "hero-note"}>
             {hero.over ? (
@@ -187,7 +187,7 @@ export function DashboardScreen() {
         </div>
         <div className="stat-card">
           <dt>{t("dashboard.net")}</dt>
-          <dd className={net < 0 ? "neg" : "pos"}>
+          <dd className={net > 0 ? "pos" : net < 0 ? "neg" : undefined}>
             <Ltr>{formatMinor(net, home)}</Ltr>
           </dd>
         </div>
@@ -195,7 +195,7 @@ export function DashboardScreen() {
 
       {categories.length > 0 ? (
         <>
-          <p className="section-label">{t("dashboard.topCategories")}</p>
+          <h2 className="section-label">{t("dashboard.topCategories")}</h2>
           <ul className="cat-list">
             {categories.map((child, index) => (
               <li key={child.id}>
@@ -217,7 +217,7 @@ export function DashboardScreen() {
 
       {otherCurrencies.map(([currency, figures]) => (
         <section key={currency}>
-          <p className="section-label">{currencySymbol(currency)}</p>
+          <h2 className="section-label">{currencySymbol(currency)}</h2>
           <dl className="detail-list">
             <div>
               <dt>{t("dashboard.income")}</dt>

@@ -7,6 +7,9 @@ body {
   font-family: var(--font);
   font-size: var(--t-base);
   line-height: 1.5;
+  /* A ledger: effectively every digit is an amount, a date, or a count.
+     Tabular everywhere beats remembering to opt in per selector. */
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
   background: var(--bg);
 }
@@ -60,9 +63,4 @@ h2 {
 .muted {
   color: var(--ink-muted);
   margin: 0;
-}
-
-/* Every amount in the app. Digits must not jump as figures change. */
-.num {
-  font-variant-numeric: tabular-nums;
 }

@@ -56,6 +56,8 @@
     "emptyBody": "הוסיפו הוצאה או הכנסה ראשונה — המסך יתמלא תוך כדי.",
     "emptyAction": "הוספת תנועה",
     "budgetOver_one": "תקציב: קטגוריה אחת בחריגה",
+    "budgetOver_two": "תקציב: שתי קטגוריות בחריגה",
+    "budgetOver_many": "תקציב: {{count}} קטגוריות בחריגה",
     "budgetOver_other": "תקציב: {{count}} קטגוריות בחריגה"
   },
   "budget": {

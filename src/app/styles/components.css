@@ -108,6 +108,20 @@ button {
   flex: none;
 }
 
+/* Without a rule, color-scheme: light dark leaves this as a UA-grey chip in dark. */
+.banner-dismiss {
+  min-height: var(--tap);
+  min-width: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+}
+
 .account-list,
 .journal-list,
 .account-children {
@@ -239,10 +253,12 @@ button {
   color: var(--accent-ink);
 }
 
+/* Solid, not tonal: the same token pair with the roles swapped clears 7:1 in both
+   themes, where the tonal fill measured ~1.1:1 against its surface. */
 .danger {
-  border: 1px solid var(--danger-line);
-  background: var(--danger-bg);
-  color: var(--danger-ink);
+  border: none;
+  background: var(--danger-ink);
+  color: var(--danger-bg);
 }
 
 .choice-group {
@@ -310,7 +326,6 @@ button {
 .detail-list dd {
   margin: 0;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 
 .journal-title {
@@ -319,7 +334,6 @@ button {
 
 .journal-amount {
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 
 .filter-bar {
@@ -558,7 +572,6 @@ dialog.picker .twisty {
   font: inherit;
   color: inherit;
   text-align: start;
-  font-variant-numeric: tabular-nums;
 }
 
 .stats-row .muted {
@@ -611,7 +624,6 @@ dialog.picker .twisty {
 
 .budget-figures {
   font-size: var(--t-sm);
-  font-variant-numeric: tabular-nums;
 }
 
 /* A flex row lays the fill out from the inline start, so it mirrors in RTL on its
@@ -760,7 +772,6 @@ dialog.picker .twisty {
   margin: 0;
   font-size: var(--t-md);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 
 .stat-card dd.pos { color: var(--pos); }
@@ -793,7 +804,6 @@ dialog.picker .twisty {
 
 .cat-row .amount {
   margin-inline-start: auto;
-  font-variant-numeric: tabular-nums;
   font-weight: 500;
 }
 

@@ -264,6 +264,10 @@ button {
   color: var(--danger-bg);
 }
 
+.danger:disabled {
+  opacity: 0.5;
+}
+
 .choice-group {
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
@@ -786,6 +790,7 @@ dialog.picker .twisty {
   text-transform: uppercase;
   color: var(--ink-muted);
   margin: var(--s-5) 0 var(--s-2);
+  font-weight: 600;
 }
 
 .cat-list {

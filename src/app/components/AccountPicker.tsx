@@ -112,7 +112,7 @@ export function AccountPicker({
           {allOptionLabel ? (
             <li>
               <div className="picker-row">
-                <span className="twisty spacer" aria-hidden="true" />
+                <span className="twisty" aria-hidden="true" />
                 <button
                   type="button"
                   className="picker-name"
@@ -143,7 +143,7 @@ export function AccountPicker({
                     {row.expanded ? <CaretDown /> : <ChevronForward size={16} />}
                   </button>
                 ) : (
-                  <span className="twisty spacer" aria-hidden="true">
+                  <span className="twisty" aria-hidden="true">
                     {row.hasChildren ? <CaretDown /> : null}
                   </span>
                 )}

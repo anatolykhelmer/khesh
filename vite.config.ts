@@ -40,7 +40,8 @@ export default defineConfig({
         // symbols subsets' unicode-range, so the browser never requests these files —
         // online or offline. They still ship in dist (the @font-face rules reference
         // them) but stop costing ~37 KB in every user's precache.
-        globIgnores: ["**/heebo-math-*", "**/heebo-symbols-*"],
+        // Like globPatterns above, this array replaces the default, so it restates workbox's own node_modules exclusion.
+        globIgnores: ["**/node_modules/**/*", "**/heebo-math-*", "**/heebo-symbols-*"],
       },
     }),
   ],

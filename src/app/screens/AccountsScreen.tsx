@@ -53,7 +53,7 @@ export function AccountsScreen() {
                 {open ? <CaretDown /> : <ChevronForward size={16} />}
               </button>
             ) : (
-              <span className="twisty spacer" aria-hidden="true" />
+              <span className="twisty" aria-hidden="true" />
             )}
             <Link className="account-link" to={`/accounts/${node.id}`}>
               <span>{node.name}</span>

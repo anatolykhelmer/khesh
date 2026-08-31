@@ -6,6 +6,7 @@ import { inferEntryLines } from "../../service/ledger-app";
 import { currentYearMonth, formatYearMonth, shiftYearMonth } from "../../service/dates";
 import type { YearMonth } from "../../service/dates";
 import { AccountPicker } from "../components/AccountPicker";
+import { ChevronBack, ChevronForward, ArrowForward } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { accountPathLabel, formatDate, formatMinor, monthLabel } from "../format";
 import { isDefaultFilter, parseJournalFilter, toListJournalFilter } from "../journal-filter";
@@ -75,7 +76,7 @@ export function JournalScreen() {
           aria-label={t("common.previousMonth")}
           onClick={() => step(-1)}
         >
-          ◂
+          <ChevronBack />
         </button>
         <span>
           {currentFilter.period
@@ -83,7 +84,7 @@ export function JournalScreen() {
             : t("journal.allTime")}
         </span>
         <button type="button" className="twisty" aria-label={t("common.nextMonth")} onClick={() => step(1)}>
-          ▸
+          <ChevronForward />
         </button>
       </div>
 
@@ -134,21 +135,21 @@ export function JournalScreen() {
               if (shape.fx) {
                 subtitle = (
                   <>
-                    {fromPath} <span className="flow-arrow">→</span> {toPath} ·{" "}
+                    {fromPath} <span className="flow-arrow"><ArrowForward /></span> {toPath} ·{" "}
                     <Ltr>{formatMinor(shape.fromAmount, shape.fx.baseCurrency)}</Ltr>
                   </>
                 );
               } else if (shape.lines.length === 1) {
                 subtitle = (
                   <>
-                    {fromPath} <span className="flow-arrow">→</span> {toPath}
+                    {fromPath} <span className="flow-arrow"><ArrowForward /></span> {toPath}
                   </>
                 );
               } else {
                 subtitle = (
                   <>
                     {fromPath}{" "}
-                    <span className="flow-arrow">→</span>{" "}
+                    <span className="flow-arrow"><ArrowForward /></span>{" "}
                     {t("journal.categoriesCount", { count: shape.lines.length })}
                   </>
                 );

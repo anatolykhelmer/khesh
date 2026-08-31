@@ -2,6 +2,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { monthRange, shiftYearMonth } from "../../service/dates";
 import { pieArcs } from "../expense-pie";
+import { ChevronBack, ChevronForward } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { currencySymbol } from "../currencies";
 import { formatMinor, monthLabel } from "../format";
@@ -83,7 +84,7 @@ export function StatsScreen() {
           aria-label={t("common.previousMonth")}
           onClick={() => write({ ...state, period: shiftYearMonth(state.period, -1) })}
         >
-          ◂
+          <ChevronBack />
         </button>
         <span>
           {monthLabel(state.period.month)} {state.period.year}
@@ -94,7 +95,7 @@ export function StatsScreen() {
           aria-label={t("common.nextMonth")}
           onClick={() => write({ ...state, period: shiftYearMonth(state.period, 1) })}
         >
-          ▸
+          <ChevronForward />
         </button>
       </div>
       {breakdown.currencies.length > 1 ? (

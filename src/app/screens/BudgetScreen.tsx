@@ -9,6 +9,7 @@ import {
   toBudgetParams,
   type BudgetState,
 } from "../budget-state";
+import { ChevronBack, ChevronForward } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { formatMinor, monthLabel } from "../format";
 import { useLedger } from "../ledger-context";
@@ -66,7 +67,7 @@ export function BudgetScreen() {
           aria-label={t("budget.previousPeriod")}
           onClick={() => write(shiftBudgetState(state, -1))}
         >
-          ◂
+          <ChevronBack />
         </button>
         <span>
           {state.period === "month"
@@ -79,7 +80,7 @@ export function BudgetScreen() {
           aria-label={t("budget.nextPeriod")}
           onClick={() => write(shiftBudgetState(state, 1))}
         >
-          ▸
+          <ChevronForward />
         </button>
       </div>
       {report.rows.length === 0 ? (

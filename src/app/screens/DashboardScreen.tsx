@@ -13,6 +13,7 @@ import { currencySymbol } from "../currencies";
 import { heroState } from "../dashboard-state";
 import { expenseRootId } from "../stats-state";
 import { Ltr } from "../components/Ltr";
+import { ChevronBack, ChevronForward } from "../components/icons";
 import { useLedger } from "../ledger-context";
 
 const TOP_CATEGORIES = 4;
@@ -120,7 +121,7 @@ export function DashboardScreen() {
           aria-label={t("common.previousMonth")}
           onClick={() => shiftMonth(-1)}
         >
-          ◂
+          <ChevronBack />
         </button>
         <span>
           {monthLabel(month)} {year}
@@ -131,7 +132,7 @@ export function DashboardScreen() {
           aria-label={t("common.nextMonth")}
           onClick={() => shiftMonth(1)}
         >
-          ▸
+          <ChevronForward />
         </button>
       </div>
 

@@ -8,6 +8,7 @@ import { todayCalendarDate } from "../../service/dates";
 import { errorMessage } from "../../service/error-messages";
 import { majorToMinor, minorToMajor } from "../../service/money";
 import { Ltr } from "../components/Ltr";
+import { XMark } from "../components/icons";
 import { formatMinor, formatRate } from "../format";
 import { useLedger } from "../ledger-context";
 import { useLedgerMutation } from "../use-ledger-mutation";
@@ -266,7 +267,7 @@ export function TransferFormScreen() {
                   aria-label={t("transferForm.removeLineAria", { index: index + 1 })}
                   onClick={() => removeLine(index)}
                 >
-                  ✕
+                  <XMark />
                 </button>
               ) : null}
             </div>

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AccountNode } from "../../kernel";
 import { expandedForSelection, pathOf, visibleRows } from "../account-tree";
+import { CaretDown, Check, ChevronForward } from "./icons";
 import { currencySymbol } from "../currencies";
 
 type Props = {
@@ -119,7 +120,7 @@ export function AccountPicker({
                   onClick={() => choose(null)}
                 >
                   <span>{allOptionLabel}</span>
-                  {value === null ? <span aria-hidden="true">✓</span> : null}
+                  {value === null ? <Check /> : null}
                 </button>
               </div>
             </li>
@@ -139,11 +140,11 @@ export function AccountPicker({
                     }
                     onClick={() => toggle(row.id)}
                   >
-                    {row.expanded ? "▾" : "▸"}
+                    {row.expanded ? <CaretDown /> : <ChevronForward size={16} />}
                   </button>
                 ) : (
                   <span className="twisty spacer" aria-hidden="true">
-                    {row.hasChildren ? "▾" : ""}
+                    {row.hasChildren ? <CaretDown /> : null}
                   </span>
                 )}
                 <button
@@ -160,7 +161,7 @@ export function AccountPicker({
                       <span className="picker-currency"> {currencySymbol(row.currency)}</span>
                     )}
                   </span>
-                  {row.id === value ? <span aria-hidden="true">✓</span> : null}
+                  {row.id === value ? <Check /> : null}
                 </button>
               </div>
             </li>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { AccountNode } from "../../kernel";
 import { formatAccountBalance } from "../format";
+import { CaretDown, ChevronForward } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { useLedger } from "../ledger-context";
 
@@ -49,7 +50,7 @@ export function AccountsScreen() {
                 }
                 onClick={() => toggle(node.id)}
               >
-                {open ? "▾" : "▸"}
+                {open ? <CaretDown /> : <ChevronForward size={16} />}
               </button>
             ) : (
               <span className="twisty spacer" aria-hidden="true" />

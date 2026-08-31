@@ -163,15 +163,14 @@ button {
   width: 28px;
   min-height: var(--tap);
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: var(--ink-muted);
   padding: 0;
   font: inherit;
-}
-
-.twisty.spacer {
-  display: inline-block;
 }
 
 [dir="rtl"] .twisty {
@@ -184,6 +183,10 @@ button {
 
 [dir="rtl"] .flow-arrow {
   transform: scaleX(-1);
+}
+
+.flow-arrow svg {
+  vertical-align: -2px;
 }
 
 .screen-head {

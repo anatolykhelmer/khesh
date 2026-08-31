@@ -730,6 +730,10 @@ dialog.picker .twisty {
   text-decoration: none;
 }
 
+.hero-note.over a {
+  color: inherit;
+}
+
 .stat-cards {
   display: grid;
   grid-template-columns: 1fr 1fr;

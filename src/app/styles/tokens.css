@@ -45,13 +45,11 @@
   --s-3: 12px;
   --s-4: 16px;
   --s-5: 24px;
-  --s-6: 32px;
   --s-7: 48px;
 
   /* radius */
   --r-sm: 8px;
   --r-md: 12px;
-  --r-lg: 16px;
   --r-full: 999px;
 
   /* elevation — light only; dark carries hierarchy on surfaces */

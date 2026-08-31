@@ -56,7 +56,7 @@ button {
   max-width: var(--max);
   display: flex;
   border-top: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--surface-2);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -525,8 +525,18 @@ dialog.picker .twisty {
   margin: 0 auto var(--s-4);
 }
 
+/* Categorical ramp, shared by the stats pie and the dashboard's category dots.
+   Kept in CSS rather than a JS array so it follows the theme without a repaint. */
+.cat-0 { --cat: var(--cat-1); }
+.cat-1 { --cat: var(--cat-2); }
+.cat-2 { --cat: var(--cat-3); }
+.cat-3 { --cat: var(--cat-4); }
+.cat-4 { --cat: var(--cat-5); }
+.cat-5 { --cat: var(--cat-6); }
+
 .stats-pie path {
   cursor: pointer;
+  fill: var(--cat);
 }
 
 .stats-legend {
@@ -559,6 +569,7 @@ dialog.picker .twisty {
   width: 10px;
   height: 10px;
   border-radius: var(--r-full);
+  background: var(--cat);
   flex: none;
 }
 
@@ -639,18 +650,6 @@ dialog.picker .twisty {
 .budget-add {
   margin-top: var(--s-4);
 }
-
-/* Categorical ramp, shared by the stats pie and the dashboard's category dots.
-   Kept in CSS rather than a JS array so it follows the theme without a repaint. */
-.cat-0 { --cat: var(--cat-1); }
-.cat-1 { --cat: var(--cat-2); }
-.cat-2 { --cat: var(--cat-3); }
-.cat-3 { --cat: var(--cat-4); }
-.cat-4 { --cat: var(--cat-5); }
-.cat-5 { --cat: var(--cat-6); }
-
-.stats-pie path { fill: var(--cat); }
-.swatch { background: var(--cat); }
 
 .dash-head {
   display: flex;

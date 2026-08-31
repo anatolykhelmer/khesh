@@ -26,6 +26,8 @@ body {
 
 .app-content {
   flex: 1;
+  /* The 0px fallback is load-bearing: on a browser without a notch an undefined env()
+     makes the whole calc() invalid, and the tab-bar clearance collapses to nothing. */
   padding: var(--s-4) var(--s-4)
     calc(var(--s-4) + var(--tap) + var(--s-3) + env(safe-area-inset-bottom, 0px));
 }

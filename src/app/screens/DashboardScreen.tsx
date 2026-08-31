@@ -129,15 +129,17 @@ export function DashboardScreen() {
             <span style={{ width: `${hero.pct}%` }} />
           </div>
           <p className={hero.over ? "hero-note over" : "hero-note"}>
-            {hero.over
-              ? t("dashboard.overBudget", {
-                  amount: formatMinor(hero.spent - hero.limit, home),
-                  limit: formatMinor(hero.limit, home),
-                })
-              : t("dashboard.ofBudget", {
-                  percent: hero.pct,
-                  limit: formatMinor(hero.limit, home),
-                })}
+            {hero.over ? (
+              <>
+                {t("dashboard.overBudgetBy")}{" "}
+                <Ltr>{formatMinor(hero.spent - hero.limit, home)}</Ltr>
+              </>
+            ) : (
+              <>
+                {t("dashboard.ofBudget", { percent: hero.pct })}{" "}
+                <Ltr>{formatMinor(hero.limit, home)}</Ltr>
+              </>
+            )}
           </p>
         </>
       ) : (
@@ -211,6 +213,9 @@ export function DashboardScreen() {
       {yearBudget.ok && yearBudget.value.rows.some((row) => row.remaining < 0) ? (
         <p className="hero-note over">
           <Link to={`/budget?period=year&year=${year}`}>
+            {/* A category can carry both a monthly and an annual limit, so it can appear in
+                both reports. Count distinct accounts, not rows, or it is counted twice —
+                the bug fixed in 6d8a84a. */}
             {t("dashboard.budgetOver", {
               count: new Set(
                 yearBudget.value.rows

@@ -36,6 +36,11 @@ export default defineConfig({
         // asset types the app really ships. Keep `wasm`: we replace the default rather
         // than extend it, so anything dropped here is dropped silently and for good.
         globPatterns: ["**/*.{js,wasm,css,html,ico,png,svg,woff2}"],
+        // After the glyph-to-SVG sweep, nothing the app renders falls in the math or
+        // symbols subsets' unicode-range, so the browser never requests these files —
+        // online or offline. They still ship in dist (the @font-face rules reference
+        // them) but stop costing ~37 KB in every user's precache.
+        globIgnores: ["**/heebo-math-*", "**/heebo-symbols-*"],
       },
     }),
   ],

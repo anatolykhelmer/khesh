@@ -64,8 +64,12 @@ button {
   flex: 1;
   min-height: var(--tap);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: var(--s-1);
+  padding: var(--s-2) 0;
+  font-size: var(--t-xs);
   text-decoration: none;
   color: var(--ink-muted);
   border-top: 2px solid transparent;

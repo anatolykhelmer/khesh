@@ -341,6 +341,7 @@ button {
   flex-wrap: wrap;
 }
 
+/* Also carded — see the card-groups section below. */
 .detail-list {
   margin: var(--s-4) 0;
 }
@@ -635,6 +636,7 @@ dialog.picker .twisty {
 
 .settings-list {
   list-style: none;
+  padding: 0;
   margin: var(--s-4) 0;
 }
 
@@ -864,7 +866,11 @@ dialog.picker .twisty {
 /* One list = one card. Rows keep their own classes; separators are a
    border-top on every row except the container's first, so the last
    visible row never paints a stray hairline — load-bearing for the
-   accounts tree, where the last visible row depends on expansion. */
+   accounts tree, where the last visible row depends on expansion.
+   Placement is load-bearing: .account-list, .journal-list, .stats-legend,
+   .budget-list, .cat-list, and .settings-list all set padding: 0 earlier
+   at the same specificity — this block only wins by coming later. Do not
+   move it up. */
 .group,
 .detail-list {
   background: var(--surface);

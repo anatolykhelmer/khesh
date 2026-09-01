@@ -25,7 +25,7 @@ export function ChevronBack({ size = 18 }: IconProps) {
   );
 }
 
-/** Month navigators: next. Also the collapsed tree caret (pass size 16). */
+/** Month navigators: next. */
 export function ChevronForward({ size = 18 }: IconProps) {
   return (
     <svg {...ATTRS} width={size} height={size}>

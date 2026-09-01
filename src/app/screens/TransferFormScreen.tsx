@@ -245,7 +245,7 @@ export function TransferFormScreen() {
 
         <section>
           <h2 className="section-label">{t("transferForm.toLegend")}</h2>
-          <div className="group form-group">
+          <div className="group form-group" role="group" aria-label={t("transferForm.toLegend")}>
             {lines.map((line, index) => (
               <div className="split-line" key={index}>
                 <AccountPicker

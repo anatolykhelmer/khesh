@@ -6,6 +6,7 @@ import type { CurrencyCode } from "../../kernel";
 import { errorMessage } from "../../service/error-messages";
 import { majorToMinor } from "../../service/money";
 import { AccountKindChoice } from "../components/AccountKindChoice";
+import { ChevronBack } from "../components/icons";
 import { CURRENCIES } from "../currencies";
 import { useLedger } from "../ledger-context";
 import { useLedgerMutation } from "../use-ledger-mutation";
@@ -60,51 +61,58 @@ export function AccountFormScreen() {
 
   return (
     <main className="screen">
-      <h1>{t("accountForm.title")}</h1>
+      <div className="screen-head">
+        <Link className="icon-button back-button" to="/accounts" aria-label={t("common.backToAccounts")}>
+          <ChevronBack />
+        </Link>
+        <h1>{t("accountForm.title")}</h1>
+      </div>
       <form className="stack-form" onSubmit={onSubmit}>
-        <label>
-          {t("accountForm.parentLabel")}
-          <select
-            value={selectedParent}
-            onChange={(e) => setParentId(e.target.value)}
-            required
-          >
-            {options.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.path}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {t("accountForm.nameLabel")}
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <AccountKindChoice value={isPlaceholder} onChange={setIsPlaceholder} />
-        {isPlaceholder ? null : (
-          <>
-            <label>
-              {t("accountForm.currencyLabel")}
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                {CURRENCIES.map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {t("accountForm.openingBalanceLabel")}
-              <input
-                inputMode="decimal"
-                dir="ltr"
-                placeholder="0.00"
-                value={opening}
-                onChange={(e) => setOpening(e.target.value)}
-              />
-            </label>
-          </>
-        )}
+        <div className="group form-group">
+          <label>
+            {t("accountForm.parentLabel")}
+            <select
+              value={selectedParent}
+              onChange={(e) => setParentId(e.target.value)}
+              required
+            >
+              {options.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.path}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t("accountForm.nameLabel")}
+            <input value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+          <AccountKindChoice value={isPlaceholder} onChange={setIsPlaceholder} />
+          {isPlaceholder ? null : (
+            <>
+              <label>
+                {t("accountForm.currencyLabel")}
+                <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                  {CURRENCIES.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {t("accountForm.openingBalanceLabel")}
+                <input
+                  inputMode="decimal"
+                  dir="ltr"
+                  placeholder="0.00"
+                  value={opening}
+                  onChange={(e) => setOpening(e.target.value)}
+                />
+              </label>
+            </>
+          )}
+        </div>
         <button
           type="submit"
           className="primary"
@@ -113,9 +121,6 @@ export function AccountFormScreen() {
           {t("accountForm.saveAccount")}
         </button>
       </form>
-      <Link className="back-link" to="/accounts">
-        {t("common.backToAccounts")}
-      </Link>
     </main>
   );
 }

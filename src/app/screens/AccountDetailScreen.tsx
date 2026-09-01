@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { accountPathLabel, formatAccountBalance } from "../format";
 import { currencySymbol } from "../currencies";
 import { AccountKindChoice } from "../components/AccountKindChoice";
+import { ChevronBack } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { useLedger } from "../ledger-context";
 import { useLedgerMutation } from "../use-ledger-mutation";
@@ -33,11 +34,13 @@ export function AccountDetailScreen() {
   if (!account) {
     return (
       <main className="screen">
-        <h1>{t("accountDetail.titleFallback")}</h1>
+        <div className="screen-head">
+          <Link className="icon-button back-button" to="/accounts" aria-label={t("common.backToAccounts")}>
+            <ChevronBack />
+          </Link>
+          <h1>{t("accountDetail.titleFallback")}</h1>
+        </div>
         <p className="muted">{t("accountDetail.notFound")}</p>
-        <Link className="back-link" to="/accounts">
-          {t("common.backToAccounts")}
-        </Link>
       </main>
     );
   }
@@ -83,7 +86,12 @@ export function AccountDetailScreen() {
 
   return (
     <main className="screen">
-      <h1>{currentAccount.name}</h1>
+      <div className="screen-head">
+        <Link className="icon-button back-button" to="/accounts" aria-label={t("common.backToAccounts")}>
+          <ChevronBack />
+        </Link>
+        <h1>{currentAccount.name}</h1>
+      </div>
       <p className="muted">{accountPathLabel(currentBook, currentAccount.id)}</p>
       <dl className="detail-list">
         <div>
@@ -116,27 +124,29 @@ export function AccountDetailScreen() {
 
       {editing ? (
         <form className="stack-form" onSubmit={onSave}>
-          <label>
-            {t("accountDetail.nameLabel")}
-            <input value={name} onChange={(e) => setName(e.target.value)} required />
-          </label>
-          {isRoot ? (
-            <p className="muted">{t("accountDetail.rootNotice")}</p>
-          ) : (
-            <>
-              <label>
-                {t("accountDetail.parentLabel")}
-                <select value={parentId} onChange={(e) => setParentId(e.target.value)} required>
-                  {moveOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.path}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <AccountKindChoice value={isPlaceholder} onChange={setIsPlaceholder} />
-            </>
-          )}
+          <div className="group form-group">
+            <label>
+              {t("accountDetail.nameLabel")}
+              <input value={name} onChange={(e) => setName(e.target.value)} required />
+            </label>
+            {isRoot ? (
+              <p className="muted">{t("accountDetail.rootNotice")}</p>
+            ) : (
+              <>
+                <label>
+                  {t("accountDetail.parentLabel")}
+                  <select value={parentId} onChange={(e) => setParentId(e.target.value)} required>
+                    {moveOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.path}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <AccountKindChoice value={isPlaceholder} onChange={setIsPlaceholder} />
+              </>
+            )}
+          </div>
           <button type="submit" className="primary" disabled={busy || !name.trim()}>
             {t("accountDetail.saveChanges")}
           </button>
@@ -170,10 +180,6 @@ export function AccountDetailScreen() {
           )}
         </div>
       )}
-
-      <Link className="back-link" to="/accounts">
-        {t("common.backToAccounts")}
-      </Link>
     </main>
   );
 }

@@ -76,7 +76,11 @@ export function AccountsScreen() {
       {!tree.ok ? (
         <p className="muted">{t("accounts.couldNotLoad")}</p>
       ) : (
-        <ul className="account-list">{renderNodes(tree.value, 0)}</ul>
+        tree.value.map((root) => (
+          <ul className="account-list group" key={root.id}>
+            {renderNodes([root], 0)}
+          </ul>
+        ))
       )}
       <Link className="primary link-button" to="/accounts/new">
         {t("accounts.addAccount")}

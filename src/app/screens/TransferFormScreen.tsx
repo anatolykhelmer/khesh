@@ -197,98 +197,109 @@ export function TransferFormScreen() {
       <h1>{entryId ? t("transferForm.titleEdit") : t("transferForm.titleNew")}</h1>
       {!canSubmit ? <p className="muted">{t("transferForm.notEnoughAccounts")}</p> : null}
       <form className="stack-form" onSubmit={onSubmit}>
-        <label>
-          {t("transferForm.dateLabel")}
-          <input
-            type="date"
-            dir="ltr"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            required
-          />
-        </label>
-        <label>
-          {t("transferForm.descriptionLabel")}
-          <input value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
-        <div className="stack-form-field">
-          <span>{t("transferForm.fromLabel")}</span>
-          <AccountPicker
-            nodes={nodes}
-            value={fromAccountId === "" ? null : fromAccountId}
-            onChange={(id) => chooseFrom(id ?? "")}
-            label={t("transferForm.fromAccountAria")}
-            groupsSelectable={false}
-            placeholder={t("transferForm.selectPlaceholder")}
-          />
-        </div>
-        {isFx ? (
+        <div className="group form-group">
           <label>
-            {t("transferForm.sentLabel", { currency: sourceCurrency })}
+            {t("transferForm.dateLabel")}
             <input
-              inputMode="decimal"
+              type="date"
               dir="ltr"
-              placeholder="0.00"
-              value={fromAmount}
-              onChange={(e) => setFromAmount(e.target.value)}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
               required
             />
           </label>
-        ) : null}
-        <fieldset className="choice-group">
-          <legend>{t("transferForm.toLegend")}</legend>
-          {lines.map((line, index) => (
-            <div className="split-line" key={index}>
+          <label>
+            {t("transferForm.descriptionLabel")}
+            <input value={description} onChange={(e) => setDescription(e.target.value)} />
+          </label>
+        </div>
+
+        <section>
+          <h2 className="section-label">{t("transferForm.fromLabel")}</h2>
+          <div className="group form-group">
+            <div className="stack-form-field">
               <AccountPicker
                 nodes={nodes}
-                value={line.toAccountId === "" ? null : line.toAccountId}
-                onChange={(id) => setLine(index, { toAccountId: id ?? "" })}
-                label={t("transferForm.lineAccountAria", { index: index + 1 })}
+                value={fromAccountId === "" ? null : fromAccountId}
+                onChange={(id) => chooseFrom(id ?? "")}
+                label={t("transferForm.fromAccountAria")}
                 groupsSelectable={false}
                 placeholder={t("transferForm.selectPlaceholder")}
               />
-              <input
-                aria-label={
-                  isFx
-                    ? t("transferForm.receivedAria", { currency: lineCurrency })
-                    : t("transferForm.lineAmountAria", { index: index + 1 })
-                }
-                inputMode="decimal"
-                dir="ltr"
-                placeholder="0.00"
-                value={line.amount}
-                onChange={(e) => setLine(index, { amount: e.target.value })}
-                required
-              />
-              {lines.length >= 2 ? (
-                <button
-                  type="button"
-                  className="secondary"
-                  aria-label={t("transferForm.removeLineAria", { index: index + 1 })}
-                  onClick={() => removeLine(index)}
-                >
-                  <XMark />
-                </button>
-              ) : null}
             </div>
-          ))}
-          {isFx ? null : (
-            <button type="button" className="secondary" onClick={addLine}>
-              {t("transferForm.addSplit")}
-            </button>
-          )}
-          {mixedLines ? <div className="muted">{t("transferForm.mixedCurrencies")}</div> : null}
-          {isFx && fxPreview ? (
-            <div className="muted">
-              {t("transferForm.ratePrefix")} <Ltr>{formatRate(fxPreview)}</Ltr>
-            </div>
-          ) : null}
-          {!isFx && lines.length >= 2 && lineCurrency ? (
-            <div className="muted">
-              {t("transferForm.totalPrefix")} <Ltr>{formatMinor(totalMinor, lineCurrency)}</Ltr>
-            </div>
-          ) : null}
-        </fieldset>
+            {isFx ? (
+              <label>
+                {t("transferForm.sentLabel", { currency: sourceCurrency })}
+                <input
+                  inputMode="decimal"
+                  dir="ltr"
+                  placeholder="0.00"
+                  value={fromAmount}
+                  onChange={(e) => setFromAmount(e.target.value)}
+                  required
+                />
+              </label>
+            ) : null}
+          </div>
+        </section>
+
+        <section>
+          <h2 className="section-label">{t("transferForm.toLegend")}</h2>
+          <div className="group form-group">
+            {lines.map((line, index) => (
+              <div className="split-line" key={index}>
+                <AccountPicker
+                  nodes={nodes}
+                  value={line.toAccountId === "" ? null : line.toAccountId}
+                  onChange={(id) => setLine(index, { toAccountId: id ?? "" })}
+                  label={t("transferForm.lineAccountAria", { index: index + 1 })}
+                  groupsSelectable={false}
+                  placeholder={t("transferForm.selectPlaceholder")}
+                />
+                <input
+                  aria-label={
+                    isFx
+                      ? t("transferForm.receivedAria", { currency: lineCurrency })
+                      : t("transferForm.lineAmountAria", { index: index + 1 })
+                  }
+                  inputMode="decimal"
+                  dir="ltr"
+                  placeholder="0.00"
+                  value={line.amount}
+                  onChange={(e) => setLine(index, { amount: e.target.value })}
+                  required
+                />
+                {lines.length >= 2 ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    aria-label={t("transferForm.removeLineAria", { index: index + 1 })}
+                    onClick={() => removeLine(index)}
+                  >
+                    <XMark />
+                  </button>
+                ) : null}
+              </div>
+            ))}
+            {isFx ? null : (
+              <button type="button" className="secondary" onClick={addLine}>
+                {t("transferForm.addSplit")}
+              </button>
+            )}
+            {mixedLines ? <div className="muted">{t("transferForm.mixedCurrencies")}</div> : null}
+            {isFx && fxPreview ? (
+              <div className="muted">
+                {t("transferForm.ratePrefix")} <Ltr>{formatRate(fxPreview)}</Ltr>
+              </div>
+            ) : null}
+            {!isFx && lines.length >= 2 && lineCurrency ? (
+              <div className="muted">
+                {t("transferForm.totalPrefix")} <Ltr>{formatMinor(totalMinor, lineCurrency)}</Ltr>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
         <button type="submit" className="primary" disabled={busy || !canSubmit}>
           {t("transferForm.save")}
         </button>

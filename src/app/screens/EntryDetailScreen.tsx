@@ -1,6 +1,7 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { inferEntryLines } from "../../service/ledger-app";
+import { ChevronBack } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { accountPathLabel, formatDate, formatMinor, formatRate } from "../format";
 import { useLedger } from "../ledger-context";
@@ -20,9 +21,13 @@ export function EntryDetailScreen() {
   if (!entry) {
     return (
       <main className="screen">
-        <h1>{t("entryDetail.titleEntry")}</h1>
+        <div className="screen-head">
+          <Link className="icon-button back-button" to="/journal" aria-label={t("entryDetail.backToJournal")}>
+            <ChevronBack />
+          </Link>
+          <h1>{t("entryDetail.titleEntry")}</h1>
+        </div>
         <p className="muted">{t("entryDetail.notFound")}</p>
-        <Link to="/journal">{t("entryDetail.backToJournal")}</Link>
       </main>
     );
   }
@@ -43,7 +48,12 @@ export function EntryDetailScreen() {
 
   return (
     <main className="screen">
-      <h1>{currentEntry.kind === "opening" ? t("entryDetail.titleOpening") : t("entryDetail.titleEntry")}</h1>
+      <div className="screen-head">
+        <Link className="icon-button back-button" to="/journal" aria-label={t("entryDetail.backToJournal")}>
+          <ChevronBack />
+        </Link>
+        <h1>{currentEntry.kind === "opening" ? t("entryDetail.titleOpening") : t("entryDetail.titleEntry")}</h1>
+      </div>
       <dl className="detail-list">
         <div>
           <dt>{t("entryDetail.dateLabel")}</dt>
@@ -128,9 +138,6 @@ export function EntryDetailScreen() {
           {t("common.delete")}
         </button>
       </div>
-      <Link className="back-link" to="/journal">
-        {t("entryDetail.backToJournal")}
-      </Link>
     </main>
   );
 }

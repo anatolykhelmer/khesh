@@ -32,7 +32,12 @@ export function BudgetScreen() {
   if (!result.ok) {
     return (
       <main className="screen">
-        <h1>{t("budget.title")}</h1>
+        <div className="screen-head">
+          <Link className="icon-button back-button" to="/dashboard" aria-label={t("budget.backToDashboard")}>
+            <ChevronBack />
+          </Link>
+          <h1>{t("budget.title")}</h1>
+        </div>
         <p className="muted">{t("budget.couldNotLoad")}</p>
       </main>
     );
@@ -43,7 +48,12 @@ export function BudgetScreen() {
 
   return (
     <main className="screen">
-      <h1>{t("budget.title")}</h1>
+      <div className="screen-head">
+        <Link className="icon-button back-button" to="/dashboard" aria-label={t("budget.backToDashboard")}>
+          <ChevronBack />
+        </Link>
+        <h1>{t("budget.title")}</h1>
+      </div>
       <div className="pills">
         <button
           type="button"
@@ -86,7 +96,7 @@ export function BudgetScreen() {
       {report.rows.length === 0 ? (
         <p className="muted">{t("budget.empty")}</p>
       ) : (
-        <ul className="budget-list">
+        <ul className="budget-list group">
           {report.rows.map((row) => {
             const used = Math.max(0, Math.min(100, Math.round((row.spent / row.limit) * 100)));
             const over = row.remaining < 0;
@@ -126,9 +136,6 @@ export function BudgetScreen() {
         to={`/budget/new?${toBudgetParams(state).toString()}`}
       >
         {t("budget.addLimit")}
-      </Link>
-      <Link className="back-link" to="/dashboard">
-        {t("budget.backToDashboard")}
       </Link>
     </main>
   );

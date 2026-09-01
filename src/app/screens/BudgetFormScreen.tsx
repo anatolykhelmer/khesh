@@ -7,6 +7,7 @@ import { errorMessage } from "../../service/error-messages";
 import { majorToMinor } from "../../service/money";
 import { parseBudgetState, setPeriodKind, toBudgetParams } from "../budget-state";
 import { AccountPicker } from "../components/AccountPicker";
+import { ChevronBack } from "../components/icons";
 import { CURRENCIES } from "../currencies";
 import { useLedger } from "../ledger-context";
 import { useLedgerMutation } from "../use-ledger-mutation";
@@ -69,71 +70,79 @@ export function BudgetFormScreen() {
 
   return (
     <main className="screen">
-      <h1>{t("budgetForm.newTitle")}</h1>
+      <div className="screen-head">
+        <Link
+          className="icon-button back-button"
+          to={`/budget?${toBudgetParams(viewed).toString()}`}
+          aria-label={t("budgetForm.backToBudget")}
+        >
+          <ChevronBack />
+        </Link>
+        <h1>{t("budgetForm.newTitle")}</h1>
+      </div>
       <form className="stack-form" onSubmit={onSubmit}>
-        {/* Not a <label>: <button> is labelable, so a label wrapper forwards clicks
-            inside the open picker dialog back to the trigger — see BL-007. */}
-        <div className="stack-form-field">
-          {t("budgetForm.categoryLabel")}
-          <AccountPicker
-            nodes={nodes}
-            value={accountId}
-            onChange={chooseAccount}
-            label={t("budgetForm.categoryLabel")}
-            groupsSelectable
-            placeholder={t("budgetForm.categoryPlaceholder")}
-          />
+        <div className="group form-group">
+          {/* Not a <label>: <button> is labelable, so a label wrapper forwards clicks
+              inside the open picker dialog back to the trigger — see BL-007. */}
+          <div className="stack-form-field">
+            {t("budgetForm.categoryLabel")}
+            <AccountPicker
+              nodes={nodes}
+              value={accountId}
+              onChange={chooseAccount}
+              label={t("budgetForm.categoryLabel")}
+              groupsSelectable
+              placeholder={t("budgetForm.categoryPlaceholder")}
+            />
+          </div>
+          <fieldset className="choice-group">
+            <legend>{t("budgetForm.periodLabel")}</legend>
+            <label className="inline-choice">
+              <input
+                type="radio"
+                name="period"
+                checked={period === "month"}
+                onChange={() => setPeriod("month")}
+              />
+              {t("budget.periodMonth")}
+            </label>
+            <label className="inline-choice">
+              <input
+                type="radio"
+                name="period"
+                checked={period === "year"}
+                onChange={() => setPeriod("year")}
+              />
+              {t("budget.periodYear")}
+            </label>
+          </fieldset>
+          <label>
+            {t("budgetForm.currencyLabel")}
+            <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+              {CURRENCIES.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t("budgetForm.amountLabel")}
+            <input
+              inputMode="decimal"
+              dir="ltr"
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </label>
+          {replaces ? <p className="muted">{t("budgetForm.replacesExisting")}</p> : null}
         </div>
-        <fieldset className="choice-group">
-          <legend>{t("budgetForm.periodLabel")}</legend>
-          <label className="inline-choice">
-            <input
-              type="radio"
-              name="period"
-              checked={period === "month"}
-              onChange={() => setPeriod("month")}
-            />
-            {t("budget.periodMonth")}
-          </label>
-          <label className="inline-choice">
-            <input
-              type="radio"
-              name="period"
-              checked={period === "year"}
-              onChange={() => setPeriod("year")}
-            />
-            {t("budget.periodYear")}
-          </label>
-        </fieldset>
-        <label>
-          {t("budgetForm.currencyLabel")}
-          <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            {CURRENCIES.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {t("budgetForm.amountLabel")}
-          <input
-            inputMode="decimal"
-            dir="ltr"
-            placeholder="0.00"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            required
-          />
-        </label>
-        {replaces ? <p className="muted">{t("budgetForm.replacesExisting")}</p> : null}
         <button type="submit" className="primary" disabled={busy || !accountId || !amount.trim()}>
           {t("budgetForm.save")}
         </button>
       </form>
-      <Link className="back-link" to={`/budget?${toBudgetParams(viewed).toString()}`}>
-        {t("budgetForm.backToBudget")}
-      </Link>
     </main>
   );
 }

@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { errorMessage } from "../../service/error-messages";
 import { majorToMinor, minorToMajor } from "../../service/money";
 import { parseBudgetState, toBudgetParams } from "../budget-state";
+import { ChevronBack } from "../components/icons";
 import { accountPathLabel } from "../format";
 import { useLedger } from "../ledger-context";
 import { useLedgerMutation } from "../use-ledger-mutation";
@@ -40,11 +41,13 @@ export function BudgetEditScreen() {
   if (!existing) {
     return (
       <main className="screen">
-        <h1>{t("budgetForm.editTitle")}</h1>
+        <div className="screen-head">
+          <Link className="icon-button back-button" to={backTo} aria-label={t("budgetForm.backToBudget")}>
+            <ChevronBack />
+          </Link>
+          <h1>{t("budgetForm.editTitle")}</h1>
+        </div>
         <p className="muted">{t("budgetForm.notFound")}</p>
-        <Link className="back-link" to={backTo}>
-          {t("budgetForm.backToBudget")}
-        </Link>
       </main>
     );
   }
@@ -73,7 +76,12 @@ export function BudgetEditScreen() {
 
   return (
     <main className="screen">
-      <h1>{t("budgetForm.editTitle")}</h1>
+      <div className="screen-head">
+        <Link className="icon-button back-button" to={backTo} aria-label={t("budgetForm.backToBudget")}>
+          <ChevronBack />
+        </Link>
+        <h1>{t("budgetForm.editTitle")}</h1>
+      </div>
       <dl className="detail-list">
         <div>
           <dt>{t("budgetForm.categoryLabel")}</dt>
@@ -89,17 +97,19 @@ export function BudgetEditScreen() {
         </div>
       </dl>
       <form className="stack-form" onSubmit={onSubmit}>
-        <label>
-          {t("budgetForm.amountLabel")}
-          <input
-            inputMode="decimal"
-            dir="ltr"
-            placeholder="0.00"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            required
-          />
-        </label>
+        <div className="group form-group">
+          <label>
+            {t("budgetForm.amountLabel")}
+            <input
+              inputMode="decimal"
+              dir="ltr"
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </label>
+        </div>
         <button type="submit" className="primary" disabled={busy || !amount.trim()}>
           {t("budgetForm.save")}
         </button>
@@ -109,9 +119,6 @@ export function BudgetEditScreen() {
           {t("budgetForm.deleteLimit")}
         </button>
       </div>
-      <Link className="back-link" to={backTo}>
-        {t("budgetForm.backToBudget")}
-      </Link>
     </main>
   );
 }

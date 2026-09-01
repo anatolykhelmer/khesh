@@ -9,7 +9,7 @@
 .currency-list {
   display: flex;
   flex-direction: column;
-  gap: var(--s-2);
+  gap: 0;
   margin: var(--s-2) 0 var(--s-4);
 }
 
@@ -21,15 +21,29 @@ button {
 
 .choice {
   min-height: var(--tap);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  border: none;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
   text-align: start;
-  padding: 0 var(--s-4);
+  padding: 0;
+}
+
+.choice:first-child {
+  border-top: none;
+}
+
+.choice svg {
+  color: var(--accent);
+  flex: none;
 }
 
 .choice.selected {
-  border-color: var(--accent);
   font-weight: 600;
 }
 
@@ -619,12 +633,35 @@ dialog.picker .twisty {
   text-decoration: none;
 }
 
-.settings-section {
+.settings-list {
+  list-style: none;
+  margin: var(--s-4) 0;
+}
+
+.settings-row {
+  padding-block: var(--s-2) var(--s-3);
+  border-top: 1px solid var(--line);
+}
+
+.settings-row:first-child {
+  border-top: none;
+}
+
+.row-button {
+  min-height: var(--tap);
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--s-2);
-  margin-top: var(--s-5);
+  align-items: center;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 600;
+  text-align: start;
+  padding: 0;
+}
+
+.row-hint {
+  font-size: var(--t-sm);
 }
 
 .budget-list {

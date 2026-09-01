@@ -10,6 +10,8 @@ type Props = {
   disabled?: boolean;
   /** Notified with the component's busy state, so a parent can disable other controls during import. */
   onBusyChange?: (busy: boolean) => void;
+  /** Button class; defaults to the standalone secondary button. */
+  className?: string;
 };
 
 export function ImportBookButton({
@@ -18,6 +20,7 @@ export function ImportBookButton({
   onSuccess,
   disabled,
   onBusyChange,
+  className,
 }: Props) {
   const { app, setBook, setError } = useLedger();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -61,7 +64,7 @@ export function ImportBookButton({
       />
       <button
         type="button"
-        className="secondary"
+        className={className ?? "secondary"}
         disabled={disabled === true || busy}
         onClick={() => inputRef.current?.click()}
       >

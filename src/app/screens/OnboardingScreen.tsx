@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { CurrencyCode } from "../../kernel";
 import { CURRENCIES } from "../currencies";
+import { Check } from "../components/icons";
 import { ImportBookButton } from "../components/ImportBookButton";
 import type { AppLanguage } from "../i18n";
 import { setLanguage } from "../i18n";
@@ -36,7 +37,11 @@ export function OnboardingScreen() {
       <p className="brand">Khesh</p>
 
       <h1>{t("onboarding.languageTitle")}</h1>
-      <div className="currency-list" role="listbox" aria-label={t("onboarding.languageListLabel")}>
+      <div
+        className="currency-list group"
+        role="listbox"
+        aria-label={t("onboarding.languageListLabel")}
+      >
         <button
           type="button"
           role="option"
@@ -44,7 +49,8 @@ export function OnboardingScreen() {
           className={language === "en" ? "choice selected" : "choice"}
           onClick={() => chooseLanguage("en")}
         >
-          {t("onboarding.languageEnglish")}
+          <span>{t("onboarding.languageEnglish")}</span>
+          {language === "en" ? <Check /> : null}
         </button>
         <button
           type="button"
@@ -53,13 +59,18 @@ export function OnboardingScreen() {
           className={language === "he" ? "choice selected" : "choice"}
           onClick={() => chooseLanguage("he")}
         >
-          {t("onboarding.languageHebrew")}
+          <span>{t("onboarding.languageHebrew")}</span>
+          {language === "he" ? <Check /> : null}
         </button>
       </div>
 
       <h1>{t("onboarding.currencyTitle")}</h1>
       <p className="muted">{t("onboarding.currencySubtitle")}</p>
-      <div className="currency-list" role="listbox" aria-label={t("onboarding.currencyListLabel")}>
+      <div
+        className="currency-list group"
+        role="listbox"
+        aria-label={t("onboarding.currencyListLabel")}
+      >
         {CURRENCIES.map((code) => (
           <button
             key={code}
@@ -69,7 +80,8 @@ export function OnboardingScreen() {
             className={currency === code ? "choice selected" : "choice"}
             onClick={() => setCurrency(code)}
           >
-            {code}
+            <span>{code}</span>
+            {currency === code ? <Check /> : null}
           </button>
         ))}
       </div>

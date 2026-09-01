@@ -1,6 +1,7 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { todayCalendarDate } from "../../service/dates";
+import { ChevronBack } from "../components/icons";
 import { ImportBookButton } from "../components/ImportBookButton";
 import { useLedger } from "../ledger-context";
 
@@ -27,24 +28,29 @@ export function SettingsScreen() {
   return (
     <main className="screen">
       <div className="screen-head">
+        <Link className="icon-button back-button" to="/dashboard" aria-label={t("budget.backToDashboard")}>
+          <ChevronBack />
+        </Link>
         <h1>{t("settings.title")}</h1>
       </div>
 
-      <section className="settings-section">
-        <button type="button" className="secondary" onClick={onExport}>
-          {t("settings.exportButton")}
-        </button>
-        <p className="muted">{t("settings.exportHint")}</p>
-      </section>
-
-      <section className="settings-section">
-        <ImportBookButton
-          label={t("settings.importButton")}
-          confirmText={t("settings.importConfirm")}
-          onSuccess={() => navigate("/dashboard")}
-        />
-        <p className="muted">{t("settings.importHint")}</p>
-      </section>
+      <ul className="settings-list group">
+        <li className="settings-row">
+          <button type="button" className="row-button" onClick={onExport}>
+            {t("settings.exportButton")}
+          </button>
+          <p className="muted row-hint">{t("settings.exportHint")}</p>
+        </li>
+        <li className="settings-row">
+          <ImportBookButton
+            className="row-button"
+            label={t("settings.importButton")}
+            confirmText={t("settings.importConfirm")}
+            onSuccess={() => navigate("/dashboard")}
+          />
+          <p className="muted row-hint">{t("settings.importHint")}</p>
+        </li>
+      </ul>
     </main>
   );
 }

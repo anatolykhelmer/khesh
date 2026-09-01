@@ -114,20 +114,22 @@ export function StatsScreen() {
       ) : null}
       {showPie ? (
         <>
-          <p className="stats-total">
-            <Ltr>{formatMinor(breakdown.total, breakdown.currency)}</Ltr>
-          </p>
-          <svg className="stats-pie" viewBox="0 0 200 200" aria-hidden="true">
-            {arcs.map((arc, index) => (
-              <path
-                key={arc.id}
-                className={`cat-${index % 6}`}
-                d={arc.d}
-                onClick={() => write({ ...state, accountId: arc.id })}
-              />
-            ))}
-          </svg>
-          <ul className="stats-legend">
+          <div className="group pad">
+            <p className="stats-total">
+              <Ltr>{formatMinor(breakdown.total, breakdown.currency)}</Ltr>
+            </p>
+            <svg className="stats-pie" viewBox="0 0 200 200" aria-hidden="true">
+              {arcs.map((arc, index) => (
+                <path
+                  key={arc.id}
+                  className={`cat-${index % 6}`}
+                  d={arc.d}
+                  onClick={() => write({ ...state, accountId: arc.id })}
+                />
+              ))}
+            </svg>
+          </div>
+          <ul className="stats-legend group">
             {breakdown.children.map((child, index) => (
               <li key={child.id}>
                 <button

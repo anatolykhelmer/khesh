@@ -564,6 +564,14 @@ dialog.picker .twisty {
   margin: 0 auto var(--s-4);
 }
 
+.group .stats-total {
+  margin-block-start: 0;
+}
+
+.group .stats-pie {
+  margin-block-end: 0;
+}
+
 /* Categorical ramp, shared by the stats pie and the dashboard's category dots.
    Kept in CSS rather than a JS array so it follows the theme without a repaint. */
 .cat-0 { --cat: var(--cat-1); }

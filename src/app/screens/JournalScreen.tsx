@@ -121,7 +121,7 @@ export function JournalScreen() {
           {currentBook.journal.length === 0 ? t("journal.noEntriesYet") : t("journal.noEntriesMatch")}
         </p>
       ) : (
-        <ul className="journal-list">
+        <ul className="journal-list group">
           {entries.map((entry) => {
             const shape = inferEntryLines(entry);
             const title =

@@ -196,6 +196,19 @@ button {
   gap: var(--s-3);
 }
 
+.screen-head h1 {
+  flex: 1;
+}
+
+/* Pull the 44px back button toward the gutter so the chevron reads flush. */
+.screen-head .back-button {
+  margin-inline-start: calc(-1 * var(--s-3));
+}
+
+[dir="rtl"] .back-button {
+  transform: scaleX(-1);
+}
+
 .month-nav {
   display: flex;
   align-items: center;
@@ -323,7 +336,12 @@ button {
   justify-content: space-between;
   gap: var(--s-3);
   padding: var(--s-3) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: none;
+  border-top: 1px solid var(--line);
+}
+
+.detail-list > div:first-child {
+  border-top: none;
 }
 
 .detail-list dt {
@@ -670,13 +688,6 @@ dialog.picker .twisty {
   margin-top: var(--s-4);
 }
 
-.dash-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-3);
-}
-
 .icon-button {
   min-height: var(--tap);
   min-width: var(--tap);
@@ -796,6 +807,61 @@ dialog.picker .twisty {
 .cat-list {
   list-style: none;
   padding: 0;
+  margin: 0;
+}
+
+/* ---- card groups ----------------------------------------------------- */
+
+/* One list = one card. Rows keep their own classes; separators are a
+   border-top on every row except the container's first, so the last
+   visible row never paints a stray hairline — load-bearing for the
+   accounts tree, where the last visible row depends on expansion. */
+.group,
+.detail-list {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-card);
+  padding-inline: var(--s-4);
+}
+
+.group + .group {
+  margin-block-start: var(--s-3);
+}
+
+/* Non-list cards (the stats pie). */
+.group.pad {
+  padding: var(--s-4);
+}
+
+/* A card of stacked form fields. */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding-block: var(--s-4);
+}
+
+/* Fieldsets flatten inside cards: the card is the group's box. */
+.form-group .choice-group {
+  border: none;
+  padding: 0;
+}
+
+.form-group .choice-group legend {
+  padding: 0;
+}
+
+.group :is(.journal-row, .account-row, .cat-row, .stats-row, .budget-row) {
+  border-bottom: none;
+  border-top: 1px solid var(--line);
+}
+
+.group > li:first-child > :is(.journal-row, .account-row, .cat-row, .stats-row, .budget-row) {
+  border-top: none;
+}
+
+.group .account-children {
   margin: 0;
 }
 

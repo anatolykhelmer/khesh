@@ -51,7 +51,7 @@ export function DashboardScreen() {
   const home = currentBook.homeCurrency;
 
   const header = (
-    <div className="dash-head">
+    <div className="screen-head">
       <h1>{t("dashboard.title")}</h1>
       <Link className="icon-button" to="/settings" aria-label={t("dashboard.settings")}>
         <Gear />
@@ -197,7 +197,7 @@ export function DashboardScreen() {
       {categories.length > 0 ? (
         <>
           <h2 className="section-label">{t("dashboard.topCategories")}</h2>
-          <ul className="cat-list">
+          <ul className="cat-list group">
             {categories.map((child, index) => (
               <li key={child.id}>
                 <Link

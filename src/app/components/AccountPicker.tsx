@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AccountNode } from "../../kernel";
 import { expandedForSelection, pathOf, visibleRows } from "../account-tree";
-import { CaretDown, Check, ChevronForward } from "./icons";
+import { CaretDown, CaretRight, Check } from "./icons";
 import { currencySymbol } from "../currencies";
 
 type Props = {
@@ -140,7 +140,7 @@ export function AccountPicker({
                     }
                     onClick={() => toggle(row.id)}
                   >
-                    {row.expanded ? <CaretDown /> : <ChevronForward size={16} />}
+                    {row.expanded ? <CaretDown /> : <CaretRight />}
                   </button>
                 ) : (
                   <span className="twisty" aria-hidden="true">

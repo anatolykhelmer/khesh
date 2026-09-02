@@ -1,7 +1,15 @@
 import { canonicalJson } from "./canonical-json";
 import { err, ok, type Result } from "./result";
 import { budgetKeyOf } from "./tombstones";
-import type { Account, Book, Budget, JournalEntry, Tombstone, TombstoneKind } from "./types";
+import type {
+  Account,
+  Book,
+  Budget,
+  CurrencyCode,
+  JournalEntry,
+  Tombstone,
+  TombstoneKind,
+} from "./types";
 
 type AnyRecord = Account | JournalEntry | Budget;
 type Claim =
@@ -46,10 +54,13 @@ function byId<T extends { id: string }>(a: T, b: T): number {
 }
 
 /**
- * Mutates `book`. Called before the repair ladder as well as after it: the draft is
- * assembled in argument order, and the ladder walks the arrays in order (the sibling
- * dedupe below groups and renames as it goes), so a canonical order going in is what
- * keeps `mergeBooks(a, b)` and `mergeBooks(b, a)` on the same path.
+ * Mutates `book`. Run before the repair ladder as well as after it, for two different
+ * reasons. Going in: the draft is assembled in `Map` insertion order, which is argument
+ * order, and rung 5 groups siblings by walking `accounts` — a canonical order there is
+ * what makes its grouping (and so its renames) independent of which book came first.
+ * That is all the pre-sort guarantees: rung 1 appends restored accounts behind it, so
+ * the arrays are no longer sorted by the time rungs 2-6 run. Coming out: the sort is
+ * what puts the merged book itself in canonical order.
  */
 function sortBook(book: Book): void {
   book.accounts.sort(byId);
@@ -58,6 +69,28 @@ function sortBook(book: Book): void {
   book.tombstones.sort((x, y) =>
     compareStrings(`${x.kind}|${x.key}`, `${y.kind}|${y.key}`),
   );
+}
+
+/**
+ * The ids of one parent cycle, or null when every account reaches a root. Accounts are
+ * walked in `id` order and the first cycle found is returned, so repeated calls detach
+ * cycles in the same sequence whichever book was merged first.
+ */
+function findCycle(accounts: Account[], index: Map<string, Account>): string[] | null {
+  const grounded = new Set<string>();
+  for (const start of [...accounts].sort(byId)) {
+    const path: string[] = [];
+    const onPath = new Set<string>();
+    let current: Account | undefined = start;
+    while (current !== undefined && !grounded.has(current.id)) {
+      if (onPath.has(current.id)) return path.slice(path.indexOf(current.id));
+      path.push(current.id);
+      onPath.add(current.id);
+      current = current.parentId === null ? undefined : index.get(current.parentId);
+    }
+    for (const id of path) grounded.add(id);
+  }
+  return null;
 }
 
 /** Deterministic repair of a merged draft. Mutates `draft`. Returns false when the
@@ -88,7 +121,26 @@ function repair(draft: Book): boolean {
     }
   }
 
-  // 2. Placeholder consistency: children force it on; postings force it off; both is irreducible.
+  // 2. Break parent cycles. `wouldCreateCycle` only ever sees one device's book, so
+  //    moving G1 under G2 here while G2 moves under G1 there is legal on both and a
+  //    cycle only exists after the union. Nothing is lost by detaching — one parentId
+  //    changes, no record disappears — so this is repaired, not refused. The lowest-id
+  //    member is the one cut loose: deterministic, and the same in either argument
+  //    order. Runs before the rungs below because a cycle hides its members from the
+  //    type cascade entirely, and because the mutual parenthood it invents would
+  //    otherwise read as a genuine children-and-postings conflict in rung 3.
+  //    Each pass clears one parentId, so the loop is bounded by the account count.
+  for (;;) {
+    const index = new Map(draft.accounts.map((a) => [a.id, a]));
+    const cycle = findCycle(draft.accounts, index);
+    if (cycle === null) break;
+    const lowest = cycle.reduce((low, id) => (id < low ? id : low));
+    const detached = index.get(lowest);
+    if (detached === undefined) break; // cycle ids come from index; unreachable
+    detached.parentId = null;
+  }
+
+  // 3. Placeholder consistency: children force it on; postings force it off; both is irreducible.
   const withChildren = new Set(
     draft.accounts.filter((a) => a.parentId !== null).map((a) => a.parentId as string),
   );
@@ -101,8 +153,9 @@ function repair(draft: Book): boolean {
     if (hasPosting && account.isPlaceholder) account.isPlaceholder = false;
   }
 
-  // 3. Cascade parent types down mismatched descendants (top-down, deterministic order).
-  //    `seen` stops a parent cycle that reached here unvalidated from recursing forever.
+  // 4. Cascade parent types down mismatched descendants (top-down, deterministic order).
+  //    `seen` is redundant now that rung 2 leaves a forest behind — it stays so that a
+  //    regression there surfaces as a wrong account type rather than a stack overflow.
   const seen = new Set<string>();
   const cascade = (parent: Account) => {
     for (const child of draft.accounts.filter((a) => a.parentId === parent.id).sort(byId)) {
@@ -117,10 +170,12 @@ function repair(draft: Book): boolean {
     cascade(root);
   }
 
-  // 4. Deduplicate sibling names: canonically greatest record keeps the name.
+  // 5. Deduplicate sibling names: canonically greatest record keeps the name. The slot
+  //    key is JSON-encoded rather than concatenated so a name containing the separator
+  //    cannot masquerade as a different parent — ids never do, a hand-edited file might.
   const bySibling = new Map<string, Account[]>();
   for (const account of draft.accounts) {
-    const slot = `${account.parentId ?? ""}|${account.name}`;
+    const slot = canonicalJson([account.parentId, account.name]);
     bySibling.set(slot, [...(bySibling.get(slot) ?? []), account]);
   }
   for (const group of [...bySibling.values()]) {
@@ -143,13 +198,47 @@ function repair(draft: Book): boolean {
     }
   }
 
-  // 5. A budget only makes sense on a live expense account.
-  const liveById = new Map(draft.accounts.map((a) => [a.id, a]));
-  draft.budgets = draft.budgets.filter((budget) => {
-    const account = liveById.get(budget.accountId);
-    return account !== undefined && account.type === "expense";
-  });
+  // 6. A budget only makes sense on an expense account. Rung 1 has already restored
+  //    every account a budget references, so this drops exactly the limits whose
+  //    account was concurrently retyped away from expense.
+  const typeById = new Map(draft.accounts.map((a) => [a.id, a.type]));
+  draft.budgets = draft.budgets.filter((b) => typeById.get(b.accountId) === "expense");
 
+  return true;
+}
+
+function currencyIndex(book: Book): Map<string, CurrencyCode> {
+  return new Map(book.accounts.map((account) => [account.id, account.currency]));
+}
+
+/**
+ * True while every entry still means what the device that holds it recorded.
+ *
+ * Changing an account's currency is legal on a device with no postings on it, and
+ * posting to that account is legal on a device that never changed it — but the union
+ * silently reinterprets money: 100 entered as ILS reads as 100 USD, and validateBook
+ * stays green because nothing structural broke. With `fx` in play it breaks loudly
+ * instead (ENTRY_FX_RATE_MISMATCH). Neither is repairable — which currency the amount
+ * meant is not recoverable from the merge — so this one is refused.
+ *
+ * Compared per posting-account rather than over the entry's currency multiset: two
+ * accounts swapping currencies inside one entry leaves the multiset identical while
+ * inverting what the entry says. A source that never knew an account says nothing
+ * about it. Both books are checked the same way, so the verdict is symmetric.
+ */
+function entryMeaningHeld(draft: Book, sources: readonly Book[]): boolean {
+  const after = currencyIndex(draft);
+  for (const source of sources) {
+    const before = currencyIndex(source);
+    const carried = new Set(source.journal.map((entry) => entry.id));
+    for (const entry of draft.journal) {
+      if (!carried.has(entry.id)) continue;
+      for (const posting of entry.postings) {
+        const was = before.get(posting.accountId);
+        if (was !== undefined && was !== after.get(posting.accountId)) return false;
+      }
+    }
+  }
   return true;
 }
 
@@ -193,6 +282,14 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
   sortBook(draft);
   if (!repair(draft)) {
     return err("SYNC_MERGE_CONFLICT", "Books conflict beyond automatic repair");
+  }
+  // Runs on the repaired draft: rung 1 decides which accounts are live at all, and
+  // therefore which currency each posting resolves to.
+  if (!entryMeaningHeld(draft, [a, b])) {
+    return err(
+      "SYNC_MERGE_CONFLICT",
+      "An account currency changed under an entry posted on the other device",
+    );
   }
   sortBook(draft);
   return ok(draft);

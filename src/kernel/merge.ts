@@ -32,21 +32,54 @@ function later(a: Claim, b: Claim): Claim {
   return canonicalJson(claimBody(a)) >= canonicalJson(claimBody(b)) ? a : b;
 }
 
-function collectClaims(book: Book): Map<string, Claim> {
-  const map = new Map<string, Claim>();
+function* liveClaims(book: Book): Generator<[string, Claim]> {
   for (const account of book.accounts) {
-    map.set(`account|${account.id}`, { alive: true, at: account.updatedAt, record: account });
+    yield [`account|${account.id}`, { alive: true, at: account.updatedAt, record: account }];
   }
   for (const entry of book.journal) {
-    map.set(`entry|${entry.id}`, { alive: true, at: entry.updatedAt, record: entry });
+    yield [`entry|${entry.id}`, { alive: true, at: entry.updatedAt, record: entry }];
   }
   for (const budget of book.budgets) {
-    map.set(`budget|${budgetKeyOf(budget)}`, { alive: true, at: budget.updatedAt, record: budget });
+    yield [
+      `budget|${budgetKeyOf(budget)}`,
+      { alive: true, at: budget.updatedAt, record: budget },
+    ];
   }
+}
+
+function collectClaims(book: Book): Map<string, Claim> {
+  const map = new Map<string, Claim>(liveClaims(book));
   for (const stone of book.tombstones) {
     map.set(`${stone.kind}|${stone.key}`, { alive: false, at: stone.deletedAt, stone });
   }
   return map;
+}
+
+/**
+ * The newest live version of each account across the inputs, tombstones ignored —
+ * including the versions a tombstone outranked and so kept out of the draft.
+ *
+ * Rung 1 resurrects from here rather than from the tombstone's own snapshot. The
+ * snapshot is the record as it stood on the deleting device, which is by construction
+ * no newer than a copy that went on being edited elsewhere; restoring it would throw
+ * that edit away. It would also not settle: re-merging the device that still holds the
+ * newer copy would reinstate it, so the merge would keep producing new versions of a
+ * book both devices already agree on.
+ */
+function latestLiveAccounts(books: readonly Book[]): Map<string, Account> {
+  const claims = new Map<string, Claim>();
+  for (const book of books) {
+    for (const [key, claim] of liveClaims(book)) {
+      if (!key.startsWith("account|")) continue;
+      const existing = claims.get(key);
+      claims.set(key, existing ? later(existing, claim) : claim);
+    }
+  }
+  const newest = new Map<string, Account>();
+  for (const [key, claim] of claims) {
+    if (claim.alive) newest.set(key.slice("account|".length), claim.record as Account);
+  }
+  return newest;
 }
 
 function byId<T extends { id: string }>(a: T, b: T): number {
@@ -93,9 +126,33 @@ function findCycle(accounts: Account[], index: Map<string, Account>): string[] |
   return null;
 }
 
+/**
+ * Stamp a record the ladder just rewrote one millisecond past the version it was
+ * derived from. Mutates the record.
+ *
+ * A repair is a write, and last-writer-wins is the only channel this format has for
+ * saying so. Left at its old stamp, a repaired record meets the device that still
+ * holds the pre-repair one as an equally old claim, and the tie falls to whichever
+ * body sorts higher — which can be the unrepaired one, undoing the repair. Worse, the
+ * flip can change a field a later rung keyed off (a name the dedup rung rewrote sorts
+ * ahead of the parentId the tie originally turned on), so the merge settles on a
+ * different book each time two devices that already agree sync again.
+ *
+ * The millisecond comes from the record, not from a clock, so `mergeBooks` stays pure
+ * and its result stays a function of its two arguments alone. A rung only calls this
+ * where it actually changed something, so re-merging an already-repaired book finds
+ * nothing to repair and stamps nothing.
+ */
+function repaired(record: { updatedAt: string }): void {
+  const at = Date.parse(record.updatedAt);
+  // A record whose stamp will not parse came from outside the kernel; leave it be
+  // rather than invent one. validateBook is what rejects it.
+  if (!Number.isNaN(at)) record.updatedAt = new Date(at + 1).toISOString();
+}
+
 /** Deterministic repair of a merged draft. Mutates `draft`. Returns false when the
  * conflict is irreducible (an account holds both children and postings). */
-function repair(draft: Book): boolean {
+function repair(draft: Book, restorable: Map<string, Account>): boolean {
   // 1. Restore referenced accounts from tombstones, transitively (parents included).
   //    Every pass consumes at least one tombstone, so the loop cannot spin.
   for (;;) {
@@ -114,7 +171,22 @@ function repair(draft: Book): boolean {
     for (const id of missing) {
       const stone = draft.tombstones.find((t) => t.kind === "account" && t.key === id);
       if (!stone) return false; // unreachable from valid inputs; refuse rather than invent
-      draft.accounts.push(structuredClone(stone.record) as Account);
+      // The newest live copy when some device still had one, else the snapshot the
+      // tombstone carries — see `latestLiveAccounts`.
+      //
+      // Stamped past the delete it overrides, not past its own last edit: dropping
+      // the tombstone is the only record this book keeps of the rejection, so a
+      // restored record still carrying its pre-delete stamp loses to that same
+      // tombstone the next time the deleting device syncs. The account would then die
+      // a second time — and by then a later rung may have removed whatever referenced
+      // it (rung 2 detaches a cycle member, which can be the very parent link that
+      // justified the restore), so nothing brings it back.
+      const restored: Account = {
+        ...structuredClone(restorable.get(id) ?? (stone.record as Account)),
+        updatedAt: stone.deletedAt,
+      };
+      repaired(restored);
+      draft.accounts.push(restored);
       // A resurrected record must not leave its tombstone behind — that shadowing
       // is exactly what validateBook rejects.
       draft.tombstones = draft.tombstones.filter((t) => t !== stone);
@@ -138,6 +210,7 @@ function repair(draft: Book): boolean {
     const detached = index.get(lowest);
     if (detached === undefined) break; // cycle ids come from index; unreachable
     detached.parentId = null;
+    repaired(detached);
   }
 
   // 3. Placeholder consistency: children force it on; postings force it off; both is irreducible.
@@ -149,8 +222,14 @@ function repair(draft: Book): boolean {
     const hasChild = withChildren.has(account.id);
     const hasPosting = posted.has(account.id);
     if (hasChild && hasPosting) return false;
-    if (hasChild && !account.isPlaceholder) account.isPlaceholder = true;
-    if (hasPosting && account.isPlaceholder) account.isPlaceholder = false;
+    if (hasChild && !account.isPlaceholder) {
+      account.isPlaceholder = true;
+      repaired(account);
+    }
+    if (hasPosting && account.isPlaceholder) {
+      account.isPlaceholder = false;
+      repaired(account);
+    }
   }
 
   // 4. Cascade parent types down mismatched descendants (top-down, deterministic order).
@@ -161,7 +240,10 @@ function repair(draft: Book): boolean {
     for (const child of draft.accounts.filter((a) => a.parentId === parent.id).sort(byId)) {
       if (seen.has(child.id)) continue;
       seen.add(child.id);
-      if (child.type !== parent.type) child.type = parent.type;
+      if (child.type !== parent.type) {
+        child.type = parent.type;
+        repaired(child);
+      }
       cascade(child);
     }
   };
@@ -195,6 +277,7 @@ function repair(draft: Book): boolean {
         candidate = `${ordered[i].name} ${n}`;
       }
       ordered[i].name = candidate;
+      repaired(ordered[i]);
     }
   }
 
@@ -280,7 +363,7 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
   }
 
   sortBook(draft);
-  if (!repair(draft)) {
+  if (!repair(draft, latestLiveAccounts([a, b]))) {
     return err("SYNC_MERGE_CONFLICT", "Books conflict beyond automatic repair");
   }
   // Runs on the repaired draft: rung 1 decides which accounts are live at all, and

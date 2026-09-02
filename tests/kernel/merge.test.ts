@@ -109,6 +109,76 @@ describe("mergeBooks repair ladder", () => {
     expect(merged.journal).toHaveLength(1);
   });
 
+  it("restores the newest live version, not the deleting device's snapshot", () => {
+    // A edits Food and keeps it; B deletes it later, so the tombstone wins the race —
+    // but B also posted to it, so rung 1 has to bring it back. Restoring the snapshot
+    // the tombstone carries would drop A's rename, and the merge would not settle:
+    // re-merging A (which still holds the rename) would produce a different book again.
+    const { book, cashId, foodId } = base();
+    const renamed = unwrap(updateAccount(book, { id: foodId, name: "Meals" }, T(1)));
+    const a = spend(renamed, cashId, foodId, 100, T(1));
+    const b = unwrap(deleteAccount(book, foodId, T(2)));
+    const merged = mergedBothOrders(a, b);
+    expect(merged.accounts.find((x) => x.id === foodId)?.name).toBe("Meals");
+    expect(merged.tombstones).toHaveLength(0);
+    expect(unwrap(mergeBooks(merged, a))).toEqual(merged);
+    expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
+  });
+
+  it("keeps a resurrected account alive once a later rung drops what referenced it", () => {
+    // B budgets Food and then retypes it; A deletes it. The delete is later, so the
+    // union kills Food — but B's budget still points at it, so rung 1 brings it back,
+    // and rung 6 then drops that budget because Food is no longer an expense. The
+    // reference the restore rested on is gone, so nothing would bring Food back a
+    // second time: the restored record has to outrank the tombstone by itself, or
+    // re-merging A deletes Food again and the two devices never settle. Rung 2 does
+    // the same thing when it detaches a cycle member that was the restored account's
+    // only parent link — the property suite covers that shape.
+    const { book, foodId } = base();
+    const budgeted = unwrap(
+      setBudget(book, { accountId: foodId, period: "month", currency: "ILS", limit: 100 }, T(1)),
+    );
+    const b = unwrap(updateAccount(budgeted, { id: foodId, type: "income" }, T(2)));
+    const a = unwrap(deleteAccount(book, foodId, T(3)));
+    const merged = mergedBothOrders(a, b);
+    expect(merged.accounts.find((x) => x.id === foodId)?.type).toBe("income");
+    expect(merged.budgets).toHaveLength(0);
+    expect(merged.tombstones).toHaveLength(0);
+    expect(unwrap(mergeBooks(merged, a))).toEqual(merged);
+    expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
+  });
+
+  it("a repaired record outranks the un-repaired copy the other device still holds", () => {
+    // Both devices hold "Daily" with the same stamp under different parents, so the
+    // union settles it on canonical order: the pristine device's parent wins because
+    // its id sorts higher. That puts "Daily" next to the second "Daily" the other
+    // device created, and the dedup rung renames one of them. The rename must outlive
+    // the next sync: it changes `name`, which sorts ahead of `parentId`, so an
+    // unstamped repair loses the very tie it came from — the parent flips back, the
+    // clash dissolves and the rename is undone.
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, T(0)));
+    book = unwrap(createAccount(book, { parentId: null, name: "G1", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+    book = unwrap(createAccount(book, { parentId: null, name: "G2", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+    const [lo, hi] = [book.accounts[0].id, book.accounts[1].id].sort();
+    book = unwrap(createAccount(book, { parentId: hi, name: "Daily", type: "expense", currency: "ILS", isPlaceholder: false }, T(0)));
+    const dailyId = book.accounts[2].id;
+
+    const a = book;
+    // Same stamp as the creation: two devices, one clock tick.
+    const moved = unwrap(updateAccount(book, { id: dailyId, parentId: lo }, T(0)));
+    // USD sorts above ILS and `currency` is the first key canonical order compares,
+    // so this newcomer is the one that keeps the name and the contested record is the
+    // one the dedup rung rewrites.
+    const b = unwrap(createAccount(moved, { parentId: hi, name: "Daily", type: "expense", currency: "USD", isPlaceholder: false }, T(0)));
+
+    const merged = mergedBothOrders(a, b);
+    const contested = merged.accounts.find((x) => x.id === dailyId);
+    expect(contested?.parentId).toBe(hi);
+    expect(contested?.name).toBe("Daily 2");
+    expect(unwrap(mergeBooks(merged, a))).toEqual(merged);
+    expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
+  });
+
   it("re-flags a parent as placeholder when the other side gave it a child", () => {
     const { book, groupId } = base();
     // A: group loses placeholder (valid: no children, no postings on A)

@@ -45,12 +45,18 @@ export function validateBook(book: Book): Result<true> {
     });
   }
 
+  // `${kind}|${key}` of every live record, collected as each loop below clears its
+  // element guard, so the tombstone pass never dereferences an element the loops
+  // already rejected. validateBook must return a Result, never throw.
+  const liveKeys = new Set<string>();
+
   const ids = new Set<string>();
   for (const account of book.accounts) {
     if (!isAccountRecord(account)) {
       violations.push({ code: "BOOK_INVALID", message: "Invalid account element" });
       continue;
     }
+    liveKeys.add(`account|${String(account.id)}`);
     if (ids.has(account.id)) {
       violations.push({
         code: "ACCOUNT_ID_DUPLICATE",
@@ -134,6 +140,7 @@ export function validateBook(book: Book): Result<true> {
       violations.push({ code: "BOOK_INVALID", message: "Invalid journal entry element" });
       continue;
     }
+    liveKeys.add(`entry|${String(entry.id)}`);
     if (entryIds.has(entry.id)) {
       violations.push({
         code: "ENTRY_ID_DUPLICATE",
@@ -248,7 +255,8 @@ export function validateBook(book: Book): Result<true> {
           details: { accountId: budget.accountId, limit: budget.limit },
         });
       }
-      const key = `${budget.accountId}|${String(budget.period)}|${String(budget.currency)}`;
+      const key = budgetKeyOf(budget);
+      liveKeys.add(`budget|${key}`);
       if (budgetKeys.has(key)) {
         violations.push({
           code: "BUDGET_DUPLICATE",
@@ -263,13 +271,6 @@ export function validateBook(book: Book): Result<true> {
   if (!Array.isArray(book.tombstones)) {
     violations.push({ code: "BOOK_INVALID", message: "Book tombstones must be an array" });
   } else {
-    // budgets may be a non-array here — that violation is already recorded above.
-    const budgets = Array.isArray(book.budgets) ? book.budgets : [];
-    const liveKeys = new Set<string>([
-      ...book.accounts.map((a) => `account|${a.id}`),
-      ...book.journal.map((e) => `entry|${e.id}`),
-      ...budgets.map((b) => `budget|${budgetKeyOf(b)}`),
-    ]);
     for (const stone of book.tombstones) {
       if (
         !stone ||

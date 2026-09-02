@@ -5,7 +5,8 @@ import { removeBudget, setBudget } from "../../src/kernel/budgets";
 import { recordOpeningBalance } from "../../src/kernel/opening";
 import { EPOCH, normalizeBook } from "../../src/kernel/normalize";
 import { budgetKeyOf } from "../../src/kernel/tombstones";
-import { LATER, NOW, unwrap } from "../helpers";
+import { validateBook } from "../../src/kernel/validate";
+import { LATER, NOW, unwrap, unwrapErr } from "../helpers";
 
 function baseBook() {
   let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
@@ -113,8 +114,19 @@ describe("v1 -> v2 migration", () => {
     expect(book.tombstones).toEqual([]);
   });
 
-  it("normalizeBook leaves a v2 book alone", () => {
+  it("normalizeBook returns an already-v2 book by reference", () => {
     const { book } = baseBook();
-    expect(normalizeBook(book)).toEqual(book);
+    expect(normalizeBook(book)).toBe(book);
+  });
+
+  it("normalizeBook refuses to downgrade a newer schema, leaving it for validateBook", () => {
+    const { book } = baseBook();
+    const future = { ...book, schemaVersion: 3, unknownField: "keep me" };
+    const normalized = normalizeBook(future as any);
+    expect(normalized).toBe(future);
+    expect(normalized.schemaVersion).toBe(3);
+    const error = unwrapErr(validateBook(normalized));
+    const codes = (error.details?.violations as Array<{ code: string }>).map((v) => v.code);
+    expect(codes).toContain("BOOK_INVALID_SCHEMA_VERSION");
   });
 });

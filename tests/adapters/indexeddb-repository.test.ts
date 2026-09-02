@@ -48,4 +48,21 @@ describe("IndexedDbRepository", () => {
     unwrap(await repo.save(legacy as unknown as Book));
     expect(unwrap(await repo.load())?.budgets).toEqual([]);
   });
+
+  it("refuses a snapshot from a newer schema instead of downgrading it", async () => {
+    const repo = createIndexedDbRepository("khesh-test-future-schema");
+    const future = {
+      schemaVersion: 3,
+      name: "Home",
+      homeCurrency: "ILS",
+      metaUpdatedAt: NOW,
+      accounts: [],
+      journal: [],
+      budgets: [],
+      tombstones: [],
+      fieldThisBuildCannotSee: "keep me",
+    };
+    unwrap(await repo.save(future as unknown as Book));
+    expect(unwrapErr(await repo.load()).code).toBe("BOOK_INVALID");
+  });
 });

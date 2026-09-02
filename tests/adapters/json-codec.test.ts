@@ -59,6 +59,20 @@ describe("json codec", () => {
     expect(unwrapErr(jsonToBook(raw)).code).toBe("BOOK_INVALID_SCHEMA_VERSION");
   });
 
+  it("reports a v2 file with a null budget element instead of throwing", () => {
+    const raw = JSON.stringify({
+      schemaVersion: 2,
+      name: "Home",
+      homeCurrency: "ILS",
+      metaUpdatedAt: "2026-09-02T10:00:00.000Z",
+      accounts: [],
+      journal: [],
+      budgets: [null],
+      tombstones: [],
+    });
+    expect(unwrapErr(jsonToBook(raw)).code).toBe("BOOK_INVALID");
+  });
+
   it("accepts a v1 file and migrates it to v2 with EPOCH stamps", () => {
     const raw = JSON.stringify({
       schemaVersion: 1,

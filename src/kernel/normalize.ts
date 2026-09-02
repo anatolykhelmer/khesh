@@ -24,8 +24,19 @@ function stamp<T extends { updatedAt?: string }>(record: T): T & { updatedAt: st
  * Bring any stored snapshot (v1 export, v1 IndexedDB value, or current v2) to the
  * v2 shape. Missing timestamps become EPOCH, so any real edit anywhere beats an
  * unmigrated record in a merge. Called at every read boundary before validation.
+ *
+ * An already-v2 book is returned **by reference**, not copied — callers that intend
+ * to mutate must clone it themselves.
+ *
+ * A snapshot from a *newer* schema is likewise returned untouched rather than
+ * migrated: rewriting it as v2 would drop the fields this build cannot see, and the
+ * next save would persist the truncation. An installed PWA can run a weeks-old
+ * precached shell against a newer book, so this is reachable. `validateBook` rejects
+ * it at the same read boundary, which is how the refusal reaches the caller as an
+ * error Result.
  */
 export function normalizeBook(book: StoredBook): Book {
+  if (book.schemaVersion > 2) return book as Book;
   if (
     book.schemaVersion === 2 &&
     typeof book.metaUpdatedAt === "string" &&

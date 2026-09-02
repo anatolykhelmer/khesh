@@ -45,6 +45,20 @@ export function validateBook(book: Book): Result<true> {
     });
   }
 
+  // Every scan below — and every book-utils helper they reach — assumes these two
+  // are arrays, the way the budgets and tombstones blocks assume theirs. Bail out
+  // with what we have rather than iterate a non-array: nothing downstream can be
+  // checked without an account list anyway, and validateBook must return a Result.
+  if (!Array.isArray(book.accounts) || !Array.isArray(book.journal)) {
+    if (!Array.isArray(book.accounts)) {
+      violations.push({ code: "BOOK_INVALID", message: "Book accounts must be an array" });
+    }
+    if (!Array.isArray(book.journal)) {
+      violations.push({ code: "BOOK_INVALID", message: "Book journal must be an array" });
+    }
+    return err("BOOK_INVALID", "Book failed validation", { violations });
+  }
+
   // `${kind}|${key}` of every live record, collected as each loop below clears its
   // element guard, so the tombstone pass never dereferences an element the loops
   // already rejected. validateBook must return a Result, never throw.
@@ -179,6 +193,7 @@ export function validateBook(book: Book): Result<true> {
       });
       continue;
     }
+    let postingsWellShaped = true;
     for (const posting of entry.postings) {
       if (!posting || typeof posting !== "object") {
         violations.push({
@@ -186,6 +201,7 @@ export function validateBook(book: Book): Result<true> {
           message: "Invalid posting element",
           details: { id: entry.id },
         });
+        postingsWellShaped = false;
         continue;
       }
       if (!POSTING_SIDES.has(posting.side)) {
@@ -196,9 +212,18 @@ export function validateBook(book: Book): Result<true> {
         });
       }
     }
-    const postingCheck = validatePostings(book, entry.postings, entry.kind, entry.fx);
-    if (!postingCheck.ok) {
-      violations.push(postingCheck.error);
+    // validatePostings dereferences every element, so it may only see well-shaped
+    // ones — this is the single call site that can be handed unvalidated data, and
+    // the loop above already knows which elements are bad. The whole check is
+    // skipped rather than run on the survivors: dropping a posting from a
+    // double-entry transaction unbalances it by construction, so a balance verdict
+    // on a partial array would assert an imbalance we cannot actually know, on top
+    // of the corruption already recorded.
+    if (postingsWellShaped) {
+      const postingCheck = validatePostings(book, entry.postings, entry.kind, entry.fx);
+      if (!postingCheck.ok) {
+        violations.push(postingCheck.error);
+      }
     }
   }
 

@@ -125,6 +125,27 @@ describe("validateBook v2", () => {
     );
   });
 
+  // validatePostings dereferences every element, so validate.ts must not hand it an
+  // array holding a malformed one. Reached the same way as the cases above.
+  it("reports a null posting element instead of throwing", () => {
+    const broken: any = structuredClone(bookWithEveryRecordKind());
+    broken.journal[0].postings.push(null);
+    const result = validateBook(broken);
+    expect(messages(result)).toContain("Invalid posting element");
+    // The entry's balance is unknowable once an element is malformed, so the check
+    // is skipped rather than run on the survivors — no invented imbalance verdict.
+    expect(messages(result)).not.toContain("Debits must equal credits");
+  });
+
+  it.each([
+    ["accounts", "Book accounts must be an array"],
+    ["journal", "Book journal must be an array"],
+  ])("reports a non-array %s instead of throwing", (field, message) => {
+    const broken: any = structuredClone(bookWithEveryRecordKind());
+    broken[field] = null;
+    expect(messages(validateBook(broken))).toContain(message);
+  });
+
   // findAccount is reached from the accounts loop via wouldCreateCycle, which walks
   // parent links; a malformed element must not throw during that walk either.
   it("reports a null account element in a book whose accounts have parents", () => {

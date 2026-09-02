@@ -11,6 +11,7 @@ export {
   isOpeningBalancesLeafId,
 } from "./opening";
 export { canonicalJson } from "./canonical-json";
+export { mergeBooks } from "./merge";
 export { budgetKeyOf } from "./tombstones";
 export { descendants } from "./book-utils";
 export { validateBook } from "./validate";

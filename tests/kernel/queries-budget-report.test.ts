@@ -4,7 +4,7 @@ import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { budgetReport } from "../../src/kernel/queries";
 import type { AccountType, Book } from "../../src/kernel/types";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 const MONTH = { from: "2026-08-01", to: "2026-08-31" };
 const YEAR = { from: "2026-01-01", to: "2026-12-31" };
@@ -19,13 +19,13 @@ function add(
     isPlaceholder: boolean;
   },
 ): { book: Book; id: string } {
-  const next = unwrap(createAccount(book, input));
+  const next = unwrap(createAccount(book, input, NOW));
   return { book: next, id: next.accounts[next.accounts.length - 1].id };
 }
 
 /** Expenses > Food > {Groceries ILS, Restaurants ILS, Trips USD}, plus Expenses > Rent ILS. */
 function fixture() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
   const cash = add(book, {
     parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false,
   });
@@ -86,7 +86,7 @@ function spend(
         { accountId: leaf, side: "debit", amount },
         { accountId: source, side: "credit", amount },
       ],
-    }),
+    }, NOW),
   );
 }
 
@@ -105,7 +105,7 @@ function refund(
         { accountId: source, side: "debit", amount },
         { accountId: leaf, side: "credit", amount },
       ],
-    }),
+    }, NOW),
   );
 }
 
@@ -126,7 +126,7 @@ describe("budgetReport", () => {
     book = unwrap(
       setBudget(book, {
         accountId: f.groceries, period: "month", currency: "ILS", limit: 50000,
-      }),
+      }, NOW),
     );
     const report = unwrap(budgetReport(book, "month", MONTH));
     expect(report.rows).toEqual([
@@ -149,7 +149,7 @@ describe("budgetReport", () => {
     book = spend(book, f.restaurants, f.cash, 12000);
     book = spend(book, f.trips, f.usdCash, 8000);
     book = unwrap(
-      setBudget(book, { accountId: f.food, period: "month", currency: "ILS", limit: 50000 }),
+      setBudget(book, { accountId: f.food, period: "month", currency: "ILS", limit: 50000 }, NOW),
     );
     const report = unwrap(budgetReport(book, "month", MONTH));
     expect(report.rows[0]).toMatchObject({ spent: 42000, remaining: 8000, isGroup: true });
@@ -159,7 +159,7 @@ describe("budgetReport", () => {
     const f = fixture();
     let book = spend(f.book, f.trips, f.usdCash, 8000);
     book = unwrap(
-      setBudget(book, { accountId: f.food, period: "month", currency: "USD", limit: 10000 }),
+      setBudget(book, { accountId: f.food, period: "month", currency: "USD", limit: 10000 }, NOW),
     );
     const report = unwrap(budgetReport(book, "month", MONTH));
     expect(report.rows[0]).toMatchObject({ currency: "USD", spent: 8000, remaining: 2000 });
@@ -172,7 +172,7 @@ describe("budgetReport", () => {
     book = unwrap(
       setBudget(book, {
         accountId: f.groceries, period: "month", currency: "ILS", limit: 50000,
-      }),
+      }, NOW),
     );
     expect(unwrap(budgetReport(book, "month", MONTH)).rows[0].spent).toBe(25000);
   });
@@ -181,12 +181,12 @@ describe("budgetReport", () => {
     const f = fixture();
     let book = spend(f.book, f.restaurants, f.cash, 12000);
     book = unwrap(
-      setBudget(book, { accountId: f.food, period: "month", currency: "ILS", limit: 50000 }),
+      setBudget(book, { accountId: f.food, period: "month", currency: "ILS", limit: 50000 }, NOW),
     );
     book = unwrap(
       setBudget(book, {
         accountId: f.restaurants, period: "month", currency: "ILS", limit: 8000,
-      }),
+      }, NOW),
     );
     const report = unwrap(budgetReport(book, "month", MONTH));
     const byName = Object.fromEntries(report.rows.map((row) => [row.name, row]));
@@ -202,10 +202,10 @@ describe("budgetReport", () => {
     book = unwrap(
       setBudget(book, {
         accountId: f.groceries, period: "month", currency: "ILS", limit: 50000,
-      }),
+      }, NOW),
     );
     book = unwrap(
-      setBudget(book, { accountId: f.rent, period: "month", currency: "ILS", limit: 50000 }),
+      setBudget(book, { accountId: f.rent, period: "month", currency: "ILS", limit: 50000 }, NOW),
     );
     expect(unwrap(budgetReport(book, "month", MONTH)).rows.map((row) => row.name)).toEqual([
       "Rent",
@@ -219,7 +219,7 @@ describe("budgetReport", () => {
     book = unwrap(
       setBudget(book, {
         accountId: f.groceries, period: "year", currency: "ILS", limit: 500000,
-      }),
+      }, NOW),
     );
     expect(unwrap(budgetReport(book, "month", MONTH)).rows).toEqual([]);
     expect(unwrap(budgetReport(book, "year", YEAR)).rows).toHaveLength(1);
@@ -231,7 +231,7 @@ describe("budgetReport", () => {
     book = spend(book, f.trips, f.usdCash, 8000);
     book = spend(book, f.rent, f.cash, 45000);
     book = unwrap(
-      setBudget(book, { accountId: f.food, period: "month", currency: "ILS", limit: 50000 }),
+      setBudget(book, { accountId: f.food, period: "month", currency: "ILS", limit: 50000 }, NOW),
     );
     const report = unwrap(budgetReport(book, "month", MONTH));
     // Groceries is covered through its Food ancestor; Trips is USD, Rent has no limit.
@@ -253,7 +253,7 @@ describe("budgetReport", () => {
     book = unwrap(
       setBudget(book, {
         accountId: f.groceries, period: "month", currency: "ILS", limit: 50000,
-      }),
+      }, NOW),
     );
     expect(unwrap(budgetReport(book, "month", MONTH)).rows[0].spent).toBe(3000);
   });

@@ -1,10 +1,10 @@
 import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { deleteEntry, postEntry, updateEntry } from "../../src/kernel/journal";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 function posted() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
   book = unwrap(
     createAccount(book, {
       parentId: null,
@@ -12,7 +12,7 @@ function posted() {
       type: "asset",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -21,7 +21,7 @@ function posted() {
       type: "expense",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   const cashId = book.accounts[0].id;
   const foodId = book.accounts[1].id;
@@ -33,7 +33,7 @@ function posted() {
         { accountId: foodId, side: "debit", amount: 5000 },
         { accountId: cashId, side: "credit", amount: 5000 },
       ],
-    }),
+    }, NOW),
   );
   return { book, cashId, foodId, entryId: book.journal[0].id };
 }
@@ -49,7 +49,7 @@ describe("updateEntry / deleteEntry", () => {
           { accountId: foodId, side: "debit", amount: 6000 },
           { accountId: cashId, side: "credit", amount: 6000 },
         ],
-      }),
+      }, NOW),
     );
     expect(next.journal[0].description).toBe("Fixed");
     expect(next.journal[0].postings[0].amount).toBe(6000);
@@ -66,28 +66,28 @@ describe("updateEntry / deleteEntry", () => {
             { accountId: foodId, side: "debit", amount: 6000 },
             { accountId: cashId, side: "credit", amount: 1 },
           ],
-        }),
+        }, NOW),
       ).code,
     ).toBe("ENTRY_UNBALANCED");
   });
 
   it("rejects unknown id", () => {
     const { book } = posted();
-    expect(unwrapErr(updateEntry(book, { id: "nope", description: "X" })).code).toBe(
+    expect(unwrapErr(updateEntry(book, { id: "nope", description: "X" }, NOW)).code).toBe(
       "ENTRY_NOT_FOUND",
     );
-    expect(unwrapErr(deleteEntry(book, "nope")).code).toBe("ENTRY_NOT_FOUND");
+    expect(unwrapErr(deleteEntry(book, "nope", NOW)).code).toBe("ENTRY_NOT_FOUND");
   });
 
   it("deletes an entry", () => {
     const { book, entryId } = posted();
-    const next = unwrap(deleteEntry(book, entryId));
+    const next = unwrap(deleteEntry(book, entryId, NOW));
     expect(next.journal).toHaveLength(0);
     expect(book.journal).toHaveLength(1);
   });
 
   it("clears fx when fx is null", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -95,7 +95,7 @@ describe("updateEntry / deleteEntry", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -104,7 +104,7 @@ describe("updateEntry / deleteEntry", () => {
         type: "asset",
         currency: "USD",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       postEntry(book, {
@@ -120,9 +120,9 @@ describe("updateEntry / deleteEntry", () => {
           baseAmount: 100,
           quoteAmount: 370,
         },
-      }),
+      }, NOW),
     );
-    const next = unwrap(updateEntry(book, { id: book.journal[0].id, fx: null }));
+    const next = unwrap(updateEntry(book, { id: book.journal[0].id, fx: null }, NOW));
     expect(next.journal[0].fx).toBeUndefined();
   });
 });

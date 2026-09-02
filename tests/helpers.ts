@@ -13,3 +13,6 @@ export function unwrapErr<T>(result: Result<T>) {
   }
   return result.error;
 }
+
+export const NOW = "2026-09-02T10:00:00.000Z";
+export const LATER = "2026-09-02T11:00:00.000Z";

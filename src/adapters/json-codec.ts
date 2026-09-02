@@ -1,7 +1,7 @@
 import { err, ok, type Result } from "../kernel/result";
 import type { Account, Book, JournalEntry, Posting } from "../kernel/types";
 import { validateBook } from "../kernel/validate";
-import { normalizeBook } from "../kernel/normalize";
+import { normalizeBook, type StoredBook } from "../kernel/normalize";
 
 const ACCOUNT_TYPES = new Set<Account["type"]>([
   "asset",
@@ -26,7 +26,8 @@ function isAccountShape(value: unknown): value is Account {
     typeof value.type === "string" &&
     ACCOUNT_TYPES.has(value.type as Account["type"]) &&
     typeof value.currency === "string" &&
-    typeof value.isPlaceholder === "boolean"
+    typeof value.isPlaceholder === "boolean" &&
+    (value.updatedAt === undefined || typeof value.updatedAt === "string")
   );
 }
 
@@ -48,14 +49,16 @@ function isJournalEntryShape(value: unknown): value is JournalEntry {
     typeof value.description !== "string" ||
     typeof value.kind !== "string" ||
     !JOURNAL_KINDS.has(value.kind as JournalEntry["kind"]) ||
-    !Array.isArray(value.postings)
+    !Array.isArray(value.postings) ||
+    !(value.updatedAt === undefined || typeof value.updatedAt === "string")
   ) {
     return false;
   }
   return value.postings.every(isPostingShape);
 }
 
-function isBookShape(value: unknown): value is Book {
+/** A v1 file and a v2 file both pass here; `jsonToBook` gates the version itself. */
+function isBookShape(value: unknown): value is StoredBook {
   if (!isObject(value)) return false;
   return (
     "schemaVersion" in value &&
@@ -83,7 +86,7 @@ export function jsonToBook(raw: string): Result<Book> {
   if (!isBookShape(parsed)) {
     return err("JSON_INVALID_BOOK", "JSON is not a Book snapshot");
   }
-  if (parsed.schemaVersion !== 1) {
+  if (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2) {
     return err("BOOK_INVALID_SCHEMA_VERSION", `Unsupported schemaVersion ${String(parsed.schemaVersion)}`, {
       schemaVersion: parsed.schemaVersion,
     });

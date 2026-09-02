@@ -4,6 +4,7 @@ import { isCalendarDate } from "./dates";
 import { validatePostings } from "./entry-validation";
 import type { LedgerError } from "./errors";
 import { err, ok, type Result } from "./result";
+import { budgetKeyOf } from "./tombstones";
 import type { Account, AccountType, Book, JournalEntryKind, PostingSide } from "./types";
 
 const ACCOUNT_TYPES = new Set<AccountType>([
@@ -15,6 +16,7 @@ const ACCOUNT_TYPES = new Set<AccountType>([
 ]);
 const POSTING_SIDES = new Set<PostingSide>(["debit", "credit"]);
 const JOURNAL_KINDS = new Set<JournalEntryKind>(["standard", "opening"]);
+const TOMBSTONE_KINDS = new Set<string>(["account", "entry", "budget"]);
 
 function isAccountRecord(value: unknown): value is Account {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -23,12 +25,15 @@ function isAccountRecord(value: unknown): value is Account {
 export function validateBook(book: Book): Result<true> {
   const violations: LedgerError[] = [];
 
-  if (book.schemaVersion !== 1) {
+  if (book.schemaVersion !== 2) {
     violations.push({
       code: "BOOK_INVALID_SCHEMA_VERSION",
       message: `Unsupported schemaVersion ${String(book.schemaVersion)}`,
       details: { schemaVersion: book.schemaVersion },
     });
+  }
+  if (typeof book.metaUpdatedAt !== "string") {
+    violations.push({ code: "BOOK_INVALID", message: "Book metaUpdatedAt must be a string" });
   }
   if (typeof book.name !== "string" || book.name.trim().length === 0) {
     violations.push({ code: "BOOK_NAME_INVALID", message: "Book name must be non-empty" });
@@ -54,6 +59,13 @@ export function validateBook(book: Book): Result<true> {
       });
     }
     ids.add(account.id);
+    if (typeof account.updatedAt !== "string") {
+      violations.push({
+        code: "BOOK_INVALID",
+        message: "Record missing updatedAt",
+        details: { id: account.id },
+      });
+    }
     if (typeof account.name !== "string" || account.name.trim().length === 0) {
       violations.push({
         code: "ACCOUNT_NAME_INVALID",
@@ -130,6 +142,13 @@ export function validateBook(book: Book): Result<true> {
       });
     }
     entryIds.add(entry.id);
+    if (typeof entry.updatedAt !== "string") {
+      violations.push({
+        code: "BOOK_INVALID",
+        message: "Record missing updatedAt",
+        details: { id: entry.id },
+      });
+    }
     if (!isCalendarDate(entry.date)) {
       violations.push({
         code: "ENTRY_DATE_INVALID",
@@ -185,6 +204,13 @@ export function validateBook(book: Book): Result<true> {
         violations.push({ code: "BOOK_INVALID", message: "Invalid budget element" });
         continue;
       }
+      if (typeof budget.updatedAt !== "string") {
+        violations.push({
+          code: "BOOK_INVALID",
+          message: "Record missing updatedAt",
+          details: { accountId: budget.accountId },
+        });
+      }
       const account = book.accounts.find(
         (item) => isAccountRecord(item) && item.id === budget.accountId,
       );
@@ -231,6 +257,39 @@ export function validateBook(book: Book): Result<true> {
         });
       }
       budgetKeys.add(key);
+    }
+  }
+
+  if (!Array.isArray(book.tombstones)) {
+    violations.push({ code: "BOOK_INVALID", message: "Book tombstones must be an array" });
+  } else {
+    // budgets may be a non-array here — that violation is already recorded above.
+    const budgets = Array.isArray(book.budgets) ? book.budgets : [];
+    const liveKeys = new Set<string>([
+      ...book.accounts.map((a) => `account|${a.id}`),
+      ...book.journal.map((e) => `entry|${e.id}`),
+      ...budgets.map((b) => `budget|${budgetKeyOf(b)}`),
+    ]);
+    for (const stone of book.tombstones) {
+      if (
+        !stone ||
+        typeof stone !== "object" ||
+        !TOMBSTONE_KINDS.has(stone.kind) ||
+        typeof stone.key !== "string" ||
+        typeof stone.deletedAt !== "string" ||
+        typeof stone.record !== "object" ||
+        stone.record === null
+      ) {
+        violations.push({ code: "BOOK_INVALID", message: "Invalid tombstone element" });
+        continue;
+      }
+      if (liveKeys.has(`${stone.kind}|${stone.key}`)) {
+        violations.push({
+          code: "BOOK_INVALID",
+          message: "Tombstone shadows a live record",
+          details: { kind: stone.kind, key: stone.key },
+        });
+      }
     }
   }
 

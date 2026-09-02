@@ -2,31 +2,34 @@ import { describe, expect, it } from "vitest";
 import { ancestorsOf } from "../../src/kernel/book-utils";
 import { periodBreakdown } from "../../src/kernel/queries";
 import type { Book } from "../../src/kernel/types";
+import { NOW } from "../helpers";
 
 function makeBook(accounts: Book["accounts"]): Book {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     name: "Probe",
     homeCurrency: "ILS",
+    metaUpdatedAt: NOW,
     accounts,
     journal: [],
     budgets: [],
+    tombstones: [],
   };
 }
 
 const linear = makeBook([
-  { id: "root", parentId: null, name: "Expenses", type: "expense", currency: "ILS", isPlaceholder: true },
-  { id: "mid", parentId: "root", name: "Food", type: "expense", currency: "ILS", isPlaceholder: true },
-  { id: "leaf", parentId: "mid", name: "Cafes", type: "expense", currency: "ILS", isPlaceholder: false },
+  { id: "root", parentId: null, name: "Expenses", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
+  { id: "mid", parentId: "root", name: "Food", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
+  { id: "leaf", parentId: "mid", name: "Cafes", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
 ]);
 
 // A leaf hanging off a parent cycle (A -> B -> A). Only reachable in a book that
 // skipped validateBook, but the walk must still terminate. The subject is a leaf so
 // `descendants` is never entered — this isolates the upward walk.
 const cyclic = makeBook([
-  { id: "leaf", parentId: "A", name: "Leaf", type: "expense", currency: "ILS", isPlaceholder: false },
-  { id: "A", parentId: "B", name: "A", type: "expense", currency: "ILS", isPlaceholder: true },
-  { id: "B", parentId: "A", name: "B", type: "expense", currency: "ILS", isPlaceholder: true },
+  { id: "leaf", parentId: "A", name: "Leaf", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+  { id: "A", parentId: "B", name: "A", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
+  { id: "B", parentId: "A", name: "B", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
 ]);
 
 describe("ancestorsOf", () => {

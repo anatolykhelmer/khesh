@@ -1,9 +1,9 @@
 import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 function emptyBook() {
-  return unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+  return unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
 }
 
 describe("createAccount", () => {
@@ -16,7 +16,7 @@ describe("createAccount", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, NOW),
     );
     const assets = book.accounts[0];
     expect(assets.name).toBe("Assets");
@@ -31,7 +31,7 @@ describe("createAccount", () => {
         type: "asset",
         currency: "USD",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     expect(book.accounts[1].currency).toBe("USD");
     expect(book.accounts[1].parentId).toBe(assets.id);
@@ -47,7 +47,7 @@ describe("createAccount", () => {
           type: "asset",
           currency: "ILS",
           isPlaceholder: false,
-        }),
+        }, NOW),
       ).code,
     ).toBe("ACCOUNT_NAME_INVALID");
   });
@@ -61,7 +61,7 @@ describe("createAccount", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     expect(
       unwrapErr(
@@ -71,7 +71,7 @@ describe("createAccount", () => {
           type: "asset",
           currency: "ILS",
           isPlaceholder: false,
-        }),
+        }, NOW),
       ).code,
     ).toBe("ACCOUNT_NAME_DUPLICATE");
   });
@@ -86,7 +86,7 @@ describe("createAccount", () => {
           type: "asset",
           currency: "ILS",
           isPlaceholder: false,
-        }),
+        }, NOW),
       ).code,
     ).toBe("ACCOUNT_PARENT_INVALID");
   });
@@ -100,7 +100,7 @@ describe("createAccount", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     expect(
       unwrapErr(
@@ -110,7 +110,7 @@ describe("createAccount", () => {
           type: "asset",
           currency: "ILS",
           isPlaceholder: false,
-        }),
+        }, NOW),
       ).code,
     ).toBe("ACCOUNT_PARENT_NOT_PLACEHOLDER");
   });
@@ -124,7 +124,7 @@ describe("createAccount", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, NOW),
     );
     expect(
       unwrapErr(
@@ -134,7 +134,7 @@ describe("createAccount", () => {
           type: "income",
           currency: "ILS",
           isPlaceholder: false,
-        }),
+        }, NOW),
       ).code,
     ).toBe("ACCOUNT_TYPE_MISMATCH");
   });
@@ -149,7 +149,7 @@ describe("createAccount", () => {
           type: "asset",
           currency: "usd",
           isPlaceholder: false,
-        }),
+        }, NOW),
       ).code,
     ).toBe("INVALID_CURRENCY_CODE");
   });
@@ -163,7 +163,7 @@ describe("createAccount", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     expect(book.accounts).toEqual([]);
   });

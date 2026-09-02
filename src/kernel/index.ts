@@ -11,9 +11,11 @@ export {
   isOpeningBalancesLeafId,
 } from "./opening";
 export { canonicalJson } from "./canonical-json";
+export { budgetKeyOf } from "./tombstones";
 export { descendants } from "./book-utils";
 export { validateBook } from "./validate";
-export { normalizeBook } from "./normalize";
+export { EPOCH, normalizeBook } from "./normalize";
+export type { StoredBook } from "./normalize";
 export { accountPath, balance, balanceAsOf, budgetReport, chart, journal, periodBreakdown, periodTotals, trialBalance } from "./queries";
 export type { BudgetReport, BudgetRow, PeriodBreakdown, PeriodSlice, PeriodTotals } from "./queries";
 export type {
@@ -31,5 +33,7 @@ export type {
   MinorUnits,
   Posting,
   PostingSide,
+  Tombstone,
+  TombstoneKind,
   TrialBalance,
 } from "./types";

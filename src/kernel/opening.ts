@@ -3,6 +3,7 @@ import { isCalendarDate } from "./dates";
 import { validatePostings } from "./entry-validation";
 import { deleteEntry } from "./journal";
 import { err, ok, type Result } from "./result";
+import { clearTombstone } from "./tombstones";
 import type { Account, Book, MinorUnits, PostingSide } from "./types";
 
 const OB_PARENT_ID = "sys:ob";
@@ -39,7 +40,12 @@ function opposite(side: PostingSide): PostingSide {
   return side === "debit" ? "credit" : "debit";
 }
 
-function ensureObAccounts(book: Book, currency: string, groupName: string): Result<void> {
+function ensureObAccounts(
+  book: Book,
+  currency: string,
+  groupName: string,
+  now: string,
+): Result<void> {
   if (!book.accounts.some((account) => account.id === OB_PARENT_ID)) {
     if (obNameCollision(book, null, groupName)) {
       return err(
@@ -55,7 +61,9 @@ function ensureObAccounts(book: Book, currency: string, groupName: string): Resu
       type: "equity",
       currency: book.homeCurrency,
       isPlaceholder: true,
+      updatedAt: now,
     });
+    clearTombstone(book, "account", OB_PARENT_ID);
   }
 
   if (obNameCollision(book, OB_PARENT_ID, currency)) {
@@ -82,7 +90,9 @@ function ensureObAccounts(book: Book, currency: string, groupName: string): Resu
       type: "equity",
       currency,
       isPlaceholder: false,
+      updatedAt: now,
     });
+    clearTombstone(book, "account", leafId);
   }
 
   return ok(undefined);
@@ -91,6 +101,7 @@ function ensureObAccounts(book: Book, currency: string, groupName: string): Resu
 export function recordOpeningBalance(
   book: Book,
   input: { accountId: string; amount: MinorUnits; date: string; groupName?: string },
+  now: string,
 ): Result<Book> {
   if (!isCalendarDate(input.date)) {
     return err("ENTRY_DATE_INVALID", `Invalid date ${input.date}`, { date: input.date });
@@ -123,11 +134,16 @@ export function recordOpeningBalance(
     if (!book.journal.some((entry) => entry.id === entryId)) {
       return ok(cloneBook(book));
     }
-    return deleteEntry(book, entryId);
+    return deleteEntry(book, entryId, now);
   }
 
   const next = cloneBook(book);
-  const obAccounts = ensureObAccounts(next, target.currency, input.groupName ?? OB_PARENT_NAME);
+  const obAccounts = ensureObAccounts(
+    next,
+    target.currency,
+    input.groupName ?? OB_PARENT_NAME,
+    now,
+  );
   if (!obAccounts.ok) return obAccounts;
   const side = targetSide(target.type);
   const postings = [
@@ -143,7 +159,9 @@ export function recordOpeningBalance(
     description: "",
     kind: "opening" as const,
     postings,
+    updatedAt: now,
   };
+  clearTombstone(next, "entry", entryId);
   const index = next.journal.findIndex((item) => item.id === entryId);
   if (index === -1) next.journal.push(entry);
   else next.journal[index] = entry;

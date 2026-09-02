@@ -2,11 +2,12 @@ import { bookToJson, jsonToBook } from "../../src/adapters/json-codec";
 import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
-import { unwrap, unwrapErr } from "../helpers";
+import { EPOCH } from "../../src/kernel/normalize";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 describe("json codec", () => {
   it("round-trips a book", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -14,7 +15,7 @@ describe("json codec", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -23,7 +24,7 @@ describe("json codec", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       postEntry(book, {
@@ -33,7 +34,7 @@ describe("json codec", () => {
           { accountId: book.accounts[1].id, side: "debit", amount: 2 },
           { accountId: book.accounts[0].id, side: "credit", amount: 2 },
         ],
-      }),
+      }, NOW),
     );
     const parsed = unwrap(jsonToBook(bookToJson(book)));
     expect(parsed).toEqual(book);
@@ -47,15 +48,34 @@ describe("json codec", () => {
     expect(unwrapErr(jsonToBook(JSON.stringify({ hello: 1 }))).code).toBe("JSON_INVALID_BOOK");
   });
 
-  it("rejects schemaVersion !== 1", () => {
+  it("rejects schemaVersion 3", () => {
     const raw = JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       name: "Home",
       homeCurrency: "ILS",
       accounts: [],
       journal: [],
     });
     expect(unwrapErr(jsonToBook(raw)).code).toBe("BOOK_INVALID_SCHEMA_VERSION");
+  });
+
+  it("accepts a v1 file and migrates it to v2 with EPOCH stamps", () => {
+    const raw = JSON.stringify({
+      schemaVersion: 1,
+      name: "Home",
+      homeCurrency: "ILS",
+      accounts: [
+        { id: "a1", parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false },
+      ],
+      journal: [],
+      budgets: [{ accountId: "a1", period: "month", currency: "ILS", limit: 5 }],
+    });
+    const book = unwrap(jsonToBook(raw));
+    expect(book.schemaVersion).toBe(2);
+    expect(book.metaUpdatedAt).toBe(EPOCH);
+    expect(book.accounts[0].updatedAt).toBe(EPOCH);
+    expect(book.budgets[0].updatedAt).toBe(EPOCH);
+    expect(book.tombstones).toEqual([]);
   });
 
   it("rejects journal entry without postings", () => {
@@ -159,7 +179,7 @@ describe("json codec", () => {
   });
 
   it("round-trips budgets", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -167,12 +187,18 @@ describe("json codec", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = {
       ...book,
       budgets: [
-        { accountId: book.accounts[0].id, period: "month", currency: "ILS", limit: 400000 },
+        {
+          accountId: book.accounts[0].id,
+          period: "month",
+          currency: "ILS",
+          limit: 400000,
+          updatedAt: NOW,
+        },
       ],
     };
     expect(unwrap(jsonToBook(bookToJson(book)))).toEqual(book);

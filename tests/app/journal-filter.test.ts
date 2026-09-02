@@ -6,12 +6,12 @@ import {
   parseJournalFilter,
   toListJournalFilter,
 } from "../../src/app/journal-filter";
-import { unwrap } from "../helpers";
+import { NOW as ISO_NOW, unwrap } from "../helpers";
 
 const NOW = new Date(2026, 7, 12); // 12 August 2026
 
 function bookWithAccount() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, ISO_NOW));
   book = unwrap(
     createAccount(book, {
       parentId: null,
@@ -19,7 +19,7 @@ function bookWithAccount() {
       type: "asset",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, ISO_NOW),
   );
   return { book, cashId: book.accounts[0].id };
 }

@@ -2,10 +2,13 @@ import { isCurrencyCode } from "./currency";
 import { err, ok, type Result } from "./result";
 import type { Book, CurrencyCode } from "./types";
 
-export function createBook(input: {
-  name: string;
-  homeCurrency: CurrencyCode;
-}): Result<Book> {
+export function createBook(
+  input: {
+    name: string;
+    homeCurrency: CurrencyCode;
+  },
+  now: string,
+): Result<Book> {
   const name = input.name.trim();
   if (name.length === 0) {
     return err("BOOK_NAME_INVALID", "Book name must be non-empty");
@@ -16,11 +19,13 @@ export function createBook(input: {
     });
   }
   return ok({
-    schemaVersion: 1,
+    schemaVersion: 2,
     name,
     homeCurrency: input.homeCurrency,
+    metaUpdatedAt: now,
     accounts: [],
     journal: [],
     budgets: [],
+    tombstones: [],
   });
 }

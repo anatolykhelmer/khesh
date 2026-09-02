@@ -7,7 +7,7 @@ import { budgetReport, periodTotals } from "../../src/kernel/queries";
 import type { BudgetReport } from "../../src/kernel/queries";
 import type { AccountType, Book } from "../../src/kernel/types";
 import { heroState } from "../../src/app/dashboard-state";
-import { unwrap } from "../helpers";
+import { NOW, unwrap } from "../helpers";
 
 const MONTH = { from: "2026-08-01", to: "2026-08-31" };
 
@@ -21,13 +21,13 @@ function add(
     isPlaceholder: boolean;
   },
 ): { book: Book; id: string } {
-  const next = unwrap(createAccount(book, input));
+  const next = unwrap(createAccount(book, input, NOW));
   return { book: next, id: next.accounts[next.accounts.length - 1].id };
 }
 
 /** Cash ILS, and Expenses > Food > Groceries, plus a Rent leaf no limit ever covers. */
 function fixture() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
   const cash = add(book, {
     parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false,
   });
@@ -101,7 +101,7 @@ function spend(book: Book, from: string, to: string, amount: number): Book {
         { accountId: to, side: "debit", amount },
         { accountId: from, side: "credit", amount },
       ],
-    }),
+    }, NOW),
   );
 }
 
@@ -130,7 +130,7 @@ describe("heroState", () => {
           { accountId: f.groceries, side: "debit", amount: 5000 },
           { accountId: f.cash, side: "credit", amount: 5000 },
         ],
-      }),
+      }, NOW),
     );
     expect(hero(book)).toEqual({ kind: "unbudgeted", spent: 0 });
   });
@@ -145,7 +145,7 @@ describe("heroState", () => {
     const f = fixture();
     let book = spend(f.book, f.cash, f.groceries, 9520);
     book = unwrap(
-      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 12000 }),
+      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 12000 }, NOW),
     );
     expect(hero(book)).toEqual({
       kind: "budgeted",
@@ -162,7 +162,7 @@ describe("heroState", () => {
     const f = fixture();
     let book = spend(f.book, f.cash, f.groceries, 14000);
     book = unwrap(
-      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 10000 }),
+      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 10000 }, NOW),
     );
     expect(hero(book)).toEqual({
       kind: "budgeted",
@@ -186,10 +186,10 @@ describe("heroState", () => {
           { accountId: f.cash, side: "debit", amount: 200 },
           { accountId: f.groceries, side: "credit", amount: 200 },
         ],
-      }),
+      }, NOW),
     );
     book = unwrap(
-      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 1000 }),
+      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 1000 }, NOW),
     );
     expect(hero(book)).toEqual({
       kind: "budgeted",
@@ -243,10 +243,10 @@ describe("heroState", () => {
     // A limit on the group and another on a descendant leaf. Summing both would
     // report a 16,000 budget where the household only planned 10,000.
     book = unwrap(
-      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 10000 }),
+      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 10000 }, NOW),
     );
     book = unwrap(
-      setBudget(book, { accountId: f.groceries, currency: "ILS", period: "month", limit: 6000 }),
+      setBudget(book, { accountId: f.groceries, currency: "ILS", period: "month", limit: 6000 }, NOW),
     );
     const result = hero(book);
     expect(result).toEqual({
@@ -273,7 +273,7 @@ describe("heroState", () => {
     book = trips.book;
     book = spend(book, usdCash.id, trips.id, 4000);
     book = unwrap(
-      setBudget(book, { accountId: trips.id, currency: "USD", period: "month", limit: 5000 }),
+      setBudget(book, { accountId: trips.id, currency: "USD", period: "month", limit: 5000 }, NOW),
     );
     // Only a USD limit exists, so the ILS hero has no denominator.
     expect(hero(book)).toEqual({ kind: "unbudgeted", spent: 0 });
@@ -285,7 +285,7 @@ describe("heroState", () => {
     let book = spend(f.book, f.cash, f.groceries, 700);
     book = spend(book, f.cash, f.rent, 8000);
     book = unwrap(
-      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 1000 }),
+      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 1000 }, NOW),
     );
     expect(hero(book)).toEqual({
       kind: "budgeted",
@@ -307,16 +307,16 @@ describe("heroState", () => {
     book = spend(book, f.cash, f.repairs, 400);
     book = spend(book, f.cash, f.rent, 8000);
     book = unwrap(
-      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 1000 }),
+      setBudget(book, { accountId: f.food, currency: "ILS", period: "month", limit: 1000 }, NOW),
     );
     book = unwrap(
-      setBudget(book, { accountId: f.groceries, currency: "ILS", period: "month", limit: 600 }),
+      setBudget(book, { accountId: f.groceries, currency: "ILS", period: "month", limit: 600 }, NOW),
     );
     book = unwrap(
-      setBudget(book, { accountId: f.car, currency: "ILS", period: "month", limit: 2000 }),
+      setBudget(book, { accountId: f.car, currency: "ILS", period: "month", limit: 2000 }, NOW),
     );
     book = unwrap(
-      setBudget(book, { accountId: f.fuel, currency: "ILS", period: "month", limit: 1200 }),
+      setBudget(book, { accountId: f.fuel, currency: "ILS", period: "month", limit: 1200 }, NOW),
     );
     // spent: 700 + 200 + 1300 + 400 + 8000 = 10600 (all expense leaves).
     // unbudgeted: only Rent — every other leaf sits under a budgeted Food/Car group.

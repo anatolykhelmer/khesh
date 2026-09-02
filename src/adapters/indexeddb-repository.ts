@@ -2,7 +2,7 @@ import { openDB, type IDBPDatabase } from "idb";
 import { err, ok, type Result } from "../kernel/result";
 import type { Book } from "../kernel/types";
 import { validateBook } from "../kernel/validate";
-import { normalizeBook } from "../kernel/normalize";
+import { normalizeBook, type StoredBook } from "../kernel/normalize";
 import type { LedgerRepository } from "../ports/ledger-repository";
 
 const STORE = "books";
@@ -30,7 +30,7 @@ export function createIndexedDbRepository(dbName = "khesh-ledger"): LedgerReposi
         const db = await getDb();
         const value = await db.get(STORE, KEY);
         if (value === undefined) return ok(null);
-        const book = normalizeBook(value as Book);
+        const book = normalizeBook(value as StoredBook);
         const validated = validateBook(book);
         if (!validated.ok) return validated;
         return ok(book);

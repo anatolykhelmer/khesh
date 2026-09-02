@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { expenseRootId, parseStatsState, toStatsParams } from "../../src/app/stats-state";
-import { unwrap } from "../helpers";
+import { NOW as ISO_NOW, unwrap } from "../helpers";
 
 const NOW = new Date(2026, 7, 12); // 12 August 2026
 
 function bookWithRoots() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, ISO_NOW));
   book = unwrap(
     createAccount(book, {
       parentId: null,
@@ -15,7 +15,7 @@ function bookWithRoots() {
       type: "asset",
       currency: "ILS",
       isPlaceholder: true,
-    }),
+    }, ISO_NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -24,7 +24,7 @@ function bookWithRoots() {
       type: "expense",
       currency: "ILS",
       isPlaceholder: true,
-    }),
+    }, ISO_NOW),
   );
   const expenses = book.accounts[1].id;
   book = unwrap(
@@ -34,7 +34,7 @@ function bookWithRoots() {
       type: "expense",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, ISO_NOW),
   );
   return { book, expenses, food: book.accounts[2].id };
 }
@@ -93,7 +93,7 @@ describe("expenseRootId", () => {
   });
 
   it("prefers the root named Expenses when several exist", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, ISO_NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -101,7 +101,7 @@ describe("expenseRootId", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, ISO_NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -110,18 +110,18 @@ describe("expenseRootId", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, ISO_NOW),
     );
     expect(expenseRootId(book)).toBe(book.accounts[1].id);
   });
 
   it("returns null when there is no expense root", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, ISO_NOW));
     expect(expenseRootId(book)).toBeNull();
   });
 
   it("picks the first name when several roots exist and none is Expenses", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, ISO_NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -129,7 +129,7 @@ describe("expenseRootId", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, ISO_NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -138,7 +138,7 @@ describe("expenseRootId", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, ISO_NOW),
     );
     expect(expenseRootId(book)).toBe(book.accounts[1].id);
   });

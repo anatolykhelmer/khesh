@@ -10,6 +10,7 @@ export {
   isOpeningBalancesGroupId,
   isOpeningBalancesLeafId,
 } from "./opening";
+export { canonicalJson } from "./canonical-json";
 export { descendants } from "./book-utils";
 export { validateBook } from "./validate";
 export { normalizeBook } from "./normalize";

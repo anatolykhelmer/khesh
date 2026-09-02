@@ -105,15 +105,45 @@ describe("validateBook v2", () => {
     });
   });
 
-  // The tombstone pass must not re-dereference elements the loops above rejected:
-  // a null budget is reachable through jsonToBook, whose shape check never inspects
-  // budget elements. validateBook's contract is to return a Result, never throw.
-  it("reports null journal and budget elements instead of throwing", () => {
+  // validateBook's contract is to return a Result, never throw — Task 5's
+  // decodeEnvelope runs it on unvalidated Drive JSON with no shape check in front,
+  // so a corrupted remote file must produce violations, not an unhandled rejection.
+  // Covers both the tombstone pass (which must not re-dereference elements the loops
+  // rejected) and the book-utils scans validateBook reaches: siblingNameTaken and
+  // wouldCreateCycle -> findAccount.
+  it("reports null account, journal and budget elements instead of throwing", () => {
     const broken: any = structuredClone(bookWithEveryRecordKind());
+    broken.accounts.push(null);
     broken.journal.push(null);
     broken.budgets.push(null);
     expect(messages(validateBook(broken))).toEqual(
-      expect.arrayContaining(["Invalid journal entry element", "Invalid budget element"]),
+      expect.arrayContaining([
+        "Invalid account element",
+        "Invalid journal entry element",
+        "Invalid budget element",
+      ]),
     );
+  });
+
+  // findAccount is reached from the accounts loop via wouldCreateCycle, which walks
+  // parent links; a malformed element must not throw during that walk either.
+  it("reports a null account element in a book whose accounts have parents", () => {
+    const parent = unwrap(
+      createAccount(
+        unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW)),
+        { parentId: null, name: "Expenses", type: "expense", currency: "ILS", isPlaceholder: true },
+        NOW,
+      ),
+    );
+    const withChild = unwrap(
+      createAccount(
+        parent,
+        { parentId: parent.accounts[0].id, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false },
+        NOW,
+      ),
+    );
+    const broken: any = structuredClone(withChild);
+    broken.accounts.unshift(null);
+    expect(messages(validateBook(broken))).toContain("Invalid account element");
   });
 });

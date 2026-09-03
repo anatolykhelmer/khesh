@@ -377,3 +377,21 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
   sortBook(draft);
   return ok(draft);
 }
+
+/** Order-insensitive content identity: two books with the same records compare equal
+ * even when their arrays are in different insertion orders (command output vs merge
+ * output). The engine uses it to decide "did anything actually change". */
+export function bookFingerprint(book: Book): string {
+  const sorted: Book = {
+    ...book,
+    accounts: [...book.accounts].sort(byId),
+    journal: [...book.journal].sort(byId),
+    budgets: [...book.budgets].sort((x, y) =>
+      compareStrings(budgetKeyOf(x), budgetKeyOf(y)),
+    ),
+    tombstones: [...book.tombstones].sort((x, y) =>
+      compareStrings(`${x.kind}|${x.key}`, `${y.kind}|${y.key}`),
+    ),
+  };
+  return canonicalJson(sorted);
+}

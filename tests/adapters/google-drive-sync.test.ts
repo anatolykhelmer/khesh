@@ -22,6 +22,34 @@ function stubFetch(handler: (call: Call) => Response | Promise<Response>) {
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 
+type MultipartPart = { headers: string; body: string };
+
+/** Splits an RFC 2046 multipart body into its parts, asserting the delimiter
+ * structure as it goes: opening `--boundary`, `CRLF--boundary` between parts, and a
+ * closing `CRLF--boundary--` followed by at most an empty epilogue. A `toContain`
+ * on the body would pass against a body with no delimiters at all, and Google's
+ * upload endpoint is the one wire format here that no local test can exercise for
+ * real — so the shape gets parsed rather than sampled. */
+function parseMultipart(body: string, boundary: string): MultipartPart[] {
+  const opening = `--${boundary}\r\n`;
+  const separator = `\r\n--${boundary}\r\n`;
+  const closing = `\r\n--${boundary}--`;
+
+  expect(body.startsWith(opening)).toBe(true);
+  const closingAt = body.indexOf(closing);
+  expect(closingAt).toBeGreaterThan(opening.length);
+  expect(["", "\r\n"]).toContain(body.slice(closingAt + closing.length));
+
+  return body
+    .slice(opening.length, closingAt)
+    .split(separator)
+    .map((raw) => {
+      const blankLine = raw.indexOf("\r\n\r\n");
+      expect(blankLine).toBeGreaterThan(0);
+      return { headers: raw.slice(0, blankLine), body: raw.slice(blankLine + 4) };
+    });
+}
+
 function makeStore(handler: (call: Call) => Response | Promise<Response>, fileId: string | null = null) {
   const { impl, calls } = stubFetch(handler);
   const saved: string[] = [];
@@ -71,9 +99,19 @@ describe("drive sync store", () => {
     });
     expect(unwrap(await store.write("PAYLOAD"))).toEqual({ rev: "rev-1" });
     const create = calls.find((c) => c.method === "POST")!;
+    expect(create.url).toContain("https://www.googleapis.com/upload/drive/v3/files?");
     expect(create.url).toContain("uploadType=multipart");
-    expect(create.body).toContain('"name":"khesh-book.json"');
-    expect(create.body).toContain("PAYLOAD");
+
+    const contentType = create.headers["Content-Type"];
+    expect(contentType).toMatch(/^multipart\/related; boundary=.+$/);
+    const boundary = contentType.slice("multipart/related; boundary=".length);
+
+    const parts = parseMultipart(create.body ?? "", boundary);
+    expect(parts).toHaveLength(2);
+    expect(parts[0].headers).toBe("Content-Type: application/json; charset=UTF-8");
+    expect(JSON.parse(parts[0].body)).toEqual({ name: "khesh-book.json" });
+    expect(parts[1].headers).toBe("Content-Type: application/json");
+    expect(parts[1].body).toBe("PAYLOAD");
     expect(saved).toEqual(["created-1"]);
   });
 
@@ -81,7 +119,8 @@ describe("drive sync store", () => {
     const { store, calls } = makeStore(() => json({ id: "f9", modifiedTime: "rev-3" }), "f9");
     expect(unwrap(await store.write("PAYLOAD"))).toEqual({ rev: "rev-3" });
     expect(calls[0].method).toBe("PATCH");
-    expect(calls[0].url).toContain("/files/f9?uploadType=media");
+    expect(calls[0].url).toContain("https://www.googleapis.com/upload/drive/v3/files/f9?uploadType=media");
+    expect(calls[0].headers["Content-Type"]).toBe("application/json");
     expect(calls[0].body).toBe("PAYLOAD");
   });
 

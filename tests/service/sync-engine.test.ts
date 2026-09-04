@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRepository } from "../../src/adapters/memory-repository";
 import { createMemorySyncStore } from "../../src/adapters/memory-sync-store";
 import { decodeEnvelope, encodeEnvelope } from "../../src/adapters/sync-envelope";
-import { createAccount } from "../../src/kernel/accounts";
+import { createAccount, updateAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { bookFingerprint } from "../../src/kernel/merge";
 import type { Book } from "../../src/kernel/types";
+import type { LedgerRepository } from "../../src/ports/ledger-repository";
 import type { SyncStorePort } from "../../src/ports/sync-store";
 import { createSyncEngine, type SyncState } from "../../src/service/sync-engine";
 import { NOW, unwrap } from "../helpers";
@@ -42,8 +43,7 @@ function spend(book: Book, cashId: string, foodId: string, amount: number, at: s
   );
 }
 
-function harness(book: Book, store = createMemorySyncStore()) {
-  const repo = createMemoryRepository(book);
+function engineFor(repo: LedgerRepository, store: SyncStorePort) {
   const states: SyncState[] = [];
   const changed: Book[] = [];
   const engine = createSyncEngine({
@@ -55,7 +55,34 @@ function harness(book: Book, store = createMemorySyncStore()) {
     now: () => T(30),
     debounceMs: 3000,
   });
-  return { repo, store, engine, states, changed };
+  return { engine, states, changed };
+}
+
+function harness(book: Book, store = createMemorySyncStore()) {
+  const repo = createMemoryRepository(book);
+  return { repo, store, ...engineFor(repo, store) };
+}
+
+/** Fires `onFirstRead` inside the cycle's download, i.e. after the cycle took its local
+ * snapshot and before it persists anything — the window a real commit lands in while
+ * the network round trips are in flight. */
+function committingDuringRead(
+  inner: SyncStorePort,
+  onFirstRead: () => Promise<void>,
+): SyncStorePort {
+  let fired = false;
+  return {
+    probe: () => inner.probe(),
+    async read() {
+      const result = await inner.read();
+      if (!fired) {
+        fired = true;
+        await onFirstRead();
+      }
+      return result;
+    },
+    write: (payload) => inner.write(payload),
+  };
 }
 
 describe("sync engine", () => {
@@ -265,5 +292,78 @@ describe("sync engine", () => {
     expect(readSpy).not.toHaveBeenCalled();
     expect(changed).toHaveLength(1);
     expect(engine.getState().kind).toBe("idle");
+  });
+
+  // --- A commit landing inside the cycle's network window is not the cycle's to lose:
+  // the merge was computed from a snapshot taken before the round trips started. ---
+
+  it("keeps a commit that lands mid-cycle, locally and on the remote", async () => {
+    const { book, cashId, foodId } = makeBook();
+    const remoteBook = spend(book, cashId, foodId, 700, T(5));
+    const inner = createMemorySyncStore(encodeEnvelope(remoteBook));
+    const repo = createMemoryRepository(book);
+    const midCycle = spend(book, cashId, foodId, 300, T(6));
+    const store = committingDuringRead(inner, async () => {
+      await repo.save(midCycle);
+    });
+    const { engine, changed } = engineFor(repo, store);
+
+    await engine.syncNow();
+
+    const settled = unwrap(await repo.load())!;
+    const amounts = (b: Book) => b.journal.flatMap((e) => e.postings.map((p) => p.amount)).sort();
+    expect(settled.journal).toHaveLength(2);
+    expect(amounts(settled)).toEqual([300, 300, 700, 700]);
+    // The union reached Drive too, not just IndexedDB.
+    expect(unwrap(decodeEnvelope(inner.getPayload()!)).journal).toHaveLength(2);
+    // React state was handed the book that still has the mid-cycle entry.
+    expect(changed).toHaveLength(1);
+    expect(changed[0].journal).toHaveLength(2);
+    expect(engine.getState().kind).toBe("idle");
+  });
+
+  it("costs no extra store call when nothing commits mid-cycle", async () => {
+    const { book, cashId, foodId } = makeBook();
+    const remoteBook = spend(book, cashId, foodId, 700, T(5));
+    const store = createMemorySyncStore(encodeEnvelope(remoteBook));
+    const { repo, engine, changed } = harness(spend(book, cashId, foodId, 100, T(4)), store);
+    const probeSpy = vi.spyOn(store, "probe");
+    const readSpy = vi.spyOn(store, "read");
+    const writeSpy = vi.spyOn(store, "write");
+    const saveSpy = vi.spyOn(repo, "save");
+
+    await engine.syncNow();
+
+    expect(probeSpy).toHaveBeenCalledTimes(1);
+    expect(readSpy).toHaveBeenCalledTimes(1);
+    expect(writeSpy).toHaveBeenCalledTimes(1); // the union differs from the remote
+    expect(saveSpy).toHaveBeenCalledTimes(1); // ...and from the local book
+    expect(changed).toHaveLength(1);
+    expect(unwrap(await repo.load())!.journal).toHaveLength(2);
+  });
+
+  it("surfaces manualResolution when the mid-cycle commit conflicts with the remote", async () => {
+    const { book, cashId, foodId } = makeBook();
+    // Remote moved Food to USD — legal there, since no entry touches Food on either
+    // side at the moment the cycle takes its snapshot, so the first merge succeeds.
+    const remoteBook = unwrap(updateAccount(book, { id: foodId, currency: "USD" }, T(5)));
+    const inner = createMemorySyncStore(encodeEnvelope(remoteBook));
+    const repo = createMemoryRepository(book);
+    // ...and then an ILS entry through Food lands mid-cycle, so the re-merge has to
+    // refuse rather than reread 300 ILS as 300 USD.
+    const midCycle = spend(book, cashId, foodId, 300, T(6));
+    const store = committingDuringRead(inner, async () => {
+      await repo.save(midCycle);
+    });
+    const { engine, changed } = engineFor(repo, store);
+
+    await engine.syncNow();
+
+    const state = engine.getState();
+    expect(state.kind).toBe("manualResolution");
+    expect(state.kind === "manualResolution" && state.errorCode).toBe("SYNC_MERGE_CONFLICT");
+    expect(changed).toHaveLength(0);
+    expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(midCycle));
+    expect(inner.getPayload()).toBe(encodeEnvelope(remoteBook));
   });
 });

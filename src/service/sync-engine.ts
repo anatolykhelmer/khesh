@@ -34,6 +34,18 @@ export interface SyncEngine {
   dispose(): void;
 }
 
+/** mergeBooks does not validate its own output. An ok merge that still fails here is
+ * a kernel bug, not a user conflict: the caller aborts with the validation code, keeps
+ * the local book, and uploads nothing. Shared by the cycle's two merges so the
+ * re-merge below cannot drift from the first one's error handling. */
+function mergeValidated(local: Book, remote: Book): Result<Book> {
+  const merged = mergeBooks(local, remote);
+  if (!merged.ok) return merged;
+  const valid = validateBook(merged.value);
+  if (!valid.ok) return valid;
+  return merged;
+}
+
 export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   const debounceMs = deps.debounceMs ?? 3000;
   const nowIso = deps.now ?? (() => new Date().toISOString());
@@ -94,22 +106,37 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     const remote = decodeEnvelope(readResult.value.payload);
     if (!remote.ok) return remote;
 
-    const merged = mergeBooks(local, remote.value);
+    const merged = mergeValidated(local, remote.value);
     if (!merged.ok) return merged;
-    // mergeBooks does not validate its own output. An ok merge that still fails here is
-    // a kernel bug, not a user conflict: abort with the validation code, keep the local
-    // book, and upload nothing.
-    const valid = validateBook(merged.value);
-    if (!valid.ok) return valid;
+
+    // `local` is two network round trips old by now. A commit that landed in between is
+    // in the repository but not in `merged`, so persisting `merged` would erase it from
+    // IndexedDB and push the entry-less book into React state — silently, since neither
+    // step fails. Re-merge the fresh book against the same downloaded remote instead;
+    // the re-merge may legitimately refuse (a concurrent edit really can conflict with
+    // what the remote holds), which is the honest outcome rather than a wrong save.
+    //
+    // The reload is a local read inside the same lock, so it adds no store call and
+    // nothing can commit between it and the writes below. One re-check is enough: it
+    // closes a window two network round trips wide and leaves one the width of a single
+    // IndexedDB read.
+    const reloaded = await deps.repo.load();
+    if (!reloaded.ok) return reloaded;
+    const current = reloaded.value;
+    if (current === null) return err("BOOK_INVALID", "No local book to sync");
+    const currentPrint = bookFingerprint(current);
+    const settled =
+      currentPrint === bookFingerprint(local) ? merged : mergeValidated(current, remote.value);
+    if (!settled.ok) return settled;
 
     let rev: string | null = readResult.value.rev;
-    if (bookFingerprint(merged.value) !== bookFingerprint(local)) {
-      const saved = await deps.repo.save(merged.value);
+    if (bookFingerprint(settled.value) !== currentPrint) {
+      const saved = await deps.repo.save(settled.value);
       if (!saved.ok) return saved;
-      deps.onBookChanged(merged.value);
+      deps.onBookChanged(settled.value);
     }
-    if (bookFingerprint(merged.value) !== bookFingerprint(remote.value)) {
-      const written = await deps.store.write(encodeEnvelope(merged.value));
+    if (bookFingerprint(settled.value) !== bookFingerprint(remote.value)) {
+      const written = await deps.store.write(encodeEnvelope(settled.value));
       if (!written.ok) return written;
       rev = written.value.rev;
     }

@@ -337,10 +337,13 @@ describe("mergeBooks properties", () => {
           const ba = mergeBooks(b, a);
           expect(ab.ok).toBe(ba.ok);
           if (!ab.ok || !ba.ok) {
-            // Refusing is a legitimate outcome — but only for the one reason, and
-            // only if both argument orders agree on it.
+            // Refusing is a legitimate outcome — but only for the one code, and only if
+            // both argument orders agree. The whole error is compared, not just the
+            // code: mergeBooks refuses for two structurally distinct reasons, so an
+            // order-dependent choice *between* them would otherwise pass unnoticed.
             if (!ab.ok) expect(ab.error.code).toBe("SYNC_MERGE_CONFLICT");
             if (!ba.ok) expect(ba.error.code).toBe("SYNC_MERGE_CONFLICT");
+            if (!ab.ok && !ba.ok) expect(ab.error).toEqual(ba.error);
             return;
           }
           expect(ab.value).toEqual(ba.value);

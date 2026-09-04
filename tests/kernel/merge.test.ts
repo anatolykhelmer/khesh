@@ -325,6 +325,9 @@ describe("mergeBooks repair ladder", () => {
     const b = spend(book, cashId, foodId, 100, T(2));
     expect(unwrapErr(mergeBooks(a, b)).code).toBe("SYNC_MERGE_CONFLICT");
     expect(unwrapErr(mergeBooks(b, a)).code).toBe("SYNC_MERGE_CONFLICT");
+    // The two refusals share a code, so `details` is what tells them apart.
+    expect(unwrapErr(mergeBooks(a, b)).details).toEqual({ reason: "currency" });
+    expect(unwrapErr(mergeBooks(b, a)).details).toEqual({ reason: "currency" });
   });
 
   it("refuses a currency change that invalidates a concurrent fx entry", () => {
@@ -376,5 +379,7 @@ describe("mergeBooks repair ladder", () => {
     const b = unwrap(createAccount(book, { parentId: groupId, name: "Cafes", type: "expense", currency: "ILS", isPlaceholder: false }, T(3)));
     expect(unwrapErr(mergeBooks(a, b)).code).toBe("SYNC_MERGE_CONFLICT");
     expect(unwrapErr(mergeBooks(b, a)).code).toBe("SYNC_MERGE_CONFLICT");
+    expect(unwrapErr(mergeBooks(a, b)).details).toEqual({ reason: "childrenAndPostings" });
+    expect(unwrapErr(mergeBooks(b, a)).details).toEqual({ reason: "childrenAndPostings" });
   });
 });

@@ -158,9 +158,13 @@ function repaired(record: { updatedAt: string }): void {
   if (!Number.isNaN(at)) record.updatedAt = new Date(at + 1).toISOString();
 }
 
-/** Deterministic repair of a merged draft. Mutates `draft`. Returns false when the
- * conflict is irreducible (an account holds both children and postings). */
-function repair(draft: Book, restorable: Map<string, Account>): boolean {
+/** What made a draft irreparable, for the refusal's `details`. `mergeBooks` refuses for
+ * two structurally different reasons and the code alone does not say which. */
+type RepairFailure = "childrenAndPostings" | "missingTombstone";
+
+/** Deterministic repair of a merged draft. Mutates `draft`. Returns null when the draft
+ * is repaired, or what made the conflict irreducible. */
+function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | null {
   // 1. Restore referenced accounts from tombstones, transitively (parents included).
   //    Every pass consumes at least one tombstone, so the loop cannot spin.
   for (;;) {
@@ -178,7 +182,8 @@ function repair(draft: Book, restorable: Map<string, Account>): boolean {
     if (missing.length === 0) break;
     for (const id of missing) {
       const stone = draft.tombstones.find((t) => t.kind === "account" && t.key === id);
-      if (!stone) return false; // unreachable from valid inputs; refuse rather than invent
+      // unreachable from valid inputs; refuse rather than invent
+      if (!stone) return "missingTombstone";
       // Whichever is newer, a live copy some device still holds or the snapshot the
       // tombstone carries — see `latestLiveAccounts`. Taking the live copy on sight
       // would drop a rename the deleting device made just before deleting, since the
@@ -245,7 +250,7 @@ function repair(draft: Book, restorable: Map<string, Account>): boolean {
   for (const account of draft.accounts) {
     const hasChild = withChildren.has(account.id);
     const hasPosting = posted.has(account.id);
-    if (hasChild && hasPosting) return false;
+    if (hasChild && hasPosting) return "childrenAndPostings";
     if (hasChild && !account.isPlaceholder) {
       account.isPlaceholder = true;
       repaired(account);
@@ -311,7 +316,7 @@ function repair(draft: Book, restorable: Map<string, Account>): boolean {
   const typeById = new Map(draft.accounts.map((a) => [a.id, a.type]));
   draft.budgets = draft.budgets.filter((b) => typeById.get(b.accountId) === "expense");
 
-  return true;
+  return null;
 }
 
 function currencyIndex(book: Book): Map<string, CurrencyCode> {
@@ -387,8 +392,14 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
   }
 
   sortBook(draft);
-  if (!repair(draft, latestLiveAccounts([a, b]))) {
-    return err("SYNC_MERGE_CONFLICT", "Books conflict beyond automatic repair");
+  // `reason` names which of the two refusals this is. The code is the same for both, so
+  // without it a caller — or the symmetry property, which compares the whole error —
+  // cannot tell an order-dependent choice *between* the reasons from agreement.
+  const unrepaired = repair(draft, latestLiveAccounts([a, b]));
+  if (unrepaired !== null) {
+    return err("SYNC_MERGE_CONFLICT", "Books conflict beyond automatic repair", {
+      reason: unrepaired,
+    });
   }
   // Runs on the repaired draft: rung 1 decides which accounts are live at all, and
   // therefore which currency each posting resolves to.
@@ -396,6 +407,7 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
     return err(
       "SYNC_MERGE_CONFLICT",
       "An account currency changed under an entry posted on the other device",
+      { reason: "currency" },
     );
   }
   sortBook(draft);

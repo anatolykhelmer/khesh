@@ -1,7 +1,42 @@
 import { decodeEnvelope, encodeEnvelope, SYNC_FORMAT } from "../../src/adapters/sync-envelope";
+import { createAccount } from "../../src/kernel/accounts";
+import { setBudget } from "../../src/kernel/budgets";
 import { createBook } from "../../src/kernel/create-book";
+import { postEntry } from "../../src/kernel/journal";
 import { EPOCH } from "../../src/kernel/normalize";
+import type { Book } from "../../src/kernel/types";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+
+/** Denotes the same instant as NOW, but sorts after it lexicographically — the exact
+ * hazard the canonical-timestamp guard exists for, since mergeBooks compares these
+ * strings rather than the instants they name. */
+const OFFSET_FORM = "2026-09-02T13:00:00.000+03:00";
+
+/** Cash, Food, one entry between them, and a limit on Food — all built by the kernel,
+ * so validateBook is guaranteed to pass and the guard under test is the only thing
+ * that can reject a tampered copy. */
+function fullBook(): Book {
+  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+  book = unwrap(createAccount(book, { parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
+  book = unwrap(createAccount(book, { parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW));
+  const [cash, food] = book.accounts;
+  book = unwrap(
+    postEntry(book, {
+      date: "2026-01-10",
+      description: "x",
+      postings: [
+        { accountId: food.id, side: "debit", amount: 100 },
+        { accountId: cash.id, side: "credit", amount: 100 },
+      ],
+    }, NOW),
+  );
+  return unwrap(
+    setBudget(book, { accountId: food.id, period: "month", currency: "ILS", limit: 500 }, NOW),
+  );
+}
+
+const envelope = (book: unknown) =>
+  JSON.stringify({ app: "khesh", format: 1, encrypted: false, book });
 
 describe("sync envelope", () => {
   it("round-trips a v2 book", () => {
@@ -205,6 +240,30 @@ describe("sync envelope", () => {
     };
     const raw = JSON.stringify({ app: "khesh", format: 1, encrypted: false, book: withTombstone });
     expect(unwrapErr(decodeEnvelope(raw)).code).toBe("SYNC_ENVELOPE_INVALID");
+  });
+
+  it("rejects a journal entry updatedAt carrying a UTC offset as SYNC_ENVELOPE_INVALID", () => {
+    // The money-bearing half of the guard: an offset stamp on an entry sorts after an
+    // earlier canonical instant, so a hand-edited Drive file could make a stale version
+    // of an entry win last-writer-wins inside mergeBooks.
+    const book = fullBook();
+    const tampered = {
+      ...book,
+      journal: [{ ...book.journal[0], updatedAt: OFFSET_FORM }],
+    };
+    expect(unwrapErr(decodeEnvelope(envelope(tampered))).code).toBe("SYNC_ENVELOPE_INVALID");
+    // The same book with the stamp left alone decodes, so the rejection is the stamp
+    // and not something else about the fixture.
+    expect(unwrap(decodeEnvelope(envelope(book)))).toEqual(book);
+  });
+
+  it("rejects a budget updatedAt carrying a UTC offset as SYNC_ENVELOPE_INVALID", () => {
+    const book = fullBook();
+    const tampered = {
+      ...book,
+      budgets: [{ ...book.budgets[0], updatedAt: OFFSET_FORM }],
+    };
+    expect(unwrapErr(decodeEnvelope(envelope(tampered))).code).toBe("SYNC_ENVELOPE_INVALID");
   });
 
   it("accepts a migrated v1 book whose EPOCH stamps are the canonical form", () => {

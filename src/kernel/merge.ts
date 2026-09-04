@@ -205,20 +205,33 @@ function repair(draft: Book, restorable: Map<string, Account>): boolean {
     }
   }
 
+  // No rung below rewrites the journal, so this is the posting set rungs 2 and 3 share.
+  const posted = new Set(draft.journal.flatMap((e) => e.postings.map((p) => p.accountId)));
+
   // 2. Break parent cycles. `wouldCreateCycle` only ever sees one device's book, so
   //    moving G1 under G2 here while G2 moves under G1 there is legal on both and a
   //    cycle only exists after the union. Nothing is lost by detaching — one parentId
-  //    changes, no record disappears — so this is repaired, not refused. The lowest-id
-  //    member is the one cut loose: deterministic, and the same in either argument
-  //    order. Runs before the rungs below because a cycle hides its members from the
-  //    type cascade entirely, and because the mutual parenthood it invents would
-  //    otherwise read as a genuine children-and-postings conflict in rung 3.
+  //    changes, no record disappears — so this is repaired, not refused. Runs before the
+  //    rungs below because a cycle hides its members from the type cascade entirely, and
+  //    because the mutual parenthood it invents would otherwise read as a genuine
+  //    children-and-postings conflict in rung 3.
+  //
+  //    Which member is cut loose matters for whether rung 3 then refuses. Detaching
+  //    clears the member's parent but not its child link — the member that pointed at it
+  //    inside the cycle still does — so cutting loose an account that holds postings
+  //    hands rung 3 exactly the children-and-postings pair it calls irreducible, and a
+  //    cycle that was perfectly repairable fails the whole merge. Prefer a member no
+  //    entry posts to; among the candidates the lowest id wins, which keeps the choice
+  //    deterministic and the same in either argument order. When every member is posted
+  //    to there is no such choice and rung 3 is right to refuse.
   //    Each pass clears one parentId, so the loop is bounded by the account count.
   for (;;) {
     const index = new Map(draft.accounts.map((a) => [a.id, a]));
     const cycle = findCycle(draft.accounts, index);
     if (cycle === null) break;
-    const lowest = cycle.reduce((low, id) => (id < low ? id : low));
+    const free = cycle.filter((id) => !posted.has(id));
+    const candidates = free.length > 0 ? free : cycle;
+    const lowest = candidates.reduce((low, id) => (id < low ? id : low));
     const detached = index.get(lowest);
     if (detached === undefined) break; // cycle ids come from index; unreachable
     detached.parentId = null;
@@ -229,7 +242,6 @@ function repair(draft: Book, restorable: Map<string, Account>): boolean {
   const withChildren = new Set(
     draft.accounts.filter((a) => a.parentId !== null).map((a) => a.parentId as string),
   );
-  const posted = new Set(draft.journal.flatMap((e) => e.postings.map((p) => p.accountId)));
   for (const account of draft.accounts) {
     const hasChild = withChildren.has(account.id);
     const hasPosting = posted.has(account.id);

@@ -253,6 +253,49 @@ describe("mergeBooks repair ladder", () => {
     expect(merged.accounts.find((x) => x.id === high)?.parentId).toBe(low);
   });
 
+  it("breaks a cycle around the posting-holder instead of refusing, in both id orders", () => {
+    // The two repair rungs overlap here: a cycle whose members are one posted-to
+    // account and one plain group. Detaching a member clears its parent but leaves the
+    // other member pointing at it, so detaching the posted-to one hands rung 3 a
+    // children-and-postings pair and the whole merge refuses — which, under a
+    // lowest-id-only rule, is decided by nothing but how the two ULIDs happened to
+    // fall. Both arrangements are exercised, so neither draw can hide the other.
+    const runWith = (which: "low" | "high") => {
+      const { book, cashId, groupId } = base();
+      const two = unwrap(createAccount(book, { parentId: null, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+      const otherId = two.accounts.find((x) => x.name === "Other")!.id;
+      const [low, high] = groupId < otherId ? [groupId, otherId] : [otherId, groupId];
+      const poster = which === "low" ? low : high;
+      const free = which === "low" ? high : low;
+
+      // A: the poster becomes a postable leaf, takes an entry, and moves under `free`.
+      let a = unwrap(updateAccount(two, { id: poster, isPlaceholder: false }, T(1)));
+      a = unwrap(
+        postEntry(a, {
+          date: "2026-01-10",
+          description: "x",
+          postings: [
+            { accountId: poster, side: "debit", amount: 100 },
+            { accountId: cashId, side: "credit", amount: 100 },
+          ],
+        }, T(2)),
+      );
+      a = unwrap(updateAccount(a, { id: poster, parentId: free }, T(3)));
+      // B: `free` moves under the poster, which is still a placeholder over here.
+      const b = unwrap(updateAccount(two, { id: free, parentId: poster }, T(3)));
+
+      const merged = mergedBothOrders(a, b);
+      expect(merged.accounts.find((x) => x.id === free)?.parentId).toBe(null);
+      expect(merged.accounts.find((x) => x.id === poster)?.parentId).toBe(free);
+      expect(merged.journal).toHaveLength(1);
+      expect(unwrap(mergeBooks(merged, a))).toEqual(merged);
+      expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
+    };
+
+    runWith("low");
+    runWith("high");
+  });
+
   it("cascades the type onto accounts freed from a cycle", () => {
     const { book, groupId } = base();
     const two = unwrap(createAccount(book, { parentId: null, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));

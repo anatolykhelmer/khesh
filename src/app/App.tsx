@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Banner } from "./components/Banner";
 import { BottomTabs } from "./components/BottomTabs";
@@ -16,6 +17,7 @@ import { OnboardingScreen } from "./screens/OnboardingScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { StatsScreen } from "./screens/StatsScreen";
 import { TransferFormScreen } from "./screens/TransferFormScreen";
+import { useSync } from "./sync/sync-context";
 import { useAppUpdate } from "./use-app-update";
 
 function Shell() {
@@ -48,6 +50,16 @@ export function App() {
   const { t } = useTranslation();
   const { book, loading, error, clearError } = useLedger();
   const { needRefresh, reload, dismiss } = useAppUpdate();
+  const sync = useSync();
+  const navigate = useNavigate();
+  const [dismissedSyncKind, setDismissedSyncKind] = useState<string | null>(null);
+  const syncKind = sync.state?.kind ?? null;
+  useEffect(() => {
+    setDismissedSyncKind(null);
+  }, [syncKind]);
+  const showNeedsAuth = syncKind === "needsAuth" && dismissedSyncKind !== "needsAuth";
+  const showSyncError =
+    (syncKind === "error" || syncKind === "manualResolution") && dismissedSyncKind !== syncKind;
 
   if (loading) {
     return (
@@ -67,6 +79,23 @@ export function App() {
           actionLabel={t("app.updateAction")}
           onAction={reload}
           onDismiss={dismiss}
+        />
+      ) : null}
+      {showNeedsAuth ? (
+        <Banner
+          tone="info"
+          message={t("sync.bannerNeedsAuth")}
+          actionLabel={t("sync.needsAuthAction")}
+          onAction={() => void sync.reauth()}
+          onDismiss={() => setDismissedSyncKind("needsAuth")}
+        />
+      ) : null}
+      {showSyncError ? (
+        <Banner
+          message={t("sync.bannerError")}
+          actionLabel={t("sync.openSettings")}
+          onAction={() => navigate("/settings")}
+          onDismiss={() => setDismissedSyncKind(syncKind)}
         />
       ) : null}
       {book ? <Shell /> : <OnboardingScreen />}

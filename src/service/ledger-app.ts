@@ -60,12 +60,6 @@ export type EntryInput = {
 
 export type AccountOption = { id: string; path: string; depth: number };
 
-async function commit(repo: LedgerRepository, next: Book): Promise<Result<Book>> {
-  const saved = await repo.save(next);
-  if (!saved.ok) return saved;
-  return ok(next);
-}
-
 function isSystemAccountId(id: string): boolean {
   return id.startsWith("sys:");
 }
@@ -211,10 +205,22 @@ export function inferEntryLines(entry: JournalEntry): {
   return { fromAccountId: credit.accountId, fromAmount: credit.amount, lines, total, fx };
 }
 
-export type LedgerAppHooks = { now?: () => string };
+export type LedgerAppHooks = {
+  now?: () => string;
+  /** Fires after every successful persisting mutation, importJson included. */
+  afterCommit?: (book: Book) => void;
+};
 
 export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = {}) {
   const nowIso = () => hooks.now?.() ?? new Date().toISOString();
+
+  async function commit(next: Book): Promise<Result<Book>> {
+    const saved = await repo.save(next);
+    if (!saved.ok) return saved;
+    hooks.afterCommit?.(next);
+    return ok(next);
+  }
+
   return {
     async boot(): Promise<Result<Book | null>> {
       return repo.load();
@@ -225,7 +231,9 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
     },
 
     async importJson(raw: string): Promise<Result<Book>> {
-      return importBookJson(repo, raw);
+      const imported = await importBookJson(repo, raw);
+      if (imported.ok) hooks.afterCommit?.(imported.value);
+      return imported;
     },
 
     async createHousehold(homeCurrency: CurrencyCode): Promise<Result<Book>> {
@@ -247,7 +255,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         if (!next.ok) return next;
         book = next.value;
       }
-      return commit(repo, book);
+      return commit(book);
     },
 
     async addAccount(
@@ -311,14 +319,14 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
           nowIso(),
         );
         if (!opened.ok) {
-          const saved = await commit(repo, next);
+          const saved = await commit(next);
           if (!saved.ok) return saved;
           return opened;
         }
         next = opened.value;
       }
 
-      return commit(repo, next);
+      return commit(next);
     },
 
     async editAccount(
@@ -357,7 +365,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         nowIso(),
       );
       if (!updated.ok) return updated;
-      return commit(repo, updated.value);
+      return commit(updated.value);
     },
 
     async removeAccount(book: Book, id: string): Promise<Result<Book>> {
@@ -373,7 +381,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       }
       const deleted = deleteAccount(book, id, nowIso());
       if (!deleted.ok) return deleted;
-      return commit(repo, deleted.value);
+      return commit(deleted.value);
     },
 
     async addEntry(book: Book, input: EntryInput): Promise<Result<Book>> {
@@ -391,7 +399,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         nowIso(),
       );
       if (!posted.ok) return posted;
-      return commit(repo, posted.value);
+      return commit(posted.value);
     },
 
     async updateEntry(book: Book, entryId: string, input: EntryInput): Promise<Result<Book>> {
@@ -415,13 +423,13 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         nowIso(),
       );
       if (!updated.ok) return updated;
-      return commit(repo, updated.value);
+      return commit(updated.value);
     },
 
     async deleteEntry(book: Book, entryId: string): Promise<Result<Book>> {
       const deleted = kernelDeleteEntry(book, entryId, nowIso());
       if (!deleted.ok) return deleted;
-      return commit(repo, deleted.value);
+      return commit(deleted.value);
     },
 
     listJournal(
@@ -462,7 +470,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
     ): Promise<Result<Book>> {
       const result = setBudget(book, input, nowIso());
       if (!result.ok) return result;
-      return commit(repo, result.value);
+      return commit(result.value);
     },
 
     async removeBudget(
@@ -471,7 +479,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
     ): Promise<Result<Book>> {
       const result = removeBudget(book, input, nowIso());
       if (!result.ok) return result;
-      return commit(repo, result.value);
+      return commit(result.value);
     },
 
     budgetReport(

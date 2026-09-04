@@ -6,6 +6,7 @@ import {
   type GoogleAuth,
 } from "../../adapters/google-drive-sync";
 import { createSyncMetaStore } from "../../adapters/sync-meta-store";
+import { err } from "../../kernel/result";
 import { errorMessage } from "../../service/error-messages";
 import {
   applyFirstConnect,
@@ -45,7 +46,17 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     if (!authRef.current) authRef.current = createGoogleAuth(CLIENT_ID);
     if (!storeRef.current) {
       storeRef.current = createDriveSyncStore({
-        getToken: (interactive = false) => authRef.current!.getToken(interactive),
+        // A cycle already inside the sync lock when `disconnect()` runs still holds this
+        // store, and `disconnect()` clears `authRef` the moment it disposes the engine.
+        // Asserting on that ref would throw inside the lock callback — an unhandled
+        // rejection, since syncNow is invoked as `void engine.syncNow()` — or, a beat
+        // earlier, write to Drive after the user believes they have disconnected. An
+        // error Result fails that cycle through the engine's existing handling instead.
+        getToken: async (interactive = false) => {
+          const auth = authRef.current;
+          if (!auth) return err<string>("SYNC_AUTH_REQUIRED", "Sync is not connected");
+          return auth.getToken(interactive);
+        },
         getFileId: () => fileIdRef.current,
         // The ref is set before the await so a second write in the same session sees
         // the new fileId and cannot create a duplicate file.

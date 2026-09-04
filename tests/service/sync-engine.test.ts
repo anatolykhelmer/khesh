@@ -209,6 +209,51 @@ describe("sync engine", () => {
     expect(store.getPayload()).toBeNull();
   });
 
+  it("a cycle queued behind a running one stops when dispose lands while it waits", async () => {
+    // dispose() is called from the provider's disconnect(), which then clears the auth
+    // the store's token accessor reads. A cycle that was already in the lock queue when
+    // that happened must not go on to use the store — the outer disposed check ran
+    // before the queue, so only a check inside the lock can stop it.
+    const { book } = makeBook();
+    const plain = createMemorySyncStore();
+    let releaseFirstProbe: () => void = () => undefined;
+    let announceFirstProbe: () => void = () => undefined;
+    const firstProbeHeld = new Promise<void>((resolve) => {
+      releaseFirstProbe = () => resolve();
+    });
+    const firstProbeEntered = new Promise<void>((resolve) => {
+      announceFirstProbe = () => resolve();
+    });
+    let probes = 0;
+    const store: SyncStorePort = {
+      async probe() {
+        probes += 1;
+        if (probes === 1) {
+          announceFirstProbe();
+          await firstProbeHeld;
+        }
+        return plain.probe();
+      },
+      read: () => plain.read(),
+      write: (payload) => plain.write(payload),
+    };
+    const repo = createMemoryRepository(book);
+    const { engine, states } = engineFor(repo, store);
+    const loadSpy = vi.spyOn(repo, "load");
+
+    const running = engine.syncNow();
+    await firstProbeEntered; // the first cycle really is inside the lock
+    const queued = engine.syncNow(); // sits in the lock queue behind it
+    engine.dispose();
+    releaseFirstProbe();
+    await running;
+    await queued;
+
+    expect(probes).toBe(1); // the queued cycle reached neither probe nor read
+    expect(loadSpy).toHaveBeenCalledTimes(1); // ...nor the repository
+    expect(states.filter((s) => s.kind === "syncing")).toHaveLength(1);
+  });
+
   it("runExclusive serializes a debounced cycle that fires inside a running one", async () => {
     const { book } = makeBook();
 

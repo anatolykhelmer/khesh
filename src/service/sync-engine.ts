@@ -146,6 +146,11 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   async function syncNow(): Promise<void> {
     if (disposed) return;
     await deps.runExclusive(async () => {
+      // The check above is a fast path only. This callback may have sat in the lock
+      // queue behind a running cycle while `dispose()` landed, and by then the caller
+      // is already tearing the engine's dependencies down — the store's token accessor
+      // in particular. Re-check here so a queued cycle touches neither store nor repo.
+      if (disposed) return;
       const gen = changeGen;
       setState({ kind: "syncing", lastSyncAt: state.lastSyncAt });
       const outcome = await cycle(gen);

@@ -125,6 +125,26 @@ describe("mergeBooks repair ladder", () => {
     expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
   });
 
+  it("restores the deleting device's snapshot when that is the newest version anywhere", () => {
+    // The mirror of the case above, and the one a symmetric-and-convergent property
+    // cannot see: A renames Food to "Meals" and only then deletes it, so the tombstone
+    // it leaves carries the newest version of the record in existence. B never saw the
+    // rename and posts through the still-named "Food", so the live copy the union can
+    // reach is the older one. The delete wins the record race and the posting forces
+    // rung 1 to bring the account back — taking the live copy on sight would silently
+    // undo a rename the tombstone itself was holding.
+    const { book, cashId, foodId } = base();
+    const renamed = unwrap(updateAccount(book, { id: foodId, name: "Meals" }, T(2)));
+    const a = unwrap(deleteAccount(renamed, foodId, T(3)));
+    const b = spend(book, cashId, foodId, 100, T(1));
+    const merged = mergedBothOrders(a, b);
+    expect(merged.accounts.find((x) => x.id === foodId)?.name).toBe("Meals");
+    expect(merged.tombstones).toHaveLength(0);
+    expect(merged.journal).toHaveLength(1);
+    expect(unwrap(mergeBooks(merged, a))).toEqual(merged);
+    expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
+  });
+
   it("keeps a resurrected account alive once a later rung drops what referenced it", () => {
     // B budgets Food and then retypes it; A deletes it. The delete is later, so the
     // union kills Food — but B's budget still points at it, so rung 1 brings it back,

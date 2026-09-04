@@ -59,12 +59,13 @@ function collectClaims(book: Book): Map<string, Claim> {
  * The newest live version of each account across the inputs, tombstones ignored —
  * including the versions a tombstone outranked and so kept out of the draft.
  *
- * Rung 1 resurrects from here rather than from the tombstone's own snapshot. The
- * snapshot is the record as it stood on the deleting device, which is by construction
- * no newer than a copy that went on being edited elsewhere; restoring it would throw
- * that edit away. It would also not settle: re-merging the device that still holds the
- * newer copy would reinstate it, so the merge would keep producing new versions of a
- * book both devices already agree on.
+ * Rung 1 weighs these against the tombstone's own snapshot rather than preferring
+ * either outright. A live copy the other device went on editing is usually the newer
+ * one, and restoring the snapshot instead would throw that edit away — and not settle,
+ * since re-merging the device that still holds the newer copy would reinstate it. But
+ * the deleting device may equally have been the last to edit the record before deleting
+ * it, and then its snapshot is the newest version anywhere; that is why the two are
+ * compared by `updatedAt` rather than ranked by where they came from.
  */
 function latestLiveAccounts(books: readonly Book[]): Map<string, Account> {
   const claims = new Map<string, Claim>();
@@ -80,6 +81,13 @@ function latestLiveAccounts(books: readonly Book[]): Map<string, Account> {
     if (claim.alive) newest.set(key.slice("account|".length), claim.record as Account);
   }
   return newest;
+}
+
+/** The newer of two live versions of one account, using `later`'s convention: greater
+ * `updatedAt`, and on a tie the canonically greater body so both argument orders agree. */
+function newerAccount(a: Account, b: Account): Account {
+  if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
+  return canonicalJson(a) >= canonicalJson(b) ? a : b;
 }
 
 function byId<T extends { id: string }>(a: T, b: T): number {
@@ -171,8 +179,10 @@ function repair(draft: Book, restorable: Map<string, Account>): boolean {
     for (const id of missing) {
       const stone = draft.tombstones.find((t) => t.kind === "account" && t.key === id);
       if (!stone) return false; // unreachable from valid inputs; refuse rather than invent
-      // The newest live copy when some device still had one, else the snapshot the
-      // tombstone carries — see `latestLiveAccounts`.
+      // Whichever is newer, a live copy some device still holds or the snapshot the
+      // tombstone carries — see `latestLiveAccounts`. Taking the live copy on sight
+      // would drop a rename the deleting device made just before deleting, since the
+      // other device's copy can predate it.
       //
       // Stamped past the delete it overrides, not past its own last edit: dropping
       // the tombstone is the only record this book keeps of the rejection, so a
@@ -181,8 +191,10 @@ function repair(draft: Book, restorable: Map<string, Account>): boolean {
       // a second time — and by then a later rung may have removed whatever referenced
       // it (rung 2 detaches a cycle member, which can be the very parent link that
       // justified the restore), so nothing brings it back.
+      const snapshot = stone.record as Account;
+      const live = restorable.get(id);
       const restored: Account = {
-        ...structuredClone(restorable.get(id) ?? (stone.record as Account)),
+        ...structuredClone(live === undefined ? snapshot : newerAccount(live, snapshot)),
         updatedAt: stone.deletedAt,
       };
       repaired(restored);

@@ -1,5 +1,5 @@
 import { decodeEnvelope, encodeEnvelope } from "../adapters/sync-envelope";
-import { mergeBooks } from "../kernel/merge";
+import { bookFingerprint, mergeBooks } from "../kernel/merge";
 import { validateBook } from "../kernel/validate";
 import { err, ok, type Result } from "../kernel/result";
 import type { Book } from "../kernel/types";
@@ -43,6 +43,18 @@ async function uploadLocal(store: SyncStorePort, book: Book): Promise<Result<Boo
   return ok(book);
 }
 
+/** mergeBooks does not validate its own output. An ok merge that still fails here is a
+ * kernel bug, not a user conflict: abort with the validation code, keep the local book,
+ * and upload nothing. (The sync engine's cycle keeps its own copy of this pairing; the
+ * two paths are independent, and neither should reach across for three statements.) */
+function mergeValidated(local: Book, remote: Book): Result<Book> {
+  const merged = mergeBooks(local, remote);
+  if (!merged.ok) return merged;
+  const valid = validateBook(merged.value);
+  if (!valid.ok) return valid;
+  return merged;
+}
+
 export async function applyFirstConnect(
   choice: FirstConnectChoice,
   deps: { repo: LedgerRepository; store: SyncStorePort },
@@ -68,13 +80,25 @@ export async function applyFirstConnect(
     return ok(remote.value);
   }
 
-  const merged = mergeBooks(local.value, remote.value);
+  const merged = mergeValidated(local.value, remote.value);
   if (!merged.ok) return merged;
-  const valid = validateBook(merged.value);
-  if (!valid.ok) return valid;
-  const saved = await deps.repo.save(merged.value);
+
+  // `local` was read before the download. This flow is user-initiated and one-shot, so
+  // the window is far narrower than the sync engine's — but it is the same window, and
+  // another tab committing into the shared repository while the modal waits on Drive
+  // would have its entry erased by the save below. Re-merge the fresh book against the
+  // same downloaded remote; the reload is local, so it costs no store call.
+  const current = await loadLocal(deps.repo);
+  if (!current.ok) return current;
+  const settled =
+    bookFingerprint(current.value) === bookFingerprint(local.value)
+      ? merged
+      : mergeValidated(current.value, remote.value);
+  if (!settled.ok) return settled;
+
+  const saved = await deps.repo.save(settled.value);
   if (!saved.ok) return saved;
-  const written = await deps.store.write(encodeEnvelope(merged.value));
+  const written = await deps.store.write(encodeEnvelope(settled.value));
   if (!written.ok) return written;
-  return ok(merged.value);
+  return ok(settled.value);
 }

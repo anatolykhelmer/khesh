@@ -6,6 +6,7 @@ import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { bookFingerprint } from "../../src/kernel/merge";
 import type { Book } from "../../src/kernel/types";
+import type { SyncStorePort } from "../../src/ports/sync-store";
 import { applyFirstConnect, inspectRemote } from "../../src/service/sync-connect";
 import { NOW, LATER, unwrap, unwrapErr } from "../helpers";
 
@@ -101,6 +102,38 @@ describe("applyFirstConnect", () => {
     expect(unwrapErr(result).code).toBe("SYNC_AUTH_REQUIRED");
     expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(local));
     expect(store.getPayload()).toBe(encodeEnvelope(remote));
+  });
+
+  it("merge keeps a commit that lands while it is reading the remote", async () => {
+    // The same load-network-save window the sync engine's cycle has, one-shot and much
+    // narrower here — but another tab can still commit into the shared repository while
+    // this one waits on Drive, and the save must not roll that back.
+    const local = makeBook("Cash", NOW);
+    const remote = makeBook("Wallet", LATER);
+    const repo = createMemoryRepository(local);
+    const inner = createMemorySyncStore(encodeEnvelope(remote));
+    const midFlow = unwrap(
+      createAccount(local, { parentId: null, name: "Savings", type: "asset", currency: "ILS", isPlaceholder: false }, LATER),
+    );
+    let committed = false;
+    const store: SyncStorePort = {
+      probe: () => inner.probe(),
+      async read() {
+        const result = await inner.read();
+        if (!committed) {
+          committed = true;
+          await repo.save(midFlow);
+        }
+        return result;
+      },
+      write: (payload) => inner.write(payload),
+    };
+
+    const book = unwrap(await applyFirstConnect("merge", { repo, store }));
+
+    expect(book.accounts.map((a) => a.name).sort()).toEqual(["Cash", "Savings", "Wallet"]);
+    expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(book));
+    expect(bookFingerprint(unwrap(decodeEnvelope(inner.getPayload()!)))).toBe(bookFingerprint(book));
   });
 
   // --- The merge choice on books that actually conflict. Every case above unions two

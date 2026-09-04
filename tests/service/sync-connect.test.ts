@@ -6,7 +6,7 @@ import { createBook } from "../../src/kernel/create-book";
 import { bookFingerprint } from "../../src/kernel/merge";
 import type { Book } from "../../src/kernel/types";
 import { applyFirstConnect, inspectRemote } from "../../src/service/sync-connect";
-import { NOW, LATER, unwrap } from "../helpers";
+import { NOW, LATER, unwrap, unwrapErr } from "../helpers";
 
 function makeBook(name: string, at: string): Book {
   let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, at));
@@ -26,6 +26,12 @@ describe("inspectRemote", () => {
 
     const future = createMemorySyncStore(JSON.stringify({ app: "khesh", format: 9, encrypted: false, book: {} }));
     expect(unwrap(await inspectRemote(future))).toEqual({ kind: "unreadable", errorCode: "SYNC_FORMAT_UNSUPPORTED" });
+  });
+
+  it("propagates a transport failure from read() as an error, not an inspection result", async () => {
+    const store = createMemorySyncStore();
+    store.failNext("SYNC_AUTH_REQUIRED");
+    expect(unwrapErr(await inspectRemote(store)).code).toBe("SYNC_AUTH_REQUIRED");
   });
 });
 
@@ -70,5 +76,40 @@ describe("applyFirstConnect", () => {
     expect(names).toEqual(["Cash", "Wallet"]);
     expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(book));
     expect(bookFingerprint(unwrap(decodeEnvelope(store.getPayload()!)))).toBe(bookFingerprint(book));
+  });
+
+  it("useRemote propagates a read failure without touching local or remote state", async () => {
+    const local = makeBook("Cash", NOW);
+    const remote = makeBook("Wallet", LATER);
+    const repo = createMemoryRepository(local);
+    const store = createMemorySyncStore(encodeEnvelope(remote));
+    store.failNext("SYNC_STORE_FAILED");
+    const result = await applyFirstConnect("useRemote", { repo, store });
+    expect(unwrapErr(result).code).toBe("SYNC_STORE_FAILED");
+    expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(local));
+    expect(store.getPayload()).toBe(encodeEnvelope(remote));
+  });
+
+  it("merge propagates a read failure the same way", async () => {
+    const local = makeBook("Cash", NOW);
+    const remote = makeBook("Wallet", LATER);
+    const repo = createMemoryRepository(local);
+    const store = createMemorySyncStore(encodeEnvelope(remote));
+    store.failNext("SYNC_AUTH_REQUIRED");
+    const result = await applyFirstConnect("merge", { repo, store });
+    expect(unwrapErr(result).code).toBe("SYNC_AUTH_REQUIRED");
+    expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(local));
+    expect(store.getPayload()).toBe(encodeEnvelope(remote));
+  });
+
+  it("replaceRemote propagates a write failure instead of reporting success", async () => {
+    const local = makeBook("Cash", NOW);
+    const remote = makeBook("Wallet", LATER);
+    const repo = createMemoryRepository(local);
+    const store = createMemorySyncStore(encodeEnvelope(remote));
+    store.failNext("SYNC_FILE_MISSING");
+    const result = await applyFirstConnect("replaceRemote", { repo, store });
+    expect(unwrapErr(result).code).toBe("SYNC_FILE_MISSING");
+    expect(store.getPayload()).toBe(encodeEnvelope(remote)); // write never landed
   });
 });

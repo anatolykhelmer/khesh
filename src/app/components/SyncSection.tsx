@@ -89,6 +89,13 @@ export function SyncSection() {
     }
   })();
 
+  // A newer-format remote can never be synced by retrying -- decoding it fails the same
+  // way every time -- so "Sync now" would just re-promise a retry that cannot work. Every
+  // other case (offline, other error codes, needsAuth) keeps the button; retrying there is
+  // genuinely meaningful.
+  const isUnsupportedFormatError =
+    sync.state?.kind === "error" && sync.state.errorCode === "SYNC_FORMAT_UNSUPPORTED";
+
   return (
     <ul className="settings-list group" aria-label={t("sync.title")}>
       <li className="settings-row">
@@ -108,16 +115,18 @@ export function SyncSection() {
           </button>
         </li>
       ) : null}
-      <li className="settings-row">
-        <button
-          type="button"
-          className="row-button"
-          disabled={sync.state?.kind === "syncing"}
-          onClick={() => (sync.state?.kind === "needsAuth" ? void sync.reauth() : sync.syncNow())}
-        >
-          {sync.state?.kind === "needsAuth" ? t("sync.needsAuthAction") : t("sync.syncNow")}
-        </button>
-      </li>
+      {!isUnsupportedFormatError ? (
+        <li className="settings-row">
+          <button
+            type="button"
+            className="row-button"
+            disabled={sync.state?.kind === "syncing"}
+            onClick={() => (sync.state?.kind === "needsAuth" ? void sync.reauth() : sync.syncNow())}
+          >
+            {sync.state?.kind === "needsAuth" ? t("sync.needsAuthAction") : t("sync.syncNow")}
+          </button>
+        </li>
+      ) : null}
       <li className="settings-row">
         <button type="button" className="row-button" onClick={() => void sync.disconnect()}>
           {t("sync.disconnect")}

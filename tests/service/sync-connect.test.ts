@@ -126,7 +126,7 @@ describe("applyFirstConnect", () => {
         }
         return result;
       },
-      write: (payload) => inner.write(payload),
+      write: (payload, ifUnchanged) => inner.write(payload, ifUnchanged),
     };
 
     const book = unwrap(await applyFirstConnect("merge", { repo, store }));

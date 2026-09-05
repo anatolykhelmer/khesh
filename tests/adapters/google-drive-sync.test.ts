@@ -162,6 +162,75 @@ describe("drive sync store", () => {
     expect(calls[1].url).toContain("/files/only-1?");
   });
 
+  it("guards the PATCH with the ETag Drive returned for the rev the caller merged against", async () => {
+    const { store, calls } = makeStore((call) => {
+      if (call.url.includes("alt=media")) {
+        return new Response("{}", { status: 200, headers: { ETag: '"etag-7"' } });
+      }
+      if (call.method === "PATCH") return json({ id: "f9", modifiedTime: "rev-8" });
+      return json({ modifiedTime: "rev-7" });
+    }, "f9");
+
+    const read = unwrap(await store.read())!;
+    expect(unwrap(await store.write("PAYLOAD", read.rev))).toEqual({ rev: "rev-8" });
+    const patch = calls.find((c) => c.method === "PATCH")!;
+    expect(patch.headers["If-Match"]).toBe('"etag-7"');
+  });
+
+  it("sends no precondition unconditionally, nor for a rev it holds no validator for", async () => {
+    const handler = (call: Call) => {
+      if (call.url.includes("alt=media")) {
+        return new Response("{}", { status: 200, headers: { ETag: '"etag-7"' } });
+      }
+      if (call.method === "PATCH") return json({ id: "f9", modifiedTime: "rev-8" });
+      return json({ modifiedTime: "rev-7" });
+    };
+
+    // The explicit overwrite actions (resolveUseLocal, replaceRemote) pass no rev.
+    const plain = makeStore(handler, "f9");
+    await plain.store.read();
+    await plain.store.write("PAYLOAD");
+    expect(plain.calls.find((c) => c.method === "PATCH")!.headers["If-Match"]).toBeUndefined();
+
+    // ...and a rev this store never read is not a validator it may invent one for.
+    const stale = makeStore(handler, "f9");
+    await stale.store.read();
+    await stale.store.write("PAYLOAD", "rev-1");
+    expect(stale.calls.find((c) => c.method === "PATCH")!.headers["If-Match"]).toBeUndefined();
+
+    // Drive v3 documents no precondition for files.update, so it may simply send no
+    // ETag. Then the write stays exactly the unconditional PATCH it has always been.
+    const noEtag = makeStore(
+      (call) =>
+        call.url.includes("alt=media")
+          ? new Response("{}", { status: 200 })
+          : call.method === "PATCH"
+            ? json({ id: "f9", modifiedTime: "rev-8" })
+            : json({ modifiedTime: "rev-7" }),
+      "f9",
+    );
+    const read = unwrap(await noEtag.store.read())!;
+    expect(unwrap(await noEtag.store.write("PAYLOAD", read.rev))).toEqual({ rev: "rev-8" });
+    expect(noEtag.calls.find((c) => c.method === "PATCH")!.headers["If-Match"]).toBeUndefined();
+  });
+
+  it("maps 412 to SYNC_REMOTE_CHANGED, distinctly from a generic store failure", async () => {
+    const { store } = makeStore((call) => {
+      if (call.url.includes("alt=media")) {
+        return new Response("{}", { status: 200, headers: { ETag: '"etag-7"' } });
+      }
+      if (call.method === "PATCH") return json({}, 412);
+      return json({ modifiedTime: "rev-7" });
+    }, "f9");
+    const read = unwrap(await store.read())!;
+    // Not SYNC_STORE_FAILED: the device is online, and the engine's answer to this is to
+    // re-run the cycle now rather than to sit in `offline` waiting for a network.
+    expect(unwrapErr(await store.write("PAYLOAD", read.rev)).code).toBe("SYNC_REMOTE_CHANGED");
+
+    const other = makeStore(() => json({}, 500), "f9");
+    expect(unwrapErr(await other.store.write("PAYLOAD")).code).toBe("SYNC_STORE_FAILED");
+  });
+
   it("maps 401 to SYNC_AUTH_REQUIRED, 404 to SYNC_FILE_MISSING, thrown fetch to SYNC_STORE_FAILED", async () => {
     const auth = makeStore(() => json({}, 401), "f9");
     expect(unwrapErr(await auth.store.probe()).code).toBe("SYNC_AUTH_REQUIRED");

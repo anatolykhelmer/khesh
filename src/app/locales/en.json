@@ -266,6 +266,7 @@
     "SYNC_AUTH_REQUIRED": "Google sign-in is needed.",
     "SYNC_FILE_MISSING": "The sync file is missing from Google Drive.",
     "SYNC_FILE_AMBIGUOUS": "Google Drive holds more than one sync file.",
+    "SYNC_REMOTE_CHANGED": "Google Drive changed while this device was syncing.",
     "SYNC_STORE_FAILED": "Could not reach Google Drive.",
     "SYNC_ENVELOPE_INVALID": "The Drive copy could not be read.",
     "SYNC_FORMAT_UNSUPPORTED": "The Drive copy needs a newer app version.",

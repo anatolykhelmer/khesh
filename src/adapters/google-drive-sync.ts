@@ -146,6 +146,16 @@ export type DriveStoreDeps = {
 
 export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
   const fetchImpl = deps.fetchImpl ?? fetch;
+  /**
+   * The validator Drive handed back with the payload of a given rev, so `write` can turn
+   * the caller's "I merged against this rev" into the only precondition HTTP offers.
+   *
+   * Kept as a pair because the two are not interchangeable: `rev` is the modifiedTime the
+   * port speaks in, and an ETag is opaque — sending a modifiedTime as If-Match would be
+   * inventing a validator, so the header goes out only for the exact rev this came from,
+   * and only when Drive actually sent one.
+   */
+  let validator: { rev: string; etag: string } | null = null;
 
   async function authFetch(url: string, init?: RequestInit): Promise<Result<Response>> {
     const token = await deps.getToken(false);
@@ -161,6 +171,10 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
     }
     if (response.status === 401) return err("SYNC_AUTH_REQUIRED", "Drive rejected the token");
     if (response.status === 404) return err("SYNC_FILE_MISSING", "Sync file not found in Drive");
+    // Only a request that carried If-Match can get this, i.e. the guarded PATCH below.
+    if (response.status === 412) {
+      return err("SYNC_REMOTE_CHANGED", "The Drive file moved since it was read");
+    }
     if (!response.ok) return err("SYNC_STORE_FAILED", `Drive responded ${response.status}`);
     return ok(response);
   }
@@ -218,20 +232,32 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
       if (!rev.ok) return rev;
       const media = await authFetch(`${FILES_URL}/${id.value}?alt=media`);
       if (!media.ok) return media;
+      const etag = media.value.headers.get("ETag");
+      validator = etag === null ? null : { rev: rev.value, etag };
       return ok({ payload: await media.value.text(), rev: rev.value });
     },
 
-    async write(payload: string) {
+    async write(payload: string, ifUnchanged?: string) {
       const id = await resolveFileId();
       if (!id.ok) return id;
       if (id.value !== null) {
+        // Guarded only when the caller named the rev this validator came from. Drive v3
+        // documents no precondition for files.update, so an ETag it did send may still be
+        // ignored here: then this is exactly the unconditional PATCH it always was, and
+        // the design's own fallback (the loser re-merges on its next probe) still holds.
+        const guard =
+          ifUnchanged !== undefined && validator !== null && validator.rev === ifUnchanged
+            ? { "If-Match": validator.etag }
+            : undefined;
         const patched = await authFetch(`${UPLOAD_URL}/${id.value}?uploadType=media&fields=id,modifiedTime`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...guard },
           body: payload,
         });
         if (!patched.ok) return patched;
         const data = (await patched.value.json()) as { modifiedTime?: string };
+        // Whatever was in Drive is now this payload; the old validator describes neither.
+        validator = null;
         return ok({ rev: data.modifiedTime ?? "" });
       }
       const boundary = "khesh-envelope";

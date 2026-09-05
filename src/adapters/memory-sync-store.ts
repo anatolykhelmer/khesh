@@ -5,13 +5,19 @@ export type MemorySyncStore = SyncStorePort & {
   setPayload(payload: string): void;
   getPayload(): string | null;
   getRev(): string | null;
-  failNext(code: "SYNC_AUTH_REQUIRED" | "SYNC_FILE_MISSING" | "SYNC_STORE_FAILED"): void;
+  failNext(code: InjectableFailure): void;
 };
+
+type InjectableFailure =
+  | "SYNC_AUTH_REQUIRED"
+  | "SYNC_FILE_MISSING"
+  | "SYNC_REMOTE_CHANGED"
+  | "SYNC_STORE_FAILED";
 
 export function createMemorySyncStore(initial?: string): MemorySyncStore {
   let payload: string | null = initial ?? null;
   let counter = initial === undefined ? 0 : 1;
-  let pendingFailure: "SYNC_AUTH_REQUIRED" | "SYNC_FILE_MISSING" | "SYNC_STORE_FAILED" | null = null;
+  let pendingFailure: InjectableFailure | null = null;
 
   function takeFailure<T>(): Result<T> | null {
     if (pendingFailure === null) return null;
@@ -31,9 +37,14 @@ export function createMemorySyncStore(initial?: string): MemorySyncStore {
       if (failure) return failure;
       return ok(payload === null ? null : { payload, rev: String(counter) });
     },
-    async write(next: string) {
+    async write(next: string, ifUnchanged?: string) {
       const failure = takeFailure<{ rev: string }>();
       if (failure) return failure;
+      // The precondition Drive can only approximate, exactly: this store knows its own
+      // revisions, so a caller merging against a rev that has since moved is refused.
+      if (ifUnchanged !== undefined && payload !== null && ifUnchanged !== String(counter)) {
+        return err("SYNC_REMOTE_CHANGED", `expected rev ${ifUnchanged}, holding ${counter}`);
+      }
       payload = next;
       counter += 1;
       return ok({ rev: String(counter) });

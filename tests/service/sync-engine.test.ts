@@ -6,7 +6,7 @@ import { createAccount, updateAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { bookFingerprint } from "../../src/kernel/merge";
-import type { Result } from "../../src/kernel/result";
+import { err, type Result } from "../../src/kernel/result";
 import type { Book } from "../../src/kernel/types";
 import type { LedgerRepository } from "../../src/ports/ledger-repository";
 import type { SyncStorePort } from "../../src/ports/sync-store";
@@ -87,7 +87,7 @@ function committingDuringRead(
       }
       return result;
     },
-    write: (payload) => inner.write(payload),
+    write: (payload, ifUnchanged) => inner.write(payload, ifUnchanged),
   };
 }
 
@@ -260,7 +260,7 @@ describe("sync engine", () => {
         return plain.probe();
       },
       read: () => plain.read(),
-      write: (payload) => plain.write(payload),
+      write: (payload, ifUnchanged) => plain.write(payload, ifUnchanged),
     };
     const repo = createMemoryRepository(book);
     const { engine, states } = engineFor(repo, store);
@@ -298,7 +298,7 @@ describe("sync engine", () => {
           return plain.probe();
         },
         read: () => plain.read(),
-        write: (payload) => plain.write(payload),
+        write: (payload, ifUnchanged) => plain.write(payload, ifUnchanged),
       };
       let active = 0;
       let max = 0;
@@ -435,6 +435,66 @@ describe("sync engine", () => {
     expect(changed).toHaveLength(0);
     expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(midCycle));
     expect(inner.getPayload()).toBe(encodeEnvelope(remoteBook));
+  });
+
+  it("guards the upload with the rev it merged against", async () => {
+    const { book, cashId, foodId } = makeBook();
+    const remote = spend(book, cashId, foodId, 700, T(5));
+    const store = createMemorySyncStore(encodeEnvelope(remote));
+    const { engine } = harness(spend(book, cashId, foodId, 100, T(4)), store);
+    const writeSpy = vi.spyOn(store, "write");
+    await engine.syncNow();
+    expect(writeSpy).toHaveBeenCalledWith(expect.any(String), "1"); // the rev it read
+  });
+
+  it("a refused upload re-runs the cycle instead of parking in offline", async () => {
+    const { book, cashId, foodId } = makeBook();
+    const remote = spend(book, cashId, foodId, 700, T(5));
+    const store = createMemorySyncStore(encodeEnvelope(remote));
+    const { repo, engine } = harness(spend(book, cashId, foodId, 100, T(4)), store);
+
+    // Another device lands its own write in the moment between this cycle's read and its
+    // upload: the guarded write is refused, and the payload it would have overwritten
+    // survives — which is the whole point of the precondition.
+    const original = store.write.bind(store);
+    let displaced = false;
+    vi.spyOn(store, "write").mockImplementation(async (payload, ifUnchanged) => {
+      if (!displaced) {
+        displaced = true;
+        store.setPayload(encodeEnvelope(spend(remote, cashId, foodId, 900, T(7))));
+      }
+      return original(payload, ifUnchanged);
+    });
+
+    await engine.syncNow();
+
+    // Not `offline`: the retry re-read, re-merged against the newer remote, and settled.
+    expect(engine.getState().kind).toBe("idle");
+    const settled = unwrap(await repo.load())!;
+    expect(settled.journal).toHaveLength(3);
+    for (const amount of [100, 700, 900]) expect(hasAmount(settled, amount)).toBe(true);
+    expect(unwrap(decodeEnvelope(store.getPayload()!)).journal).toHaveLength(3);
+  });
+
+  it("a second refusal is reported, not retried forever", async () => {
+    const { book, cashId, foodId } = makeBook();
+    const remote = spend(book, cashId, foodId, 700, T(5));
+    const store = createMemorySyncStore(encodeEnvelope(remote));
+    const { engine } = harness(spend(book, cashId, foodId, 100, T(4)), store);
+    let writes = 0;
+    vi.spyOn(store, "write").mockImplementation(async () => {
+      writes += 1;
+      return err("SYNC_REMOTE_CHANGED", "always refused");
+    });
+
+    await engine.syncNow();
+
+    // A store that refuses the *unconditional* retry too is not losing a race any more,
+    // so the engine stops rather than spinning against it.
+    expect(writes).toBe(2);
+    const state = engine.getState();
+    expect(state.kind).toBe("error");
+    expect(state.kind === "error" && state.errorCode).toBe("SYNC_REMOTE_CHANGED");
   });
 
   // --- ...and a commit landing in the one window the reload-and-recheck cannot see —

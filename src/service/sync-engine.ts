@@ -87,7 +87,14 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     setState({ kind: "idle", lastSyncAt: nowIso() });
   };
 
-  async function cycle(gen: number): Promise<Result<string | null>> {
+  /**
+   * `precondition` guards the upload with the rev it was merged against, so a store that
+   * supports it refuses to overwrite a revision this cycle never saw. Off for the retry
+   * that a refusal triggers: that pass has just re-read and re-merged against the newest
+   * remote, and an adapter whose transport does not really honour the precondition must
+   * not be able to wedge the sync in a refusal loop.
+   */
+  async function cycle(gen: number, precondition: boolean): Promise<Result<string | null>> {
     const loaded = await deps.repo.load();
     if (!loaded.ok) return loaded;
     const local = loaded.value;
@@ -143,7 +150,10 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       deps.onBookChanged(settled.value);
     }
     if (bookFingerprint(settled.value) !== bookFingerprint(remote.value)) {
-      const written = await deps.store.write(encodeEnvelope(settled.value));
+      const written = await deps.store.write(
+        encodeEnvelope(settled.value),
+        precondition ? readResult.value.rev : undefined,
+      );
       if (!written.ok) return written;
       rev = written.value.rev;
     }
@@ -160,9 +170,21 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       if (disposed) return;
       const gen = changeGen;
       setState({ kind: "syncing", lastSyncAt: state.lastSyncAt });
-      const outcome = await cycle(gen);
-      if (outcome.ok) succeed(outcome.value, gen);
-      else fail(outcome.error.code);
+      // A refused upload is asking for exactly what a cycle does — probe, read, merge,
+      // write — against the revision that displaced it, so it is retried rather than
+      // reported. Once: the retry is unconditional, so a second refusal is not the same
+      // race again and there is nothing left to re-run.
+      for (let attempt = 0; ; attempt += 1) {
+        const outcome = await cycle(gen, attempt === 0);
+        if (outcome.ok) {
+          succeed(outcome.value, gen);
+          return;
+        }
+        if (outcome.error.code !== "SYNC_REMOTE_CHANGED" || attempt > 0 || disposed) {
+          fail(outcome.error.code);
+          return;
+        }
+      }
     });
   }
 

@@ -143,7 +143,15 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
   }
 
   /** Resolve the fileId: the cached one, else a search by name (another device may
-   * have created the file), else null. */
+   * have created the file), else null.
+   *
+   * More than one match is a fork, not a choice. Drive allows duplicate names and offers
+   * no atomic create-if-absent for a named file under `drive.file`, so two devices that
+   * both connect for the first time can each search, see nothing, and create their own
+   * khesh-book.json. Taking `files[0]` would cache a different id on each device and the
+   * two books would diverge forever with nothing ever reporting it. Refusing cannot undo
+   * the race, but it makes it visible and actionable — the user deletes one copy in
+   * Drive — instead of silent. */
   async function resolveFileId(): Promise<Result<string | null>> {
     const cached = deps.getFileId();
     if (cached !== null) return ok(cached);
@@ -151,7 +159,13 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
     const found = await authFetch(`${FILES_URL}?q=${query}&spaces=drive&fields=files(id,modifiedTime)`);
     if (!found.ok) return found;
     const data = (await found.value.json()) as { files?: Array<{ id: string }> };
-    const id = data.files?.[0]?.id ?? null;
+    const files = data.files ?? [];
+    if (files.length > 1) {
+      return err("SYNC_FILE_AMBIGUOUS", `Drive holds ${files.length} files named ${FILE_NAME}`, {
+        fileIds: files.map((file) => file.id),
+      });
+    }
+    const id = files[0]?.id ?? null;
     if (id !== null) await deps.onFileId(id);
     return ok(id);
   }

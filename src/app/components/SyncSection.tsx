@@ -1,6 +1,15 @@
 import { useTranslation } from "react-i18next";
+import type { LedgerErrorCode } from "../../kernel/errors";
 import { errorMessage } from "../../service/error-messages";
 import { useSync } from "../sync/sync-context";
+
+/** Codes whose generic `errors.*` line is too thin for this screen. Settings is where
+ * the user can actually act, so these say what to do instead of only what happened. */
+const SPECIFIC_ERROR_KEYS: Partial<Record<LedgerErrorCode, string>> = {
+  SYNC_FORMAT_UNSUPPORTED: "sync.errorUpdateApp",
+  SYNC_FILE_MISSING: "sync.errorFileMissing",
+  SYNC_FILE_AMBIGUOUS: "sync.errorFileAmbiguous",
+};
 
 /** The Settings "Sync" block: connect button, first-connect choice, status,
  * manual-resolution actions. Renders nothing when no OAuth client id is built in. */
@@ -78,12 +87,10 @@ export function SyncSection() {
         return t("sync.offline");
       case "needsAuth":
         return t("sync.needsAuth");
-      case "error":
-        return sync.state.errorCode === "SYNC_FORMAT_UNSUPPORTED"
-          ? t("sync.errorUpdateApp")
-          : sync.state.errorCode === "SYNC_FILE_MISSING"
-            ? t("sync.errorFileMissing")
-            : errorMessage(sync.state.errorCode);
+      case "error": {
+        const specific = SPECIFIC_ERROR_KEYS[sync.state.errorCode];
+        return specific !== undefined ? t(specific) : errorMessage(sync.state.errorCode);
+      }
       default:
         return null;
     }

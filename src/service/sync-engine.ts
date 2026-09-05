@@ -73,6 +73,11 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     else if (code === "SYNC_STORE_FAILED") setState({ kind: "offline", lastSyncAt });
     else if (code === "SYNC_ENVELOPE_INVALID" || code === "SYNC_MERGE_CONFLICT")
       setState({ kind: "manualResolution", lastSyncAt, errorCode: code });
+    // Everything else, SYNC_FILE_AMBIGUOUS included, is `error`. Two files named
+    // khesh-book.json is not a book conflict the user can settle from here: both
+    // manualResolution actions write through the store, which would pick one of the two
+    // files by the same guess this refusal exists to avoid. The fix is in Drive, so the
+    // state carries the code and the section explains it.
     else setState({ kind: "error", lastSyncAt, errorCode: code });
   };
 

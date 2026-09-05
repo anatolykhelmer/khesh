@@ -124,6 +124,39 @@ describe("drive sync store", () => {
     expect(calls[0].body).toBe("PAYLOAD");
   });
 
+  it("refuses to guess when the name search returns two files, and creates nothing", async () => {
+    // Two devices connecting for the first time at once can each create their own
+    // khesh-book.json. Picking the first would cache a different id on each and fork the
+    // book permanently, so every entry point refuses instead — and `write` in particular
+    // must not fall through to the create branch.
+    const search = () => json({ files: [{ id: "dup-a" }, { id: "dup-b" }] });
+
+    const probe = makeStore(search);
+    const probeError = unwrapErr(await probe.store.probe());
+    expect(probeError.code).toBe("SYNC_FILE_AMBIGUOUS");
+    expect(probeError.details).toEqual({ fileIds: ["dup-a", "dup-b"] });
+    expect(probe.calls).toHaveLength(1); // the search, and nothing after it
+    expect(probe.saved).toEqual([]);
+
+    const read = makeStore(search);
+    expect(unwrapErr(await read.store.read()).code).toBe("SYNC_FILE_AMBIGUOUS");
+    expect(read.calls).toHaveLength(1);
+
+    const write = makeStore(search);
+    expect(unwrapErr(await write.store.write("PAYLOAD")).code).toBe("SYNC_FILE_AMBIGUOUS");
+    expect(write.calls.filter((c) => c.method !== "GET")).toEqual([]);
+    expect(write.saved).toEqual([]);
+  });
+
+  it("still resolves a single search hit and caches its id", async () => {
+    const { store, calls, saved } = makeStore((call) =>
+      call.url.includes("?q=") ? json({ files: [{ id: "only-1" }] }) : json({ modifiedTime: "rev-7" }),
+    );
+    expect(unwrap(await store.probe())).toEqual({ rev: "rev-7" });
+    expect(saved).toEqual(["only-1"]);
+    expect(calls[1].url).toContain("/files/only-1?");
+  });
+
   it("maps 401 to SYNC_AUTH_REQUIRED, 404 to SYNC_FILE_MISSING, thrown fetch to SYNC_STORE_FAILED", async () => {
     const auth = makeStore(() => json({}, 401), "f9");
     expect(unwrapErr(await auth.store.probe()).code).toBe("SYNC_AUTH_REQUIRED");

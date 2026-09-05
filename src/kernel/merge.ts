@@ -5,7 +5,6 @@ import type {
   Account,
   Book,
   Budget,
-  CurrencyCode,
   JournalEntry,
   Tombstone,
   TombstoneKind,
@@ -319,39 +318,61 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
   return null;
 }
 
-function currencyIndex(book: Book): Map<string, CurrencyCode> {
-  return new Map(book.accounts.map((account) => [account.id, account.currency]));
+function accountIndex(book: Book): Map<string, Account> {
+  return new Map(book.accounts.map((account) => [account.id, account]));
 }
 
+/** Which of an account's two meaning-bearing fields moved under an entry. */
+type MeaningBreak = "currency" | "accountType";
+
 /**
- * True while every entry still means what the device that holds it recorded.
+ * Null while every entry still means what the device that holds it recorded, else what
+ * broke.
  *
- * Changing an account's currency is legal on a device with no postings on it, and
- * posting to that account is legal on a device that never changed it — but the union
- * silently reinterprets money: 100 entered as ILS reads as 100 USD, and validateBook
- * stays green because nothing structural broke. With `fx` in play it breaks loudly
- * instead (ENTRY_FX_RATE_MISMATCH). Neither is repairable — which currency the amount
- * meant is not recoverable from the merge — so this one is refused.
+ * Two account fields carry an entry's meaning, and both change under the same
+ * precondition — legal on a device where the account has no postings (and, for `type`,
+ * no children), while the other device posts to it. Neither shows up in the postings
+ * themselves, which record only an account id, so the union reinterprets silently and
+ * validateBook stays green:
  *
- * Compared per posting-account rather than over the entry's currency multiset: two
- * accounts swapping currencies inside one entry leaves the multiset identical while
- * inverting what the entry says. A source that never knew an account says nothing
- * about it. Both books are checked the same way, so the verdict is symmetric.
+ * - currency: 100 entered as ILS reads back as 100 USD. With `fx` in play it breaks
+ *   loudly instead (ENTRY_FX_RATE_MISMATCH).
+ * - type: an expense leaf retyped to income turns "money spent" into "money received"
+ *   in every report, since Dashboard, Stats and Budget all classify by the account's
+ *   current type.
+ *
+ * Neither is repairable — which currency, or which side of the ledger, the amount meant
+ * is not recoverable from the merge — so both are refused rather than patched.
+ *
+ * Compared per posting-account rather than over the entry's multiset of currencies or
+ * types: two accounts swapping values inside one entry leaves the multiset identical
+ * while inverting what the entry says. A source that never knew an account says nothing
+ * about it.
+ *
+ * Both books are checked the same way, and a currency break anywhere outranks a type
+ * break anywhere, so the verdict — reason included — is the same in either argument
+ * order.
  */
-function entryMeaningHeld(draft: Book, sources: readonly Book[]): boolean {
-  const after = currencyIndex(draft);
+function entryMeaningBroken(draft: Book, sources: readonly Book[]): MeaningBreak | null {
+  const after = accountIndex(draft);
+  let retyped = false;
   for (const source of sources) {
-    const before = currencyIndex(source);
+    const before = accountIndex(source);
     const carried = new Set(source.journal.map((entry) => entry.id));
     for (const entry of draft.journal) {
       if (!carried.has(entry.id)) continue;
       for (const posting of entry.postings) {
         const was = before.get(posting.accountId);
-        if (was !== undefined && was !== after.get(posting.accountId)) return false;
+        if (was === undefined) continue;
+        // `now` is undefined only if rung 1 failed to restore a posted-to account, which
+        // it cannot; an absent account still counts as a break rather than as agreement.
+        const now = after.get(posting.accountId);
+        if (was.currency !== now?.currency) return "currency";
+        if (was.type !== now?.type) retyped = true;
       }
     }
   }
-  return true;
+  return retyped ? "accountType" : null;
 }
 
 export function mergeBooks(a: Book, b: Book): Result<Book> {
@@ -401,13 +422,16 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
       reason: unrepaired,
     });
   }
-  // Runs on the repaired draft: rung 1 decides which accounts are live at all, and
-  // therefore which currency each posting resolves to.
-  if (!entryMeaningHeld(draft, [a, b])) {
+  // Runs on the repaired draft: rung 1 decides which accounts are live at all, and rung 4
+  // can retype one, so both are what fix each posting's currency and type.
+  const broken = entryMeaningBroken(draft, [a, b]);
+  if (broken !== null) {
     return err(
       "SYNC_MERGE_CONFLICT",
-      "An account currency changed under an entry posted on the other device",
-      { reason: "currency" },
+      broken === "currency"
+        ? "An account currency changed under an entry posted on the other device"
+        : "An account type changed under an entry posted on the other device",
+      { reason: broken },
     );
   }
   sortBook(draft);

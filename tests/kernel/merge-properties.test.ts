@@ -292,30 +292,40 @@ function violations(book: Book): unknown {
   return verdict.ok ? [] : verdict.error.details?.violations;
 }
 
+/** The two account fields a posting resolves through without naming either. */
+const MEANING_FIELDS = ["currency", "type"] as const;
+
 /**
- * Postings whose account reads in a different currency than it did on a device that
- * recorded the entry — 100 entered as ILS coming back as 100 USD.
+ * Postings whose account reads differently than it did on a device that recorded the
+ * entry — 100 entered as ILS coming back as 100 USD, or a spend coming back filed as
+ * income.
  *
  * Nothing structural breaks when that happens, so `validateBook` stays green and the
  * merge still converges: this is the one invariant the other properties cannot see.
- * Changing an account's currency is legal on a device with no postings on it, and
+ * Changing either field is legal on a device with no postings on the account, and
  * posting to it is legal on a device that never changed it, so only the union can
- * produce it — and which currency the amount meant is not recoverable afterwards.
- * `mergeBooks` therefore has to refuse rather than return such a book.
+ * produce it — and neither which currency nor which side of the ledger the amount meant
+ * is recoverable afterwards. `mergeBooks` therefore has to refuse rather than return
+ * such a book.
  */
 function reinterpreted(merged: Book, sources: readonly Book[]): string[] {
-  const now = new Map(merged.accounts.map((account) => [account.id, account.currency]));
+  const now = new Map(merged.accounts.map((account) => [account.id, account]));
   const found: string[] = [];
   for (const source of sources) {
     const carried = new Set(source.journal.map((entry) => entry.id));
-    const then = new Map(source.accounts.map((account) => [account.id, account.currency]));
+    const then = new Map(source.accounts.map((account) => [account.id, account]));
     for (const entry of merged.journal) {
       if (!carried.has(entry.id)) continue;
       for (const posting of entry.postings) {
         const before = then.get(posting.accountId);
         const after = now.get(posting.accountId);
-        if (before !== undefined && after !== undefined && before !== after) {
-          found.push(`${entry.id} ${posting.accountId}: ${before} -> ${after}`);
+        if (before === undefined || after === undefined) continue;
+        for (const field of MEANING_FIELDS) {
+          if (before[field] !== after[field]) {
+            found.push(
+              `${entry.id} ${posting.accountId} ${field}: ${before[field]} -> ${after[field]}`,
+            );
+          }
         }
       }
     }

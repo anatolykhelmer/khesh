@@ -350,6 +350,54 @@ describe("mergeBooks repair ladder", () => {
     expect(unwrapErr(mergeBooks(b, a)).code).toBe("SYNC_MERGE_CONFLICT");
   });
 
+  it("refuses a type change under an entry the other device posted", () => {
+    const { book, cashId, foodId } = base();
+    // A: Food is a childless root leaf with no postings here, so retyping it is legal.
+    const a = unwrap(updateAccount(book, { id: foodId, type: "income" }, T(1)));
+    // B: spends 100 through Food. The union would file that spend as income — nothing
+    // structural breaks, since a posting records only an account id, but every report
+    // classifies by the account's current type.
+    const b = spend(book, cashId, foodId, 100, T(2));
+    expect(unwrapErr(mergeBooks(a, b)).code).toBe("SYNC_MERGE_CONFLICT");
+    expect(unwrapErr(mergeBooks(b, a)).code).toBe("SYNC_MERGE_CONFLICT");
+    expect(unwrapErr(mergeBooks(a, b)).details).toEqual({ reason: "accountType" });
+    expect(unwrapErr(mergeBooks(b, a)).details).toEqual({ reason: "accountType" });
+  });
+
+  it("refuses a type change reached through the parent-type cascade", () => {
+    const { book, cashId, groupId } = base();
+    // A: a leaf under the Groups placeholder, spent through. Groups itself stays expense.
+    const withLeaf = unwrap(createAccount(book, { parentId: groupId, name: "Cafes", type: "expense", currency: "ILS", isPlaceholder: false }, T(1)));
+    const cafesId = withLeaf.accounts.find((x) => x.name === "Cafes")!.id;
+    const a = spend(withLeaf, cashId, cafesId, 100, T(2));
+    // B: Groups is childless and postless here, so retyping the *parent* is legal. The
+    // union hands the cascade a mismatched child and Cafes comes out income.
+    const b = unwrap(updateAccount(book, { id: groupId, type: "income" }, T(3)));
+    expect(unwrapErr(mergeBooks(a, b)).details).toEqual({ reason: "accountType" });
+    expect(unwrapErr(mergeBooks(b, a)).details).toEqual({ reason: "accountType" });
+  });
+
+  it("names currency, not type, when one merge breaks both", () => {
+    const { book, cashId, foodId } = base();
+    const a = unwrap(updateAccount(book, { id: foodId, type: "income", currency: "USD" }, T(1)));
+    const b = spend(book, cashId, foodId, 100, T(2));
+    // Both orders have to pick the same one of the two, or the symmetry property sees a
+    // difference the code alone would hide.
+    expect(unwrapErr(mergeBooks(a, b)).details).toEqual({ reason: "currency" });
+    expect(unwrapErr(mergeBooks(b, a)).details).toEqual({ reason: "currency" });
+  });
+
+  it("allows a type change on an account no entry touches", () => {
+    const { book, cashId, foodId } = base();
+    const spare = unwrap(createAccount(book, { parentId: null, name: "Spare", type: "expense", currency: "ILS", isPlaceholder: false }, T(0)));
+    const spareId = spare.accounts.find((x) => x.name === "Spare")!.id;
+    const a = unwrap(updateAccount(spare, { id: spareId, type: "income" }, T(1)));
+    const b = spend(spare, cashId, foodId, 100, T(2));
+    const merged = mergedBothOrders(a, b);
+    expect(merged.accounts.find((x) => x.id === spareId)?.type).toBe("income");
+    expect(merged.journal).toHaveLength(1);
+  });
+
   it("allows a currency change on an account no entry touches", () => {
     const { book, cashId, foodId } = base();
     const spare = unwrap(createAccount(book, { parentId: null, name: "Spare", type: "asset", currency: "ILS", isPlaceholder: false }, T(0)));

@@ -217,16 +217,18 @@ export function TransferFormScreen() {
         <section>
           <h2 className="section-label">{t("transferForm.fromLabel")}</h2>
           <div className="group form-group">
-            <div className="stack-form-field">
-              <AccountPicker
-                nodes={nodes}
-                value={fromAccountId === "" ? null : fromAccountId}
-                onChange={(id) => chooseFrom(id ?? "")}
-                label={t("transferForm.fromAccountAria")}
-                groupsSelectable={false}
-                placeholder={t("transferForm.selectPlaceholder")}
-              />
-            </div>
+            {/* No `.stack-form-field` wrapper: its caption font (`--t-sm`) is for a
+                field that carries its own label, and this one's is the section
+                heading above. Wrapped, the trigger rendered a step smaller than
+                the identical one in `.split-line` below. */}
+            <AccountPicker
+              nodes={nodes}
+              value={fromAccountId === "" ? null : fromAccountId}
+              onChange={(id) => chooseFrom(id ?? "")}
+              label={t("transferForm.fromAccountAria")}
+              groupsSelectable={false}
+              placeholder={t("transferForm.selectPlaceholder")}
+            />
             {isFx ? (
               <label>
                 {t("transferForm.sentLabel", { currency: sourceCurrency })}

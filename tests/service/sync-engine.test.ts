@@ -275,7 +275,9 @@ describe("sync engine", () => {
     await queued;
 
     expect(probes).toBe(1); // the queued cycle reached neither probe nor read
-    expect(loadSpy).toHaveBeenCalledTimes(1); // ...nor the repository
+    // ...nor the repository: the two loads are the running cycle's snapshot and its
+    // re-read before the upload. A second cycle would have made it four.
+    expect(loadSpy).toHaveBeenCalledTimes(2);
     expect(states.filter((s) => s.kind === "syncing")).toHaveLength(1);
   });
 
@@ -389,6 +391,29 @@ describe("sync engine", () => {
     // React state was handed the book that still has the mid-cycle entry.
     expect(changed).toHaveLength(1);
     expect(changed[0].journal).toHaveLength(2);
+    expect(engine.getState().kind).toBe("idle");
+  });
+
+  it("uploads the commit that lands while the empty remote is being read", async () => {
+    const { book, cashId, foodId } = makeBook();
+    const inner = createMemorySyncStore(); // first device: Drive holds nothing yet
+    const repo = createMemoryRepository(book);
+    const midCycle = spend(book, cashId, foodId, 300, T(6));
+    const store = committingDuringRead(inner, async () => {
+      await repo.save(midCycle);
+    });
+    const { engine, changed } = engineFor(repo, store);
+
+    await engine.syncNow();
+
+    // The snapshot this branch used to upload was taken before the probe and read that
+    // established the remote was empty.
+    const uploaded = unwrap(decodeEnvelope(inner.getPayload()!));
+    expect(uploaded.journal).toHaveLength(1);
+    expect(hasAmount(uploaded, 300)).toBe(true);
+    // Unlike the merge branch, nothing local was ever at risk: this branch never saves.
+    expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(midCycle));
+    expect(changed).toHaveLength(0);
     expect(engine.getState().kind).toBe("idle");
   });
 

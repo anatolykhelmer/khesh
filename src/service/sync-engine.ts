@@ -81,6 +81,16 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     else setState({ kind: "error", lastSyncAt, errorCode: code });
   };
 
+  /** The book as the repository holds it now. Each of the cycle's branches re-reads
+   * through this before it writes anything: by then `local` is two network round trips
+   * old, and a commit that landed in between is in the repository and not in it. */
+  async function localBook(): Promise<Result<Book>> {
+    const loaded = await deps.repo.load();
+    if (!loaded.ok) return loaded;
+    if (loaded.value === null) return err("BOOK_INVALID", "No local book to sync");
+    return ok(loaded.value);
+  }
+
   const succeed = (rev: string | null, gen: number) => {
     lastSeenRev = rev;
     syncedGen = gen;
@@ -95,10 +105,9 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
    * not be able to wedge the sync in a refusal loop.
    */
   async function cycle(gen: number, precondition: boolean): Promise<Result<string | null>> {
-    const loaded = await deps.repo.load();
+    const loaded = await localBook();
     if (!loaded.ok) return loaded;
     const local = loaded.value;
-    if (local === null) return err("BOOK_INVALID", "No local book to sync");
 
     const probed = await deps.store.probe();
     if (!probed.ok) return probed;
@@ -110,7 +119,14 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     if (!readResult.ok) return readResult;
 
     if (readResult.value === null) {
-      const written = await deps.store.write(encodeEnvelope(local));
+      // Same reload as the merge branch below, for a milder version of the same reason.
+      // Nothing local is at risk here — this branch never saves — but uploading the
+      // snapshot would put a book on Drive that this device has already moved past, and
+      // leave the newer entry to whenever the next cycle happens to run. There is no
+      // remote revision to merge against, so the fresh book goes up as it is.
+      const current = await localBook();
+      if (!current.ok) return current;
+      const written = await deps.store.write(encodeEnvelope(current.value));
       if (!written.ok) return written;
       return ok(written.value.rev);
     }
@@ -134,10 +150,9 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     // its own save, so a second tab queues behind this cycle rather than landing in that
     // window. What the re-check still catches is a commit from *before* the lock was
     // taken, i.e. one that landed while the cycle was waiting on the network.
-    const reloaded = await deps.repo.load();
+    const reloaded = await localBook();
     if (!reloaded.ok) return reloaded;
     const current = reloaded.value;
-    if (current === null) return err("BOOK_INVALID", "No local book to sync");
     const currentPrint = bookFingerprint(current);
     const settled =
       currentPrint === bookFingerprint(local) ? merged : mergeValidated(current, remote.value);

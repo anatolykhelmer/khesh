@@ -131,6 +131,49 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     void startEngine().syncNow();
   }, [metaStore, startEngine]);
 
+  /** Forget the cached Drive file id, in memory and on disk, so the next resolve
+   * searches by name instead of 404ing on a dead one. Shared by `disconnect`, which
+   * clears it as part of tearing everything down, and by the missing-file recovery,
+   * which needs exactly this much and nothing else. */
+  const forgetFile = useCallback(async () => {
+    fileIdRef.current = null;
+    await metaStore.save({ fileId: null });
+  }, [metaStore]);
+
+  const connect = async () => {
+    if (applyingRef.current) return;
+    applyingRef.current = true;
+    setApplying(true);
+    try {
+      setLastError(null);
+      if (!authRef.current) authRef.current = createGoogleAuth(CLIENT_ID);
+      const token = await authRef.current.getToken(true); // the tap satisfies the popup rule
+      if (!token.ok) {
+        setLastError(errorMessage(token.error.code));
+        return;
+      }
+      const store = buildStore();
+      const inspection = await inspectRemote(store);
+      if (!inspection.ok) {
+        setLastError(errorMessage(inspection.error.code));
+        return;
+      }
+      if (inspection.value.kind === "empty") {
+        const applied = await applyFirstConnect("replaceRemote", { repo, store, runExclusive });
+        if (!applied.ok) {
+          setLastError(errorMessage(applied.error.code));
+          return;
+        }
+        await finalizeConnect();
+        return;
+      }
+      setPendingInspection(inspection.value); // "book" and "unreadable" both need the user
+    } finally {
+      applyingRef.current = false;
+      setApplying(false);
+    }
+  };
+
   const value: SyncContextValue = {
     configured: CLIENT_ID !== "",
     connected,
@@ -141,38 +184,17 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
     applying,
 
-    connect: async () => {
+    connect,
+
+    // What "the sync file is missing — reconnect to create it again" has always
+    // promised, in one tap: drop the dead id, then run the connect flow. Never a blind
+    // re-create — that flow inspects first, so a Drive that turns out to hold a book
+    // after all (the file restored from the trash, say) reaches the choice UI instead
+    // of being overwritten.
+    reconnect: async () => {
       if (applyingRef.current) return;
-      applyingRef.current = true;
-      setApplying(true);
-      try {
-        setLastError(null);
-        if (!authRef.current) authRef.current = createGoogleAuth(CLIENT_ID);
-        const token = await authRef.current.getToken(true); // the tap satisfies the popup rule
-        if (!token.ok) {
-          setLastError(errorMessage(token.error.code));
-          return;
-        }
-        const store = buildStore();
-        const inspection = await inspectRemote(store);
-        if (!inspection.ok) {
-          setLastError(errorMessage(inspection.error.code));
-          return;
-        }
-        if (inspection.value.kind === "empty") {
-          const applied = await applyFirstConnect("replaceRemote", { repo, store, runExclusive });
-          if (!applied.ok) {
-            setLastError(errorMessage(applied.error.code));
-            return;
-          }
-          await finalizeConnect();
-          return;
-        }
-        setPendingInspection(inspection.value); // "book" and "unreadable" both need the user
-      } finally {
-        applyingRef.current = false;
-        setApplying(false);
-      }
+      await forgetFile();
+      await connect();
     },
 
     applyChoice: async (choice: FirstConnectChoice) => {
@@ -206,10 +228,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       engineRef.current?.dispose();
       engineRef.current = null;
       storeRef.current = null;
-      fileIdRef.current = null;
+      await forgetFile();
       await authRef.current?.revoke();
       authRef.current = null;
-      await metaStore.save({ connected: false, fileId: null, accountEmail: null, lastSyncAt: null });
+      await metaStore.save({ connected: false, accountEmail: null, lastSyncAt: null });
       setConnected(false);
       setEmail(null);
       setState(null);

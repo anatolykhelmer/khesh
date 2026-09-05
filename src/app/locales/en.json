@@ -118,6 +118,8 @@
     "needsAuthAction": "Sign in",
     "errorUpdateApp": "The Drive copy was written by a newer version of Khesh. Update the app to continue syncing.",
     "errorFileMissing": "The sync file is missing from Google Drive. Reconnect to create it again.",
+    "reconnectAction": "Reconnect",
+    "reconnectHint": "Looks in Drive again and creates the file if it is really gone. If a book turns up, you pick what to keep.",
     "errorFileAmbiguous": "Google Drive holds more than one khesh-book.json. Open Drive, keep the newest one and delete the rest, then sync again.",
     "conflictTitle": "The books could not be merged",
     "conflictBody": "Pick which book to keep. The other one is overwritten.",

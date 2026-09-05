@@ -14,6 +14,9 @@ export type SyncContextValue = {
    * second tap cannot start a second load/merge/save/write over the first. */
   applying: boolean;
   connect: () => Promise<void>;
+  /** Recovery for SYNC_FILE_MISSING: forget the dead file id and run `connect` again,
+   * inspection and all, so a Drive that does hold a book still reaches the choice UI. */
+  reconnect: () => Promise<void>;
   applyChoice: (choice: FirstConnectChoice) => Promise<void>;
   cancelConnect: () => void;
   disconnect: () => Promise<void>;

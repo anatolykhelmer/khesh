@@ -96,12 +96,14 @@ export function SyncSection() {
     }
   })();
 
-  // A newer-format remote can never be synced by retrying -- decoding it fails the same
-  // way every time -- so "Sync now" would just re-promise a retry that cannot work. Every
-  // other case (offline, other error codes, needsAuth) keeps the button; retrying there is
-  // genuinely meaningful.
-  const isUnsupportedFormatError =
-    sync.state?.kind === "error" && sync.state.errorCode === "SYNC_FORMAT_UNSUPPORTED";
+  const errorCode = sync.state?.kind === "error" ? sync.state.errorCode : null;
+  // Two errors no retry can clear, so "Sync now" would re-promise a retry that cannot
+  // work: a newer-format remote decodes the same way every time, and a missing file is
+  // a cached id that will 404 for as long as it is cached. The second one gets its own
+  // button instead. Every other case (offline, needsAuth, an ambiguous search the user
+  // has since tidied up in Drive) keeps Sync now; retrying there is meaningful.
+  const isUnsupportedFormatError = errorCode === "SYNC_FORMAT_UNSUPPORTED";
+  const isFileMissingError = errorCode === "SYNC_FILE_MISSING";
 
   return (
     <ul className="settings-list group" aria-label={t("sync.title")}>
@@ -122,7 +124,20 @@ export function SyncSection() {
           </button>
         </li>
       ) : null}
-      {!isUnsupportedFormatError ? (
+      {isFileMissingError ? (
+        <li className="settings-row">
+          <button
+            type="button"
+            className="row-button"
+            disabled={sync.applying}
+            onClick={() => void sync.reconnect()}
+          >
+            {t("sync.reconnectAction")}
+          </button>
+          <p className="muted row-hint">{t("sync.reconnectHint")}</p>
+        </li>
+      ) : null}
+      {!isUnsupportedFormatError && !isFileMissingError ? (
         <li className="settings-row">
           <button
             type="button"

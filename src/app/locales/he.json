@@ -120,6 +120,8 @@
     "needsAuthAction": "התחברות",
     "errorUpdateApp": "העותק ב-Drive נכתב בגרסה חדשה יותר של Khesh. עדכנו את האפליקציה כדי להמשיך.",
     "errorFileMissing": "קובץ הסנכרון חסר ב-Google Drive. התחברו מחדש כדי ליצור אותו שוב.",
+    "reconnectAction": "התחברות מחדש",
+    "reconnectHint": "בודק שוב ב-Drive ויוצר את הקובץ אם הוא באמת נעלם. אם יימצא ספר, תבחרו מה לשמור.",
     "errorFileAmbiguous": "ב-Google Drive יש יותר מקובץ khesh-book.json אחד. פתחו את Drive, השאירו את החדש ביותר ומחקו את השאר, ואז סנכרנו שוב.",
     "conflictTitle": "לא ניתן היה למזג את הספרים",
     "conflictBody": "בחרו איזה ספר לשמור. הספר השני יידרס.",

@@ -1,4 +1,9 @@
-import { createDriveSyncStore, fetchAccountEmail } from "../../src/adapters/google-drive-sync";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createDriveSyncStore,
+  createGoogleAuth,
+  fetchAccountEmail,
+} from "../../src/adapters/google-drive-sync";
 import { ok } from "../../src/kernel/result";
 import { unwrap, unwrapErr } from "../helpers";
 
@@ -172,5 +177,115 @@ describe("drive sync store", () => {
     const { impl, calls } = stubFetch(() => json({ user: { emailAddress: "a@b.c" } }));
     expect(unwrap(await fetchAccountEmail(async () => ok("tok"), impl))).toBe("a@b.c");
     expect(calls[0].url).toContain("/drive/v3/about?fields=user");
+  });
+});
+
+type Prompt = { prompt?: "" | "consent" } | undefined;
+
+/**
+ * The `window.google` object GIS installs, reduced to what this module actually calls.
+ * With it present `loadGisScript` returns early, so nothing here touches `document` —
+ * which is what lets the coalescing logic be tested in the node environment the rest of
+ * the suite runs in. The token flow's *browser* half (script injection, popups) is still
+ * out of reach and still untested.
+ */
+function fakeGis() {
+  const requests: Prompt[] = [];
+  let callback: (response: { access_token?: string; expires_in?: number; error?: string }) => void =
+    () => undefined;
+  let clients = 0;
+  (globalThis as { google?: unknown }).google = {
+    accounts: {
+      oauth2: {
+        initTokenClient(config: { callback: typeof callback }) {
+          clients += 1;
+          callback = config.callback;
+          return {
+            requestAccessToken(options?: Prompt) {
+              requests.push(options);
+            },
+          };
+        },
+        revoke: (_token: string, done?: () => void) => done?.(),
+      },
+    },
+  };
+  return {
+    requests,
+    clients: () => clients,
+    grant: (accessToken: string) => callback({ access_token: accessToken, expires_in: 3600 }),
+    deny: () => callback({ error: "popup" }),
+  };
+}
+
+describe("google auth token requests", () => {
+  afterEach(() => {
+    delete (globalThis as { google?: unknown }).google;
+    vi.useRealTimers();
+  });
+
+  it("a second cold caller shares the first request instead of orphaning it", async () => {
+    const gis = fakeGis();
+    const auth = createGoogleAuth("client-1");
+
+    const first = auth.getToken(false);
+    const second = auth.getToken(false);
+    await Promise.resolve(); // let both reach the (already loaded) GIS client
+    expect(gis.requests).toHaveLength(1); // one flow, not two
+
+    gis.grant("tok-9");
+    // Both settle on that one response. Before coalescing, `second` overwrote the
+    // pending slot and `first` sat until its 15s timeout, whatever the flow returned.
+    expect(unwrap(await first)).toBe("tok-9");
+    expect(unwrap(await second)).toBe("tok-9");
+  });
+
+  it("does not leave the orphaned caller waiting on the 15s timeout", async () => {
+    vi.useFakeTimers();
+    const gis = fakeGis();
+    const auth = createGoogleAuth("client-1");
+    const settled: string[] = [];
+    const first = auth.getToken(false).then((r) => settled.push(r.ok ? "ok" : r.error.code));
+    const second = auth.getToken(false).then((r) => settled.push(r.ok ? "ok" : r.error.code));
+
+    await Promise.resolve();
+    gis.grant("tok-9");
+    await Promise.all([first, second]);
+
+    expect(settled).toEqual(["ok", "ok"]); // both, with no timer ever advanced
+    await vi.advanceTimersByTimeAsync(20_000); // and the shared timer was cleared
+    expect(settled).toEqual(["ok", "ok"]);
+  });
+
+  it("keeps the cached token fast path: a later call starts no new flow", async () => {
+    const gis = fakeGis();
+    const auth = createGoogleAuth("client-1");
+    const first = auth.getToken(false);
+    await Promise.resolve();
+    gis.grant("tok-9");
+    await first;
+
+    expect(unwrap(await auth.getToken(false))).toBe("tok-9");
+    expect(gis.requests).toHaveLength(1);
+  });
+
+  it("a tap waits out a silent request rather than settling for its answer", async () => {
+    const gis = fakeGis();
+    const auth = createGoogleAuth("client-1");
+
+    const silent = auth.getToken(false);
+    await Promise.resolve();
+    const tap = auth.getToken(true);
+    await Promise.resolve();
+    expect(gis.requests).toEqual([{ prompt: "" }]); // the tap did not clobber the slot
+
+    gis.deny(); // the silent path fails, as it does with no active Google session
+    expect(unwrapErr(await silent).code).toBe("SYNC_AUTH_REQUIRED");
+    await Promise.resolve();
+    expect(gis.requests).toEqual([{ prompt: "" }, undefined]); // ...then the tap asks
+
+    gis.grant("tok-tap");
+    expect(unwrap(await tap)).toBe("tok-tap");
+    expect(gis.clients()).toBe(1); // one token client for the lifetime of the auth
   });
 });

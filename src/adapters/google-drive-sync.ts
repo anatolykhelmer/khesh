@@ -58,7 +58,13 @@ export interface GoogleAuth {
 export function createGoogleAuth(clientId: string): GoogleAuth {
   let token: string | null = null;
   let expiresAt = 0;
-  let pending: { callback: (response: TokenResponse) => void } | null = null;
+  /** The one request in flight, shared by every caller that arrives while it runs.
+   * `interactive` is kept because a tap can do what a silent request cannot. */
+  let pending: {
+    interactive: boolean;
+    result: Promise<Result<string>>;
+    callback: (response: TokenResponse) => void;
+  } | null = null;
   let client: TokenClient | null = null;
 
   function ensureClient(): TokenClient {
@@ -75,32 +81,49 @@ export function createGoogleAuth(clientId: string): GoogleAuth {
 
   return {
     async getToken(interactive: boolean): Promise<Result<string>> {
-      if (token !== null && Date.now() < expiresAt) return ok(token);
-      try {
-        await loadGisScript();
-      } catch {
-        return err("SYNC_STORE_FAILED", "Could not load Google auth");
+      // Loops because both ways out of the wait below — a shared request that succeeded,
+      // and one this caller declined to share — are answered by re-reading the state
+      // rather than by duplicating the checks.
+      for (;;) {
+        if (token !== null && Date.now() < expiresAt) return ok(token);
+        try {
+          await loadGisScript();
+        } catch {
+          return err("SYNC_STORE_FAILED", "Could not load Google auth");
+        }
+        const inFlight = pending;
+        if (inFlight === null) break;
+        // A request already running is shared, not replaced. Replacing it left the first
+        // caller hanging until its own 15s timeout fired SYNC_AUTH_REQUIRED at it — even
+        // when the flow the second caller started had just succeeded.
+        if (inFlight.interactive || !interactive) return inFlight.result;
+        // The exception: only a tap may open the popup, so a tap will not settle for a
+        // silent request's answer. It waits that one out rather than clobbering it, then
+        // comes round to ask for itself — or to find the token it just cached.
+        await inFlight.result;
       }
-      return new Promise((resolve) => {
+
+      let deliver: (response: TokenResponse) => void = () => undefined;
+      const result = new Promise<Result<string>>((resolve) => {
         const timer = setTimeout(() => {
           pending = null;
           resolve(err("SYNC_AUTH_REQUIRED", "Sign-in timed out"));
         }, 15000);
-        pending = {
-          callback: (response) => {
-            clearTimeout(timer);
-            pending = null;
-            if (response.access_token) {
-              token = response.access_token;
-              expiresAt = Date.now() + ((response.expires_in ?? 3600) - 60) * 1000;
-              resolve(ok(token));
-            } else {
-              resolve(err("SYNC_AUTH_REQUIRED", "Sign-in was not completed"));
-            }
-          },
+        deliver = (response) => {
+          clearTimeout(timer);
+          pending = null;
+          if (response.access_token) {
+            token = response.access_token;
+            expiresAt = Date.now() + ((response.expires_in ?? 3600) - 60) * 1000;
+            resolve(ok(token));
+          } else {
+            resolve(err("SYNC_AUTH_REQUIRED", "Sign-in was not completed"));
+          }
         };
-        ensureClient().requestAccessToken(interactive ? undefined : { prompt: "" });
       });
+      pending = { interactive, result, callback: deliver };
+      ensureClient().requestAccessToken(interactive ? undefined : { prompt: "" });
+      return result;
     },
 
     async revoke(): Promise<void> {

@@ -10,6 +10,16 @@ import type { SyncStorePort } from "../../src/ports/sync-store";
 import { applyFirstConnect, inspectRemote } from "../../src/service/sync-connect";
 import { NOW, LATER, unwrap, unwrapErr } from "../helpers";
 
+/** The serialising stand-in for navigator.locks, as in the sync engine's suite. */
+function serialLock() {
+  let chain: Promise<unknown> = Promise.resolve();
+  return <V>(fn: () => Promise<V>): Promise<V> => {
+    const next = chain.then(fn);
+    chain = next.catch(() => undefined);
+    return next;
+  };
+}
+
 function makeBook(name: string, at: string): Book {
   let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, at));
   book = unwrap(createAccount(book, { parentId: null, name, type: "asset", currency: "ILS", isPlaceholder: false }, at));
@@ -203,6 +213,53 @@ describe("applyFirstConnect", () => {
     expect(writeSpy).not.toHaveBeenCalled();
     expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(local));
     expect(store.getPayload()).toBe(encodeEnvelope(remote));
+  });
+
+  it("runs two concurrent first connects one at a time under the sync lock", async () => {
+    /**
+     * Two applyFirstConnect calls started together — a double-tapped choice button, or
+     * two tabs both mid-connect. Each runs its own load, download, merge, save and
+     * upload; nothing in the sequence coordinates with anything, so uncoordinated they
+     * interleave and each writes over what the other computed. Counted at `read`, which
+     * sits inside the body: overlapping reads mean overlapping sequences.
+     *
+     * `lock` is the same helper the sync engine and every commit are handed.
+     */
+    async function overlap(lock?: <V>(fn: () => Promise<V>) => Promise<V>): Promise<number> {
+      const local = makeBook("Cash", NOW);
+      const repo = createMemoryRepository(local);
+      const inner = createMemorySyncStore(encodeEnvelope(makeBook("Wallet", LATER)));
+      let active = 0;
+      let max = 0;
+      const store: SyncStorePort = {
+        probe: () => inner.probe(),
+        async read() {
+          active += 1;
+          max = Math.max(max, active);
+          await Promise.resolve(); // a round trip the other call can slip into
+          const result = await inner.read();
+          active -= 1;
+          return result;
+        },
+        write: (payload, ifUnchanged) => inner.write(payload, ifUnchanged),
+      };
+
+      const results = await Promise.all([
+        applyFirstConnect("merge", { repo, store, runExclusive: lock }),
+        applyFirstConnect("merge", { repo, store, runExclusive: lock }),
+      ]);
+
+      expect(results.every((r) => r.ok)).toBe(true);
+      const uploaded = unwrap(decodeEnvelope(inner.getPayload()!));
+      expect(uploaded.accounts.map((a) => a.name).sort()).toEqual(["Cash", "Wallet"]);
+      return max;
+    }
+
+    // The unlocked run is the control: the two sequences really do overlap without a
+    // lock, so the locked run's 1 is the lock working rather than the timing failing to
+    // collide.
+    expect(await overlap()).toBe(2);
+    expect(await overlap(serialLock())).toBe(1);
   });
 
   it("replaceRemote propagates a write failure instead of reporting success", async () => {

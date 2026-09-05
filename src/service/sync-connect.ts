@@ -55,9 +55,31 @@ function mergeValidated(local: Book, remote: Book): Result<Book> {
   return merged;
 }
 
+export type FirstConnectDeps = {
+  repo: LedgerRepository;
+  store: SyncStorePort;
+  /**
+   * The same lock the sync engine's cycle and every commit take. First connect is
+   * one-shot but not single-flight on its own: a double-tapped choice button, or two
+   * tabs both mid-connect, otherwise run two of the load/merge/save/write sequences
+   * below against each other with no coordination at all. Default: unlocked, for the
+   * single-writer callers.
+   */
+  runExclusive?: <T>(fn: () => Promise<T>) => Promise<T>;
+};
+
 export async function applyFirstConnect(
   choice: FirstConnectChoice,
-  deps: { repo: LedgerRepository; store: SyncStorePort },
+  deps: FirstConnectDeps,
+): Promise<Result<Book>> {
+  const runExclusive: <T>(fn: () => Promise<T>) => Promise<T> =
+    deps.runExclusive ?? ((fn) => fn());
+  return runExclusive(() => firstConnect(choice, deps));
+}
+
+async function firstConnect(
+  choice: FirstConnectChoice,
+  deps: FirstConnectDeps,
 ): Promise<Result<Book>> {
   const local = await loadLocal(deps.repo);
   if (!local.ok) return local;

@@ -35,21 +35,21 @@ export function SyncSection() {
               <p className="muted row-hint">
                 {t("sync.choiceBody", { name: inspection.name, entries: inspection.entryCount })}
               </p>
-              <button type="button" className="row-button" onClick={() => void sync.applyChoice("useRemote")}>
+              <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("useRemote")}>
                 {t("sync.choiceUseRemote")}
               </button>
-              <button type="button" className="row-button" onClick={() => void sync.applyChoice("merge")}>
+              <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("merge")}>
                 {t("sync.choiceMerge")}
               </button>
               <p className="muted row-hint">{t("sync.choiceMergeWarning")}</p>
-              <button type="button" className="row-button" onClick={() => void sync.applyChoice("replaceRemote")}>
+              <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("replaceRemote")}>
                 {t("sync.choiceReplaceRemote")}
               </button>
             </>
           ) : inspection.kind === "unreadable" && inspection.errorCode === "SYNC_ENVELOPE_INVALID" ? (
             <>
               <p className="muted row-hint">{t("sync.choiceUnreadable")}</p>
-              <button type="button" className="row-button" onClick={() => void sync.applyChoice("replaceRemote")}>
+              <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("replaceRemote")}>
                 {t("sync.choiceReplaceRemote")}
               </button>
             </>
@@ -69,7 +69,7 @@ export function SyncSection() {
     return (
       <ul className="settings-list group" aria-label={t("sync.title")}>
         <li className="settings-row">
-          <button type="button" className="row-button" onClick={() => void sync.connect()}>
+          <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.connect()}>
             {t("sync.connect")}
           </button>
           <p className="muted row-hint">{t("sync.connectHint")}</p>

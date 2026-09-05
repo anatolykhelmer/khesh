@@ -10,6 +10,9 @@ export type SyncContextValue = {
   state: SyncState | null;
   /** Non-null means the first-connect choice UI is open. */
   pendingInspection: RemoteInspection | null;
+  /** A connect or first-connect choice is running: its buttons stay disabled, so a
+   * second tap cannot start a second load/merge/save/write over the first. */
+  applying: boolean;
   connect: () => Promise<void>;
   applyChoice: (choice: FirstConnectChoice) => Promise<void>;
   cancelConnect: () => void;

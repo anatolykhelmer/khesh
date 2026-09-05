@@ -35,6 +35,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SyncState | null>(null);
   const [pendingInspection, setPendingInspection] = useState<RemoteInspection | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
+  // The ref is the guard and the state is what the UI reads: a second tap arrives before
+  // React has re-rendered with `applying`, so only a ref can turn it away.
+  const applyingRef = useRef(false);
+  const [applying, setApplying] = useState(false);
 
   const buildStore = useCallback((): SyncStorePort => {
     if (!authRef.current) authRef.current = createGoogleAuth(CLIENT_ID);
@@ -135,41 +139,65 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     pendingInspection,
     lastError,
 
+    applying,
+
     connect: async () => {
-      setLastError(null);
-      if (!authRef.current) authRef.current = createGoogleAuth(CLIENT_ID);
-      const token = await authRef.current.getToken(true); // the tap satisfies the popup rule
-      if (!token.ok) {
-        setLastError(errorMessage(token.error.code));
-        return;
+      if (applyingRef.current) return;
+      applyingRef.current = true;
+      setApplying(true);
+      try {
+        setLastError(null);
+        if (!authRef.current) authRef.current = createGoogleAuth(CLIENT_ID);
+        const token = await authRef.current.getToken(true); // the tap satisfies the popup rule
+        if (!token.ok) {
+          setLastError(errorMessage(token.error.code));
+          return;
+        }
+        const store = buildStore();
+        const inspection = await inspectRemote(store);
+        if (!inspection.ok) {
+          setLastError(errorMessage(inspection.error.code));
+          return;
+        }
+        if (inspection.value.kind === "empty") {
+          const applied = await applyFirstConnect("replaceRemote", { repo, store, runExclusive });
+          if (!applied.ok) {
+            setLastError(errorMessage(applied.error.code));
+            return;
+          }
+          await finalizeConnect();
+          return;
+        }
+        setPendingInspection(inspection.value); // "book" and "unreadable" both need the user
+      } finally {
+        applyingRef.current = false;
+        setApplying(false);
       }
-      const store = buildStore();
-      const inspection = await inspectRemote(store);
-      if (!inspection.ok) {
-        setLastError(errorMessage(inspection.error.code));
-        return;
-      }
-      if (inspection.value.kind === "empty") {
-        const applied = await applyFirstConnect("replaceRemote", { repo, store });
+    },
+
+    applyChoice: async (choice: FirstConnectChoice) => {
+      // The lock below serializes two of these; this turns the second one away entirely,
+      // which is what a double-tapped choice button means.
+      if (applyingRef.current) return;
+      applyingRef.current = true;
+      setApplying(true);
+      try {
+        setLastError(null);
+        const applied = await applyFirstConnect(choice, {
+          repo,
+          store: buildStore(),
+          runExclusive,
+        });
         if (!applied.ok) {
           setLastError(errorMessage(applied.error.code));
           return;
         }
+        announceBookChanged(applied.value);
         await finalizeConnect();
-        return;
+      } finally {
+        applyingRef.current = false;
+        setApplying(false);
       }
-      setPendingInspection(inspection.value); // "book" and "unreadable" both need the user
-    },
-
-    applyChoice: async (choice: FirstConnectChoice) => {
-      setLastError(null);
-      const applied = await applyFirstConnect(choice, { repo, store: buildStore() });
-      if (!applied.ok) {
-        setLastError(errorMessage(applied.error.code));
-        return;
-      }
-      announceBookChanged(applied.value);
-      await finalizeConnect();
     },
 
     cancelConnect: () => setPendingInspection(null),

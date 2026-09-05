@@ -209,16 +209,31 @@ export type LedgerAppHooks = {
   now?: () => string;
   /** Fires after every successful persisting mutation, importJson included. */
   afterCommit?: (book: Book) => void;
+  /**
+   * Serializes every persisting write against the sync engine's cycle. Injected rather
+   * than taken from `navigator.locks` here, so this layer keeps knowing nothing about
+   * the browser — but it must be a helper naming the *same* lock the engine is given,
+   * or the two serialize against nothing. Default: no lock, for the single-writer
+   * callers (tests, and any host without Web Locks).
+   */
+  runExclusive?: <T>(fn: () => Promise<T>) => Promise<T>;
 };
 
 export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = {}) {
   const nowIso = () => hooks.now?.() ?? new Date().toISOString();
+  const runExclusive: <T>(fn: () => Promise<T>) => Promise<T> =
+    hooks.runExclusive ?? ((fn) => fn());
 
+  // afterCommit stays inside the lock: it is what bumps the engine's change counter, and
+  // a cycle that took the lock in between would record itself as having settled a
+  // generation that had not been counted yet.
   async function commit(next: Book): Promise<Result<Book>> {
-    const saved = await repo.save(next);
-    if (!saved.ok) return saved;
-    hooks.afterCommit?.(next);
-    return ok(next);
+    return runExclusive(async () => {
+      const saved = await repo.save(next);
+      if (!saved.ok) return saved;
+      hooks.afterCommit?.(next);
+      return ok(next);
+    });
   }
 
   return {
@@ -231,9 +246,13 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
     },
 
     async importJson(raw: string): Promise<Result<Book>> {
-      const imported = await importBookJson(repo, raw);
-      if (imported.ok) hooks.afterCommit?.(imported.value);
-      return imported;
+      // The one persisting write that does not go through commit(), and the most
+      // destructive: it replaces the whole book. Same lock, same reason.
+      return runExclusive(async () => {
+        const imported = await importBookJson(repo, raw);
+        if (imported.ok) hooks.afterCommit?.(imported.value);
+        return imported;
+      });
     },
 
     async createHousehold(homeCurrency: CurrencyCode): Promise<Result<Book>> {

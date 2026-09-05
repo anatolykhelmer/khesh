@@ -18,16 +18,10 @@ import { createSyncEngine, type SyncEngine, type SyncState } from "../../service
 import type { SyncStorePort } from "../../ports/sync-store";
 import { useLedger } from "../ledger-context";
 import { SyncContext, type SyncContextValue } from "./sync-context";
+import { runExclusive } from "./sync-lock";
 import { syncSignal } from "./sync-signal";
 
 const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? "";
-
-function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
-  if (typeof navigator !== "undefined" && navigator.locks) {
-    return navigator.locks.request("khesh-sync", fn) as Promise<T>;
-  }
-  return fn();
-}
 
 export function SyncProvider({ children }: { children: ReactNode }) {
   const { book, repo, announceBookChanged } = useLedger();

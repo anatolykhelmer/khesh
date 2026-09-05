@@ -121,10 +121,12 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     // the re-merge may legitimately refuse (a concurrent edit really can conflict with
     // what the remote holds), which is the honest outcome rather than a wrong save.
     //
-    // The reload is a local read inside the same lock, so it adds no store call and
-    // nothing can commit between it and the writes below. One re-check is enough: it
-    // closes a window two network round trips wide and leaves one the width of a single
-    // IndexedDB read.
+    // The reload is a local read inside the same lock, so it adds no store call. One
+    // re-check is enough: it closes a window two network round trips wide and leaves one
+    // the width of a single IndexedDB read — and `commit()` holds this same lock across
+    // its own save, so a second tab queues behind this cycle rather than landing in that
+    // window. What the re-check still catches is a commit from *before* the lock was
+    // taken, i.e. one that landed while the cycle was waiting on the network.
     const reloaded = await deps.repo.load();
     if (!reloaded.ok) return reloaded;
     const current = reloaded.value;

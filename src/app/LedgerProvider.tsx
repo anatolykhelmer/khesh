@@ -4,6 +4,7 @@ import { errorMessage } from "../service/error-messages";
 import { createLedgerApp } from "../service/ledger-app";
 import type { Book } from "../kernel";
 import { LedgerContext, type LedgerContextValue } from "./ledger-context";
+import { runExclusive } from "./sync/sync-lock";
 import { syncSignal } from "./sync/sync-signal";
 
 const CHANNEL_NAME = "khesh-sync";
@@ -14,6 +15,9 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const app = useMemo(
     () =>
       createLedgerApp(repo, {
+        // The sync engine (built in SyncProvider) is handed this same helper, so a
+        // commit here and a cycle there take one lock and cannot overwrite each other.
+        runExclusive,
         afterCommit: (book) => {
           syncSignal.emit(book);
           channelRef.current?.postMessage("changed");

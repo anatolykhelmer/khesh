@@ -6,9 +6,11 @@ import { createAccount, updateAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { bookFingerprint } from "../../src/kernel/merge";
+import type { Result } from "../../src/kernel/result";
 import type { Book } from "../../src/kernel/types";
 import type { LedgerRepository } from "../../src/ports/ledger-repository";
 import type { SyncStorePort } from "../../src/ports/sync-store";
+import { createLedgerApp } from "../../src/service/ledger-app";
 import { createSyncEngine, type SyncState } from "../../src/service/sync-engine";
 import { NOW, unwrap } from "../helpers";
 
@@ -43,13 +45,17 @@ function spend(book: Book, cashId: string, foodId: string, amount: number, at: s
   );
 }
 
-function engineFor(repo: LedgerRepository, store: SyncStorePort) {
+function engineFor(
+  repo: LedgerRepository,
+  store: SyncStorePort,
+  runExclusive: <V>(fn: () => Promise<V>) => Promise<V> = serialLock(),
+) {
   const states: SyncState[] = [];
   const changed: Book[] = [];
   const engine = createSyncEngine({
     repo,
     store,
-    runExclusive: serialLock(),
+    runExclusive,
     onBookChanged: (b) => changed.push(b),
     onStateChanged: (s) => states.push(s),
     now: () => T(30),
@@ -84,6 +90,25 @@ function committingDuringRead(
     write: (payload) => inner.write(payload),
   };
 }
+
+/** Fires `onReload` once the cycle's *second* `load()` has already read the book — the
+ * one seam the reload-and-recheck cannot see past. The check has just looked at the old
+ * book; a save landing now is the one the cycle goes on to overwrite. */
+function committingAfterReload(inner: LedgerRepository, onReload: () => void): LedgerRepository {
+  let loads = 0;
+  return {
+    async load() {
+      loads += 1;
+      const result = await inner.load();
+      if (loads === 2) onReload();
+      return result;
+    },
+    save: (book) => inner.save(book),
+  };
+}
+
+const hasAmount = (b: Book, amount: number) =>
+  b.journal.some((e) => e.postings.some((p) => p.amount === amount));
 
 describe("sync engine", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -410,5 +435,67 @@ describe("sync engine", () => {
     expect(changed).toHaveLength(0);
     expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(midCycle));
     expect(inner.getPayload()).toBe(encodeEnvelope(remoteBook));
+  });
+
+  // --- ...and a commit landing in the one window the reload-and-recheck cannot see —
+  // between that check and the cycle's own save — is held off by the shared lock. ---
+
+  it("a second tab's commit sharing the sync lock is not clobbered by the cycle", async () => {
+    /** One cycle, with a second tab committing right after the cycle's reload-check.
+     * `shareLock` decides whether that tab's `commit()` takes the engine's lock — false
+     * reproduces the bare `repo.save(next)` this fix replaced. */
+    async function race(shareLock: boolean) {
+      const { book, cashId, foodId } = makeBook();
+      const remote = spend(book, cashId, foodId, 700, T(5));
+      const store = createMemorySyncStore(encodeEnvelope(remote));
+      const inner = createMemoryRepository(book);
+      const lock = serialLock();
+      // The second tab writes through the plain repository: only the syncing tab reloads.
+      const app = createLedgerApp(inner, {
+        now: () => T(6),
+        runExclusive: shareLock ? lock : undefined,
+      });
+      const commits: Promise<Result<Book>>[] = [];
+      const repo = committingAfterReload(inner, () => {
+        commits.push(
+          app.addEntry(book, {
+            date: "2026-01-10",
+            description: "second tab",
+            fromAccountId: cashId,
+            lines: [{ toAccountId: foodId, amount: 300 }],
+          }),
+        );
+      });
+      const { engine } = engineFor(repo, store, lock);
+
+      await engine.syncNow();
+      expect((await Promise.all(commits)).every((outcome) => outcome.ok)).toBe(true);
+
+      return { engine, store, repo: inner };
+    }
+
+    // Control: unlocked, the cycle's save lands on top of the second tab's and the 300
+    // is gone from IndexedDB — and from Drive, so no device ever sees it again.
+    const bare = await race(false);
+    expect(hasAmount(unwrap(await bare.repo.load())!, 300)).toBe(false);
+    expect(hasAmount(unwrap(decodeEnvelope(bare.store.getPayload()!)), 300)).toBe(false);
+
+    // Shared lock: the commit queues behind the whole cycle instead of landing inside it,
+    // so its entry survives. The remote's 700 is still in Drive (the cycle uploaded
+    // nothing over it), so at this point nothing has been lost anywhere...
+    const shared = await race(true);
+    const afterRace = unwrap(await shared.repo.load())!;
+    expect(hasAmount(afterRace, 300)).toBe(true);
+    expect(hasAmount(unwrap(decodeEnvelope(shared.store.getPayload()!)), 700)).toBe(true);
+
+    // ...and the next cycle carries both, which is what "both edits survive" means here.
+    shared.engine.notifyLocalChange();
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.runAllTimersAsync();
+    const converged = unwrap(await shared.repo.load())!;
+    expect(converged.journal).toHaveLength(2);
+    expect(hasAmount(converged, 300)).toBe(true);
+    expect(hasAmount(converged, 700)).toBe(true);
+    expect(unwrap(decodeEnvelope(shared.store.getPayload()!)).journal).toHaveLength(2);
   });
 });

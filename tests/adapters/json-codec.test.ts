@@ -70,7 +70,32 @@ describe("json codec", () => {
       budgets: [null],
       tombstones: [],
     });
-    expect(unwrapErr(jsonToBook(raw)).code).toBe("BOOK_INVALID");
+    expect(unwrapErr(jsonToBook(raw)).code).toBe("JSON_INVALID_BOOK");
+  });
+
+  it("rejects null budget element in a v1 file", () => {
+    const raw = JSON.stringify({
+      schemaVersion: 1,
+      name: "Home",
+      homeCurrency: "ILS",
+      accounts: [],
+      journal: [],
+      budgets: [null],
+    });
+    expect(unwrapErr(jsonToBook(raw)).code).toBe("JSON_INVALID_BOOK");
+  });
+
+  it("rejects null budget element in a v2 file needing migration", () => {
+    const raw = JSON.stringify({
+      schemaVersion: 2,
+      name: "Home",
+      homeCurrency: "ILS",
+      metaUpdatedAt: 12345,
+      accounts: [],
+      journal: [],
+      budgets: [null],
+    });
+    expect(unwrapErr(jsonToBook(raw)).code).toBe("JSON_INVALID_BOOK");
   });
 
   it("accepts a v1 file and migrates it to v2 with EPOCH stamps", () => {

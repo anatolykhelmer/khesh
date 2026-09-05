@@ -1,5 +1,5 @@
 import { err, ok, type Result } from "../kernel/result";
-import type { Account, Book, JournalEntry, Posting } from "../kernel/types";
+import type { Account, Book, Budget, JournalEntry, Posting } from "../kernel/types";
 import { validateBook } from "../kernel/validate";
 import { normalizeBook, type StoredBook } from "../kernel/normalize";
 
@@ -12,6 +12,7 @@ const ACCOUNT_TYPES = new Set<Account["type"]>([
 ]);
 const POSTING_SIDES = new Set<Posting["side"]>(["debit", "credit"]);
 const JOURNAL_KINDS = new Set<JournalEntry["kind"]>(["standard", "opening"]);
+const BUDGET_PERIODS = new Set<Budget["period"]>(["month", "year"]);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -57,6 +58,18 @@ function isJournalEntryShape(value: unknown): value is JournalEntry {
   return value.postings.every(isPostingShape);
 }
 
+function isBudgetShape(value: unknown): value is Budget {
+  if (!isObject(value)) return false;
+  return (
+    typeof value.accountId === "string" &&
+    typeof value.period === "string" &&
+    BUDGET_PERIODS.has(value.period as Budget["period"]) &&
+    typeof value.currency === "string" &&
+    typeof value.limit === "number" &&
+    (value.updatedAt === undefined || typeof value.updatedAt === "string")
+  );
+}
+
 /** A v1 file and a v2 file both pass here; `jsonToBook` gates the version itself. */
 function isBookShape(value: unknown): value is StoredBook {
   if (!isObject(value)) return false;
@@ -68,7 +81,7 @@ function isBookShape(value: unknown): value is StoredBook {
     value.accounts.every(isAccountShape) &&
     Array.isArray(value.journal) &&
     value.journal.every(isJournalEntryShape) &&
-    (!("budgets" in value) || Array.isArray(value.budgets))
+    (!("budgets" in value) || (Array.isArray(value.budgets) && value.budgets.every(isBudgetShape)))
   );
 }
 

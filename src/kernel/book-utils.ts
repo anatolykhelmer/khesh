@@ -4,8 +4,13 @@ export function cloneBook(book: Book): Book {
   return structuredClone(book);
 }
 
+/**
+ * A malformed element is skipped, not dereferenced. `validateBook` scans through
+ * here, and its contract is to return a Result for any input — including a
+ * corrupted snapshot that reached it without a shape check.
+ */
 export function findAccount(book: Book, id: string): Account | undefined {
-  return book.accounts.find((account) => account.id === id);
+  return book.accounts.find((account) => account?.id === id);
 }
 
 export function hasChildren(book: Book, id: string): boolean {
@@ -18,6 +23,7 @@ export function hasPostings(book: Book, accountId: string): boolean {
   );
 }
 
+/** Skips a malformed element for the same reason as `findAccount`. */
 export function siblingNameTaken(
   book: Book,
   parentId: string | null,
@@ -26,6 +32,7 @@ export function siblingNameTaken(
 ): boolean {
   return book.accounts.some(
     (account) =>
+      account != null &&
       account.parentId === parentId &&
       account.name === name &&
       account.id !== exceptId,

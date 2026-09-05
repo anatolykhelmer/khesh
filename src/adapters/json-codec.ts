@@ -1,7 +1,7 @@
 import { err, ok, type Result } from "../kernel/result";
-import type { Account, Book, JournalEntry, Posting } from "../kernel/types";
+import type { Account, Book, Budget, JournalEntry, Posting } from "../kernel/types";
 import { validateBook } from "../kernel/validate";
-import { normalizeBook } from "../kernel/normalize";
+import { normalizeBook, type StoredBook } from "../kernel/normalize";
 
 const ACCOUNT_TYPES = new Set<Account["type"]>([
   "asset",
@@ -12,6 +12,7 @@ const ACCOUNT_TYPES = new Set<Account["type"]>([
 ]);
 const POSTING_SIDES = new Set<Posting["side"]>(["debit", "credit"]);
 const JOURNAL_KINDS = new Set<JournalEntry["kind"]>(["standard", "opening"]);
+const BUDGET_PERIODS = new Set<Budget["period"]>(["month", "year"]);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -26,7 +27,8 @@ function isAccountShape(value: unknown): value is Account {
     typeof value.type === "string" &&
     ACCOUNT_TYPES.has(value.type as Account["type"]) &&
     typeof value.currency === "string" &&
-    typeof value.isPlaceholder === "boolean"
+    typeof value.isPlaceholder === "boolean" &&
+    (value.updatedAt === undefined || typeof value.updatedAt === "string")
   );
 }
 
@@ -48,14 +50,28 @@ function isJournalEntryShape(value: unknown): value is JournalEntry {
     typeof value.description !== "string" ||
     typeof value.kind !== "string" ||
     !JOURNAL_KINDS.has(value.kind as JournalEntry["kind"]) ||
-    !Array.isArray(value.postings)
+    !Array.isArray(value.postings) ||
+    !(value.updatedAt === undefined || typeof value.updatedAt === "string")
   ) {
     return false;
   }
   return value.postings.every(isPostingShape);
 }
 
-function isBookShape(value: unknown): value is Book {
+function isBudgetShape(value: unknown): value is Budget {
+  if (!isObject(value)) return false;
+  return (
+    typeof value.accountId === "string" &&
+    typeof value.period === "string" &&
+    BUDGET_PERIODS.has(value.period as Budget["period"]) &&
+    typeof value.currency === "string" &&
+    typeof value.limit === "number" &&
+    (value.updatedAt === undefined || typeof value.updatedAt === "string")
+  );
+}
+
+/** A v1 file and a v2 file both pass here; `jsonToBook` gates the version itself. */
+function isBookShape(value: unknown): value is StoredBook {
   if (!isObject(value)) return false;
   return (
     "schemaVersion" in value &&
@@ -65,7 +81,7 @@ function isBookShape(value: unknown): value is Book {
     value.accounts.every(isAccountShape) &&
     Array.isArray(value.journal) &&
     value.journal.every(isJournalEntryShape) &&
-    (!("budgets" in value) || Array.isArray(value.budgets))
+    (!("budgets" in value) || (Array.isArray(value.budgets) && value.budgets.every(isBudgetShape)))
   );
 }
 
@@ -83,7 +99,7 @@ export function jsonToBook(raw: string): Result<Book> {
   if (!isBookShape(parsed)) {
     return err("JSON_INVALID_BOOK", "JSON is not a Book snapshot");
   }
-  if (parsed.schemaVersion !== 1) {
+  if (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2) {
     return err("BOOK_INVALID_SCHEMA_VERSION", `Unsupported schemaVersion ${String(parsed.schemaVersion)}`, {
       schemaVersion: parsed.schemaVersion,
     });

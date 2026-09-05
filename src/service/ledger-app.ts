@@ -60,12 +60,6 @@ export type EntryInput = {
 
 export type AccountOption = { id: string; path: string; depth: number };
 
-async function commit(repo: LedgerRepository, next: Book): Promise<Result<Book>> {
-  const saved = await repo.save(next);
-  if (!saved.ok) return saved;
-  return ok(next);
-}
-
 function isSystemAccountId(id: string): boolean {
   return id.startsWith("sys:");
 }
@@ -211,7 +205,22 @@ export function inferEntryLines(entry: JournalEntry): {
   return { fromAccountId: credit.accountId, fromAmount: credit.amount, lines, total, fx };
 }
 
-export function createLedgerApp(repo: LedgerRepository) {
+export type LedgerAppHooks = {
+  now?: () => string;
+  /** Fires after every successful persisting mutation, importJson included. */
+  afterCommit?: (book: Book) => void;
+};
+
+export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = {}) {
+  const nowIso = () => hooks.now?.() ?? new Date().toISOString();
+
+  async function commit(next: Book): Promise<Result<Book>> {
+    const saved = await repo.save(next);
+    if (!saved.ok) return saved;
+    hooks.afterCommit?.(next);
+    return ok(next);
+  }
+
   return {
     async boot(): Promise<Result<Book | null>> {
       return repo.load();
@@ -222,25 +231,31 @@ export function createLedgerApp(repo: LedgerRepository) {
     },
 
     async importJson(raw: string): Promise<Result<Book>> {
-      return importBookJson(repo, raw);
+      const imported = await importBookJson(repo, raw);
+      if (imported.ok) hooks.afterCommit?.(imported.value);
+      return imported;
     },
 
     async createHousehold(homeCurrency: CurrencyCode): Promise<Result<Book>> {
-      const created = createBook({ name: HOUSEHOLD_BOOK_NAME, homeCurrency });
+      const created = createBook({ name: HOUSEHOLD_BOOK_NAME, homeCurrency }, nowIso());
       if (!created.ok) return created;
       let book = created.value;
       for (const seed of ROOT_SEEDS) {
-        const next = createAccount(book, {
-          parentId: null,
-          name: seed.name,
-          type: seed.type,
-          currency: homeCurrency,
-          isPlaceholder: true,
-        });
+        const next = createAccount(
+          book,
+          {
+            parentId: null,
+            name: seed.name,
+            type: seed.type,
+            currency: homeCurrency,
+            isPlaceholder: true,
+          },
+          nowIso(),
+        );
         if (!next.ok) return next;
         book = next.value;
       }
-      return commit(repo, book);
+      return commit(book);
     },
 
     async addAccount(
@@ -273,13 +288,17 @@ export function createLedgerApp(repo: LedgerRepository) {
         });
       }
 
-      const created = createAccount(book, {
-        parentId: parent.id,
-        name: input.name,
-        type: parent.type,
-        currency: input.isPlaceholder ? book.homeCurrency : (input.currency ?? book.homeCurrency),
-        isPlaceholder: input.isPlaceholder,
-      });
+      const created = createAccount(
+        book,
+        {
+          parentId: parent.id,
+          name: input.name,
+          type: parent.type,
+          currency: input.isPlaceholder ? book.homeCurrency : (input.currency ?? book.homeCurrency),
+          isPlaceholder: input.isPlaceholder,
+        },
+        nowIso(),
+      );
       if (!created.ok) return created;
 
       let next = created.value;
@@ -289,21 +308,25 @@ export function createLedgerApp(repo: LedgerRepository) {
         if (!leaf) {
           return err("ACCOUNT_NOT_FOUND", "Created account not found");
         }
-        const opened = recordOpeningBalance(next, {
-          accountId: leaf.id,
-          amount: openingAmount,
-          date: input.openingDate ?? todayCalendarDate(),
-          groupName: i18n.t("accounts.openingBalances"),
-        });
+        const opened = recordOpeningBalance(
+          next,
+          {
+            accountId: leaf.id,
+            amount: openingAmount,
+            date: input.openingDate ?? todayCalendarDate(),
+            groupName: i18n.t("accounts.openingBalances"),
+          },
+          nowIso(),
+        );
         if (!opened.ok) {
-          const saved = await commit(repo, next);
+          const saved = await commit(next);
           if (!saved.ok) return saved;
           return opened;
         }
         next = opened.value;
       }
 
-      return commit(repo, next);
+      return commit(next);
     },
 
     async editAccount(
@@ -331,14 +354,18 @@ export function createLedgerApp(repo: LedgerRepository) {
         });
       }
 
-      const updated = updateAccount(book, {
-        id: input.id,
-        name: input.name,
-        parentId: input.parentId,
-        isPlaceholder: input.isPlaceholder,
-      });
+      const updated = updateAccount(
+        book,
+        {
+          id: input.id,
+          name: input.name,
+          parentId: input.parentId,
+          isPlaceholder: input.isPlaceholder,
+        },
+        nowIso(),
+      );
       if (!updated.ok) return updated;
-      return commit(repo, updated.value);
+      return commit(updated.value);
     },
 
     async removeAccount(book: Book, id: string): Promise<Result<Book>> {
@@ -352,23 +379,27 @@ export function createLedgerApp(repo: LedgerRepository) {
       if (isRootCategory(account)) {
         return err("ACCOUNT_IS_SYSTEM", "Root categories cannot be deleted", { id });
       }
-      const deleted = deleteAccount(book, id);
+      const deleted = deleteAccount(book, id, nowIso());
       if (!deleted.ok) return deleted;
-      return commit(repo, deleted.value);
+      return commit(deleted.value);
     },
 
     async addEntry(book: Book, input: EntryInput): Promise<Result<Book>> {
       const invalid = invalidEntryInput(book, input);
       if (invalid) return invalid;
       const shape = entryShape(book, input);
-      const posted = postEntry(book, {
-        date: input.date,
-        description: input.description,
-        postings: shape.postings,
-        fx: shape.fx ?? undefined,
-      });
+      const posted = postEntry(
+        book,
+        {
+          date: input.date,
+          description: input.description,
+          postings: shape.postings,
+          fx: shape.fx ?? undefined,
+        },
+        nowIso(),
+      );
       if (!posted.ok) return posted;
-      return commit(repo, posted.value);
+      return commit(posted.value);
     },
 
     async updateEntry(book: Book, entryId: string, input: EntryInput): Promise<Result<Book>> {
@@ -380,21 +411,25 @@ export function createLedgerApp(repo: LedgerRepository) {
       const invalid = invalidEntryInput(book, input);
       if (invalid) return invalid;
       const shape = entryShape(book, input);
-      const updated = kernelUpdateEntry(book, {
-        id: entryId,
-        date: input.date,
-        description: input.description,
-        postings: shape.postings,
-        fx: shape.fx,
-      });
+      const updated = kernelUpdateEntry(
+        book,
+        {
+          id: entryId,
+          date: input.date,
+          description: input.description,
+          postings: shape.postings,
+          fx: shape.fx,
+        },
+        nowIso(),
+      );
       if (!updated.ok) return updated;
-      return commit(repo, updated.value);
+      return commit(updated.value);
     },
 
     async deleteEntry(book: Book, entryId: string): Promise<Result<Book>> {
-      const deleted = kernelDeleteEntry(book, entryId);
+      const deleted = kernelDeleteEntry(book, entryId, nowIso());
       if (!deleted.ok) return deleted;
-      return commit(repo, deleted.value);
+      return commit(deleted.value);
     },
 
     listJournal(
@@ -433,18 +468,18 @@ export function createLedgerApp(repo: LedgerRepository) {
         limit: MinorUnits;
       },
     ): Promise<Result<Book>> {
-      const result = setBudget(book, input);
+      const result = setBudget(book, input, nowIso());
       if (!result.ok) return result;
-      return commit(repo, result.value);
+      return commit(result.value);
     },
 
     async removeBudget(
       book: Book,
       input: { accountId: string; period: BudgetPeriod; currency: CurrencyCode },
     ): Promise<Result<Book>> {
-      const result = removeBudget(book, input);
+      const result = removeBudget(book, input, nowIso());
       if (!result.ok) return result;
-      return commit(repo, result.value);
+      return commit(result.value);
     },
 
     budgetReport(

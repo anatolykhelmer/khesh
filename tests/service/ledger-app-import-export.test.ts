@@ -89,7 +89,7 @@ describe("LedgerApp export / import", () => {
   it("rejects a book written by another schema version", async () => {
     const source = await seededBook();
     const parsed = JSON.parse(source.app.exportJson(source.book)) as Record<string, unknown>;
-    parsed.schemaVersion = 2;
+    parsed.schemaVersion = 3;
 
     const app = createLedgerApp(createMemoryRepository(null));
     expect(unwrapErr(await app.importJson(JSON.stringify(parsed))).code).toBe(

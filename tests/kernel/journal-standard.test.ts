@@ -1,11 +1,11 @@
 import { createAccount, deleteAccount, updateAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 import type { Book } from "../../src/kernel/types";
 
 function twoLeaves(): { book: Book; cashId: string; foodId: string } {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
   book = unwrap(
     createAccount(book, {
       parentId: null,
@@ -13,7 +13,7 @@ function twoLeaves(): { book: Book; cashId: string; foodId: string } {
       type: "asset",
       currency: "ILS",
       isPlaceholder: true,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -22,7 +22,7 @@ function twoLeaves(): { book: Book; cashId: string; foodId: string } {
       type: "expense",
       currency: "ILS",
       isPlaceholder: true,
-    }),
+    }, NOW),
   );
   const assetsId = book.accounts[0].id;
   const expensesId = book.accounts[1].id;
@@ -33,7 +33,7 @@ function twoLeaves(): { book: Book; cashId: string; foodId: string } {
       type: "asset",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -42,7 +42,7 @@ function twoLeaves(): { book: Book; cashId: string; foodId: string } {
       type: "expense",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   return {
     book,
@@ -62,7 +62,7 @@ describe("postEntry same-currency", () => {
           { accountId: foodId, side: "debit", amount: 8000 },
           { accountId: cashId, side: "credit", amount: 8000 },
         ],
-      }),
+      }, NOW),
     );
     expect(next.journal).toHaveLength(1);
     expect(next.journal[0].kind).toBe("standard");
@@ -79,7 +79,7 @@ describe("postEntry same-currency", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     const feesId = next.accounts[4].id;
     next = unwrap(
@@ -91,7 +91,7 @@ describe("postEntry same-currency", () => {
           { accountId: feesId, side: "debit", amount: 200 },
           { accountId: cashId, side: "credit", amount: 8000 },
         ],
-      }),
+      }, NOW),
     );
     expect(next.journal[0].postings).toHaveLength(3);
   });
@@ -107,7 +107,7 @@ describe("postEntry same-currency", () => {
             { accountId: foodId, side: "debit", amount: 8000 },
             { accountId: cashId, side: "credit", amount: 7000 },
           ],
-        }),
+        }, NOW),
       ).code,
     ).toBe("ENTRY_UNBALANCED");
   });
@@ -123,7 +123,7 @@ describe("postEntry same-currency", () => {
             { accountId: foodId, side: "debit", amount: 0 },
             { accountId: cashId, side: "credit", amount: 0 },
           ],
-        }),
+        }, NOW),
       ).code,
     ).toBe("ENTRY_AMOUNT_INVALID");
   });
@@ -139,7 +139,7 @@ describe("postEntry same-currency", () => {
             { accountId: cashId, side: "debit", amount: 100 },
             { accountId: cashId, side: "credit", amount: 100 },
           ],
-        }),
+        }, NOW),
       ).code,
     ).toBe("ENTRY_TOO_FEW_ACCOUNTS");
   });
@@ -155,7 +155,7 @@ describe("postEntry same-currency", () => {
             { accountId: book.accounts[0].id, side: "debit", amount: 100 },
             { accountId: cashId, side: "credit", amount: 100 },
           ],
-        }),
+        }, NOW),
       ).code,
     ).toBe("ACCOUNT_IS_PLACEHOLDER");
   });
@@ -171,7 +171,7 @@ describe("postEntry same-currency", () => {
             { accountId: foodId, side: "debit", amount: 100 },
             { accountId: cashId, side: "credit", amount: 100 },
           ],
-        }),
+        }, NOW),
       ).code,
     ).toBe("ENTRY_DATE_INVALID");
   });
@@ -184,7 +184,7 @@ describe("postEntry same-currency", () => {
           date: "2026-01-15",
           description: "Bad",
           postings: [{ accountId: cashId, side: "debit", amount: 100 }],
-        }),
+        }, NOW),
       ).code,
     ).toBe("ENTRY_TOO_FEW_POSTINGS");
   });
@@ -199,11 +199,11 @@ describe("postEntry same-currency", () => {
           { accountId: foodId, side: "debit", amount: 100 },
           { accountId: cashId, side: "credit", amount: 100 },
         ],
-      }),
+      }, NOW),
     );
-    expect(unwrapErr(updateAccount(posted, { id: cashId, currency: "USD" })).code).toBe(
+    expect(unwrapErr(updateAccount(posted, { id: cashId, currency: "USD" }, NOW)).code).toBe(
       "ACCOUNT_CURRENCY_LOCKED",
     );
-    expect(unwrapErr(deleteAccount(posted, cashId)).code).toBe("ACCOUNT_HAS_POSTINGS");
+    expect(unwrapErr(deleteAccount(posted, cashId, NOW)).code).toBe("ACCOUNT_HAS_POSTINGS");
   });
 });

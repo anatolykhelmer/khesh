@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createMemoryRepository } from "../../src/adapters/memory-repository";
 import { createLedgerApp, inferEntryLines } from "../../src/service/ledger-app";
 import type { JournalEntry } from "../../src/kernel";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 describe("LedgerApp entries", () => {
   async function threeLeaves() {
@@ -280,7 +280,13 @@ describe("LedgerApp entries", () => {
   });
 
   it("inferEntryLines returns null for multi-credit or unbalanced shapes", () => {
-    const base = { id: "x", date: "2026-08-10", description: "", kind: "standard" as const };
+    const base = {
+      id: "x",
+      date: "2026-08-10",
+      description: "",
+      kind: "standard" as const,
+      updatedAt: NOW,
+    };
     const multiCredit: JournalEntry = {
       ...base,
       postings: [
@@ -541,6 +547,7 @@ describe("LedgerApp entries", () => {
       date: "2026-08-10",
       description: "Broken",
       kind: "standard",
+      updatedAt: NOW,
       postings: [
         { accountId: "a", side: "debit", amount: 900 },
         { accountId: "b", side: "credit", amount: 1000 },
@@ -555,6 +562,7 @@ describe("LedgerApp entries", () => {
       date: "2026-08-10",
       description: "Broken",
       kind: "standard",
+      updatedAt: NOW,
       postings: [
         { accountId: "a", side: "debit", amount: 900 },
         { accountId: "b", side: "credit", amount: 1000 },

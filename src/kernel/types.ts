@@ -4,13 +4,26 @@ export type AccountType = "asset" | "liability" | "equity" | "income" | "expense
 export type PostingSide = "debit" | "credit";
 export type JournalEntryKind = "standard" | "opening";
 
+export type TombstoneKind = "account" | "entry" | "budget";
+
+export interface Tombstone {
+  kind: TombstoneKind;
+  /** account/entry id; for budgets `${accountId}|${period}|${currency}`. */
+  key: string;
+  deletedAt: string;
+  /** Full snapshot at deletion, so a merge can resurrect or compare the record. */
+  record: Account | JournalEntry | Budget;
+}
+
 export interface Book {
-  schemaVersion: 1;
+  schemaVersion: 2;
   name: string;
   homeCurrency: CurrencyCode;
+  metaUpdatedAt: string;
   accounts: Account[];
   journal: JournalEntry[];
   budgets: Budget[];
+  tombstones: Tombstone[];
 }
 
 export type BudgetPeriod = "month" | "year";
@@ -20,6 +33,7 @@ export interface Budget {
   period: BudgetPeriod;
   currency: CurrencyCode;
   limit: MinorUnits;
+  updatedAt: string;
 }
 
 export interface Account {
@@ -29,6 +43,7 @@ export interface Account {
   type: AccountType;
   currency: CurrencyCode;
   isPlaceholder: boolean;
+  updatedAt: string;
 }
 
 export interface FxSpec {
@@ -51,6 +66,7 @@ export interface JournalEntry {
   kind: JournalEntryKind;
   postings: Posting[];
   fx?: FxSpec;
+  updatedAt: string;
 }
 
 export interface AccountNode extends Account {

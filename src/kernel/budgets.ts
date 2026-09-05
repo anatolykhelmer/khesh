@@ -1,6 +1,7 @@
 import { cloneBook, findAccount } from "./book-utils";
 import { isCurrencyCode } from "./currency";
 import { err, ok, type Result } from "./result";
+import { addTombstone, budgetKeyOf, clearTombstone } from "./tombstones";
 import type { Book, Budget, BudgetPeriod, CurrencyCode, MinorUnits } from "./types";
 
 type BudgetKey = { accountId: string; period: BudgetPeriod; currency: CurrencyCode };
@@ -17,6 +18,7 @@ function sameKey(budget: Budget, key: BudgetKey): boolean {
 export function setBudget(
   book: Book,
   input: BudgetKey & { limit: MinorUnits },
+  now: string,
 ): Result<Book> {
   const account = findAccount(book, input.accountId);
   if (!account) {
@@ -43,20 +45,24 @@ export function setBudget(
     period: input.period,
     currency: input.currency,
     limit: input.limit,
+    updatedAt: now,
   };
   const next = cloneBook(book);
   const index = next.budgets.findIndex((item) => sameKey(item, input));
   if (index === -1) next.budgets.push(budget);
   else next.budgets[index] = budget;
+  clearTombstone(next, "budget", budgetKeyOf(input));
   return ok(next);
 }
 
-export function removeBudget(book: Book, key: BudgetKey): Result<Book> {
+export function removeBudget(book: Book, key: BudgetKey, now: string): Result<Book> {
   const index = book.budgets.findIndex((item) => sameKey(item, key));
   if (index === -1) {
     return err("BUDGET_NOT_FOUND", "Budget not found", { ...key });
   }
+  const removed = book.budgets[index];
   const next = cloneBook(book);
   next.budgets.splice(index, 1);
+  addTombstone(next, "budget", budgetKeyOf(key), removed, now);
   return ok(next);
 }

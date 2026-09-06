@@ -237,6 +237,28 @@
     "searchAria": "Search {{label}}",
     "noMatch": "No accounts match"
   },
+  "recurring": {
+    "title": "Recurring",
+    "backToDashboard": "Back to dashboard",
+    "couldNotLoad": "Could not load recurring transactions.",
+    "dueTitle": "Due now",
+    "rulesTitle": "Rules",
+    "empty": "Nothing repeats yet.",
+    "add": "Add a recurring transaction",
+    "post": "Post",
+    "edit": "Edit",
+    "skip": "Skip",
+    "defer": "Later",
+    "pending": "Pending",
+    "paused": "Paused",
+    "next": "Next",
+    "everyWeek_one": "Every week",
+    "everyWeek_other": "Every {{count}} weeks",
+    "everyMonth_one": "Every month",
+    "everyMonth_other": "Every {{count}} months",
+    "everyYear_one": "Every year",
+    "everyYear_other": "Every {{count}} years"
+  },
   "errors": {
     "ACCOUNT_NAME_INVALID": "Enter an account name",
     "ACCOUNT_NAME_DUPLICATE": "That account name is already used here",
@@ -277,6 +299,10 @@
     "SYNC_ENVELOPE_INVALID": "The Drive copy could not be read.",
     "SYNC_FORMAT_UNSUPPORTED": "The Drive copy needs a newer app version.",
     "SYNC_MERGE_CONFLICT": "The books could not be merged automatically.",
+    "RECURRENCE_NOT_FOUND": "Recurring transaction not found",
+    "RECURRENCE_ID_DUPLICATE": "That recurring transaction already exists",
+    "RECURRENCE_SCHEDULE_INVALID": "Check the repeat interval and dates",
+    "RECURRENCE_CURRENCY_MISMATCH": "All accounts in a recurring transaction must use one currency",
     "unknown": "Something went wrong"
   },
   "months": {

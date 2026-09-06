@@ -239,6 +239,31 @@
     "searchAria": "חיפוש {{label}}",
     "noMatch": "לא נמצאו חשבונות תואמים"
   },
+  "recurring": {
+    "title": "תנועות חוזרות",
+    "backToDashboard": "חזרה למסך הבית",
+    "couldNotLoad": "לא ניתן לטעון את התנועות החוזרות.",
+    "dueTitle": "ממתינות לרישום",
+    "rulesTitle": "כללים",
+    "empty": "אין עדיין תנועות חוזרות.",
+    "add": "הוספת תנועה חוזרת",
+    "post": "רישום",
+    "edit": "עריכה",
+    "skip": "דילוג",
+    "defer": "אחר כך",
+    "pending": "ממתין",
+    "paused": "מושהה",
+    "next": "הבא",
+    "everyWeek_one": "כל שבוע",
+    "everyWeek_two": "כל שבועיים",
+    "everyWeek_other": "כל {{count}} שבועות",
+    "everyMonth_one": "כל חודש",
+    "everyMonth_two": "כל חודשיים",
+    "everyMonth_other": "כל {{count}} חודשים",
+    "everyYear_one": "כל שנה",
+    "everyYear_two": "כל שנתיים",
+    "everyYear_other": "כל {{count}} שנים"
+  },
   "errors": {
     "ACCOUNT_NAME_INVALID": "נא להזין שם חשבון",
     "ACCOUNT_NAME_DUPLICATE": "שם החשבון הזה כבר בשימוש כאן",
@@ -279,6 +304,10 @@
     "SYNC_ENVELOPE_INVALID": "לא ניתן לקרוא את העותק ב-Drive.",
     "SYNC_FORMAT_UNSUPPORTED": "העותק ב-Drive דורש גרסה חדשה יותר של האפליקציה.",
     "SYNC_MERGE_CONFLICT": "לא ניתן היה למזג את הספרים אוטומטית.",
+    "RECURRENCE_NOT_FOUND": "התנועה החוזרת לא נמצאה",
+    "RECURRENCE_ID_DUPLICATE": "התנועה החוזרת כבר קיימת",
+    "RECURRENCE_SCHEDULE_INVALID": "בדקו את מרווח החזרה ואת התאריכים",
+    "RECURRENCE_CURRENCY_MISMATCH": "כל החשבונות בתנועה חוזרת חייבים להיות באותו מטבע",
     "unknown": "משהו השתבש"
   },
   "months": {

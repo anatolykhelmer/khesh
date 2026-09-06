@@ -14,6 +14,7 @@ import { DashboardScreen } from "./screens/DashboardScreen";
 import { EntryDetailScreen } from "./screens/EntryDetailScreen";
 import { JournalScreen } from "./screens/JournalScreen";
 import { OnboardingScreen } from "./screens/OnboardingScreen";
+import { RecurringScreen } from "./screens/RecurringScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { StatsScreen } from "./screens/StatsScreen";
 import { TransferFormScreen } from "./screens/TransferFormScreen";
@@ -30,6 +31,7 @@ function Shell() {
           <Route path="/budget" element={<BudgetScreen />} />
           <Route path="/budget/new" element={<BudgetFormScreen />} />
           <Route path="/budget/edit" element={<BudgetEditScreen />} />
+          <Route path="/recurring" element={<RecurringScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
           <Route path="/accounts" element={<AccountsScreen />} />
           <Route path="/accounts/new" element={<AccountFormScreen />} />

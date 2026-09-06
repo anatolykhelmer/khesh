@@ -159,6 +159,46 @@ function periodSigned(
   return signedAmount(account.type, debit, credit);
 }
 
+/**
+ * Signed turnover of one account within an inclusive date range, in the same shape
+ * `balance` returns. A leaf yields one amount in its own currency; a group buckets its
+ * non-placeholder descendants by currency and omits currencies that net to zero.
+ * Additive beside `balance`/`balanceAsOf`: those answer "up to a date", this answers
+ * "inside a period", which is what income and expense rows show.
+ */
+export function balanceInRange(
+  book: Book,
+  accountId: string,
+  range: { from: string; to: string },
+): Result<AccountBalance> {
+  if (!isCalendarDate(range.from)) {
+    return err("ENTRY_DATE_INVALID", `Invalid date ${range.from}`, { date: range.from });
+  }
+  if (!isCalendarDate(range.to)) {
+    return err("ENTRY_DATE_INVALID", `Invalid date ${range.to}`, { date: range.to });
+  }
+
+  const account = findAccount(book, accountId);
+  if (!account) return err("ACCOUNT_NOT_FOUND", "Account not found", { id: accountId });
+
+  if (!account.isPlaceholder) {
+    return ok({
+      kind: "leaf",
+      currency: account.currency,
+      amount: periodSigned(book, account, range),
+    });
+  }
+
+  const balances: Record<CurrencyCode, number> = {};
+  for (const child of descendants(book, accountId)) {
+    if (child.isPlaceholder) continue;
+    const signed = periodSigned(book, child, range);
+    if (signed === 0) continue;
+    balances[child.currency] = (balances[child.currency] ?? 0) + signed;
+  }
+  return ok({ kind: "placeholder", balances });
+}
+
 export type PeriodTotals = Record<CurrencyCode, { income: MinorUnits; expense: MinorUnits }>;
 
 export function periodTotals(

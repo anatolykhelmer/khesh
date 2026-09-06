@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { deleteAccount } from "../../src/kernel/accounts";
 import { mergeBooks } from "../../src/kernel/merge";
 import { createBook } from "../../src/kernel/create-book";
 import { createRecurrence, deleteRecurrence, updateRecurrence } from "../../src/kernel/recurrences";
@@ -61,6 +62,22 @@ describe("merging recurrences", () => {
     );
     const merged = unwrap(mergeBooks(a, b));
     expect(merged.recurrences).toEqual([]);
+    expect(unwrap(validateBook(merged))).toBe(true);
+  });
+
+  it("restores an account a surviving rule still references", () => {
+    const base = seeded();
+    // Device A deletes "rent" without ever seeing the rule; device B creates a rule
+    // that posts to it and never touches the account. Rung 1 must restore "rent" from
+    // A's tombstone so the rule B still holds keeps referencing a live account.
+    const a = unwrap(deleteAccount(base, "rent", LATER));
+    const b = unwrap(createRecurrence(base, { ...input, id: "r1" }, NOW));
+    const merged = unwrap(mergeBooks(a, b));
+    expect(merged.accounts.some((account) => account.id === "rent")).toBe(true);
+    expect(merged.recurrences.map((r) => r.id)).toEqual(["r1"]);
+    // A resurrected record must not leave its tombstone behind — validateBook rejects
+    // that shadowing.
+    expect(merged.tombstones.some((t) => t.kind === "account" && t.key === "rent")).toBe(false);
     expect(unwrap(validateBook(merged))).toBe(true);
   });
 

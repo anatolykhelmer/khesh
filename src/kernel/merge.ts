@@ -324,10 +324,11 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
   const typeById = new Map(draft.accounts.map((a) => [a.id, a.type]));
   draft.budgets = draft.budgets.filter((b) => typeById.get(b.accountId) === "expense");
 
-  // 7. A recurrence is only postable while every account it touches is a leaf and they
-  //    all share one currency. Rung 1 has restored the accounts, so this drops exactly the
-  //    rules a concurrent retype or currency change made impossible — the same treatment
-  //    rung 6 gives a budget whose account stopped being an expense.
+  // 7. A recurrence is only postable while every account it touches is not a placeholder
+  //    and they all share one currency. Rung 1 has restored the accounts, so this drops
+  //    exactly the rules a concurrent retype-to-placeholder or currency change made
+  //    impossible — the same treatment rung 6 gives a budget whose account stopped being
+  //    an expense.
   const accountById = new Map(draft.accounts.map((a) => [a.id, a]));
   draft.recurrences = draft.recurrences.filter((rule) => {
     const involved = [rule.fromAccountId, ...rule.lines.map((line) => line.toAccountId)];
@@ -435,8 +436,21 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
       draft.journal.push(structuredClone(claim.record) as JournalEntry);
     } else if (kind === "budget") {
       draft.budgets.push(structuredClone(claim.record) as Budget);
-    } else {
+    } else if (kind === "recurrence") {
       draft.recurrences.push(structuredClone(claim.record) as Recurrence);
+    } else {
+      // `kind` is derived from a string slice and cast, so tsc cannot flag a missing
+      // branch above the way it can an exhaustive switch — but it can flag this one:
+      // the four checks above narrow `kind` to `never` here as long as `TombstoneKind`
+      // stays a four-member union, so a fifth member fails `tsc --noEmit` right on this
+      // line rather than compiling into the silent-miscategorization bug Task 2 closed
+      // for `recurrence` (a claim of the new kind filed into `draft.recurrences` as a
+      // structurally invalid record, then quietly dropped by whichever repair rung
+      // notices first). Unreachable from any data today; reachable only by a future
+      // `TombstoneKind` widening, and it is that future task's own build and tests that
+      // hit it — not a user's sync.
+      const exhaustive: never = kind;
+      throw new Error(`mergeBooks: unhandled live claim kind "${String(exhaustive)}"`);
     }
   }
 

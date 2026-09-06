@@ -68,7 +68,14 @@ export function RecurringScreen() {
                 </span>
                 <span className="muted">
                   {scheduleLabel(rule.every, rule.unit)}
-                  {rule.paused ? ` · ${t("recurring.paused")}` : rule.next ? ` · ${t("recurring.next")} ${formatDate(rule.next)}` : ""}
+                  {rule.paused ? (
+                    <> · {t("recurring.paused")}</>
+                  ) : rule.next ? (
+                    <>
+                      {" · "}
+                      {t("recurring.next")} <Ltr>{formatDate(rule.next)}</Ltr>
+                    </>
+                  ) : null}
                 </span>
               </Link>
             </li>

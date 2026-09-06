@@ -45,6 +45,11 @@ describe("nextOccurrence", () => {
   it("is the start date for a rule that has not begun", () => {
     expect(nextOccurrence(withRule({ startDate: "2026-09-01" }).recurrences[0], TODAY)).toBe("2026-09-01");
   });
+
+  it("is the start date for a rule starting well beyond the search horizon", () => {
+    const rule = withRule({ unit: "year", every: 1, startDate: "2029-06-15" }).recurrences[0];
+    expect(nextOccurrence(rule, TODAY)).toBe("2029-06-15");
+  });
 });
 
 describe("ruleRows", () => {

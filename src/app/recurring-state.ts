@@ -19,6 +19,10 @@ export type RuleRow = {
  */
 export function nextOccurrence(rule: Recurrence, today: string): string | null {
   if (rule.pausedAt !== null) return null;
+  // A rule that has not started yet has an exactly known next occurrence and needs no
+  // search: its own start date. Searching for it would report `null` — "this rule has
+  // run out" — whenever the start lies beyond the horizon below, which nothing forbids.
+  if (rule.startDate > today) return rule.startDate;
   const horizon = shiftMonths(today, 12 * rule.every + 12);
   const to = rule.endDate !== null && rule.endDate < horizon ? rule.endDate : horizon;
   const dates = occurrencesBetween(rule.startDate, rule.every, rule.unit, today, to);

@@ -143,6 +143,7 @@
     "title": "Accounts",
     "couldNotLoad": "Could not load accounts.",
     "addAccount": "Add account",
+    "balanceSection": "Balance",
     "rootAssets": "Assets",
     "rootLiabilities": "Liabilities",
     "rootIncome": "Income",

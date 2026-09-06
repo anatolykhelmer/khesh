@@ -145,6 +145,7 @@
     "title": "חשבונות",
     "couldNotLoad": "לא ניתן היה לטעון את החשבונות.",
     "addAccount": "הוספת חשבון",
+    "balanceSection": "יתרה",
     "rootAssets": "נכסים",
     "rootLiabilities": "התחייבויות",
     "rootIncome": "הכנסות",

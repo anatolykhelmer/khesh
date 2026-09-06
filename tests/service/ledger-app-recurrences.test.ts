@@ -50,9 +50,13 @@ describe("recurrences through LedgerApp", () => {
   });
 
   it("a due row is not money: balances ignore it entirely", async () => {
-    const { app, book, rent } = await withRule();
-    expect(app.dueRows(book, TODAY).length).toBeGreaterThan(0);
-    expect(leafAmount(book, rent.id)).toBe(0);
+    const { app, book, rent, ruleId } = await withRule();
+    // Post one genuine occurrence, so the account carries a specific, non-zero balance —
+    // then confirm the *other* occurrences still sitting in the queue never touch it.
+    const posted = unwrap(await app.postOccurrence(book, ruleId, "2026-04-01"));
+    const rows = app.dueRows(posted, TODAY);
+    expect(rows.map((r) => r.date)).toEqual(["2026-05-01", "2026-06-01"]);
+    expect(leafAmount(posted, rent.id)).toBe(300000);
   });
 
   it("posts one occurrence under its deterministic id and removes it from the queue", async () => {

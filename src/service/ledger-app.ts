@@ -565,6 +565,9 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
           fromAccountId: rule.fromAccountId,
           lines: rule.lines.map((line) => ({ ...line })),
         };
+        // A rule that cannot produce a valid entry (e.g. an account it referenced is
+        // gone) has nothing to offer the user — skip the row rather than throw.
+        if (invalidEntryInput(book, input)) continue;
         const shape = entryShape(book, input);
         rows.push({
           ...occurrence,

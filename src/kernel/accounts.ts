@@ -193,11 +193,19 @@ export function deleteAccount(book: Book, id: string, now: string): Result<Book>
   const next = cloneBook(book);
   next.accounts = next.accounts.filter((item) => item.id !== id);
   addTombstone(next, "account", id, account, now);
-  // A limit without its account is meaningless, so it goes with the account.
+  // A limit without its account, or a rule that posts to a deleted account, is
+  // meaningless — both go with the account.
   const removedBudgets = next.budgets.filter((budget) => budget.accountId === id);
   next.budgets = next.budgets.filter((budget) => budget.accountId !== id);
   for (const budget of removedBudgets) {
     addTombstone(next, "budget", budgetKeyOf(budget), budget, now);
+  }
+  const touchesAccount = (rule: (typeof next.recurrences)[number]) =>
+    rule.fromAccountId === id || rule.lines.some((line) => line.toAccountId === id);
+  const removedRecurrences = next.recurrences.filter(touchesAccount);
+  next.recurrences = next.recurrences.filter((rule) => !touchesAccount(rule));
+  for (const rule of removedRecurrences) {
+    addTombstone(next, "recurrence", rule.id, rule, now);
   }
   return ok(next);
 }

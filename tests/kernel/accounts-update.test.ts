@@ -1,5 +1,7 @@
 import { createAccount, deleteAccount, updateAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
+import { createRecurrence } from "../../src/kernel/recurrences";
+import { validateBook } from "../../src/kernel/validate";
 import { NOW, unwrap, unwrapErr } from "../helpers";
 import type { Book } from "../../src/kernel/types";
 
@@ -101,5 +103,41 @@ describe("deleteAccount", () => {
   it("rejects unknown id", () => {
     const { book } = bookWithAssets();
     expect(unwrapErr(deleteAccount(book, "nope", NOW)).code).toBe("ACCOUNT_NOT_FOUND");
+  });
+
+  it("takes with it any rule that posts to the deleted account, leaving a book that still validates", () => {
+    const { book, cashId } = bookWithAssets();
+    const withExpense = unwrap(
+      createAccount(
+        book,
+        { parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false },
+        NOW,
+      ),
+    );
+    const rentId = withExpense.accounts[withExpense.accounts.length - 1].id;
+    const withRule = unwrap(
+      createRecurrence(
+        withExpense,
+        {
+          description: "Rent",
+          fromAccountId: cashId,
+          lines: [{ toAccountId: rentId, amount: 300000 }],
+          every: 1,
+          unit: "month",
+          startDate: "2026-01-01",
+          endDate: null,
+        },
+        NOW,
+      ),
+    );
+    const ruleId = withRule.recurrences[0].id;
+
+    const next = unwrap(deleteAccount(withRule, cashId, NOW));
+
+    expect(next.recurrences).toEqual([]);
+    expect(next.tombstones.some((t) => t.kind === "recurrence" && t.key === ruleId)).toBe(true);
+    // The point of the whole fix: a book that used to fail validation (BL-023's sharp
+    // edge — a book that fails to validate falls through to onboarding) now loads clean.
+    expect(unwrap(validateBook(next))).toBe(true);
   });
 });

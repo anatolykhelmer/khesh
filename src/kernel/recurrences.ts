@@ -4,6 +4,8 @@ import { createId } from "./ids";
 import { err, ok, type Result } from "./result";
 import { addTombstone, clearTombstone } from "./tombstones";
 import type { Book, Recurrence, RecurrenceLine, RecurrenceUnit } from "./types";
+import { occurrencesBetween, shiftMonths } from "./recurrence-dates";
+import { RECURRENCE_WINDOW_MONTHS } from "./occurrences";
 
 const UNITS = new Set<RecurrenceUnit>(["week", "month", "year"]);
 
@@ -143,4 +145,91 @@ export function deleteRecurrence(book: Book, id: string, now: string): Result<Bo
   next.recurrences.splice(index, 1);
   addTombstone(next, "recurrence", id, removed, now);
   return ok(next);
+}
+
+/** Dates the queue can no longer reach are dropped, so these lists stay bounded however
+ * long the book lives. Sorted and de-duplicated so the record has one canonical form. */
+function bounded(dates: readonly string[], today: string): string[] {
+  const windowStart = shiftMonths(today, -RECURRENCE_WINDOW_MONTHS);
+  return [...new Set(dates.filter((date) => date >= windowStart))].sort();
+}
+
+function withRule(
+  book: Book,
+  ruleId: string,
+  change: (rule: Recurrence) => Recurrence,
+  now: string,
+): Result<Book> {
+  const index = book.recurrences.findIndex((rule) => rule.id === ruleId);
+  if (index === -1) {
+    return err("RECURRENCE_NOT_FOUND", "Recurrence not found", { id: ruleId });
+  }
+  const next = cloneBook(book);
+  next.recurrences[index] = { ...change(next.recurrences[index]), updatedAt: now };
+  return ok(next);
+}
+
+/** Dismiss one occurrence for good. */
+export function skipOccurrence(
+  book: Book,
+  ruleId: string,
+  date: string,
+  today: string,
+  now: string,
+): Result<Book> {
+  return withRule(
+    book,
+    ruleId,
+    (rule) => ({ ...rule, skipped: bounded([...rule.skipped, date], today) }),
+    now,
+  );
+}
+
+/** Hide one occurrence from the Dashboard card; it stays pending in the journal. */
+export function deferOccurrence(
+  book: Book,
+  ruleId: string,
+  date: string,
+  today: string,
+  now: string,
+): Result<Book> {
+  return withRule(
+    book,
+    ruleId,
+    (rule) => ({ ...rule, deferred: bounded([...rule.deferred, date], today) }),
+    now,
+  );
+}
+
+/**
+ * Pause or resume. While `pausedAt` is set the rule yields nothing at all.
+ *
+ * Resuming does not replay the pause: every occurrence date inside `[pausedAt, today]` is
+ * written into `skipped` in the same command that clears `pausedAt`. That is what the word
+ * promises — while a rule is paused, nothing is owed. Occurrences that were already pending
+ * *before* the pause are untouched, so pausing is not a way to clear a backlog.
+ *
+ * One write at resume time, so nothing accrues per device while the pause lasts, and both
+ * fields travel together inside a single rule claim through a merge.
+ */
+export function setRecurrencePaused(
+  book: Book,
+  ruleId: string,
+  paused: boolean,
+  today: string,
+  now: string,
+): Result<Book> {
+  return withRule(
+    book,
+    ruleId,
+    (rule) => {
+      if (paused) return { ...rule, pausedAt: today };
+      if (rule.pausedAt === null) return rule;
+      const from = rule.pausedAt;
+      const to = rule.endDate !== null && rule.endDate < today ? rule.endDate : today;
+      const span = occurrencesBetween(rule.startDate, rule.every, rule.unit, from, to);
+      return { ...rule, pausedAt: null, skipped: bounded([...rule.skipped, ...span], today) };
+    },
+    now,
+  );
 }

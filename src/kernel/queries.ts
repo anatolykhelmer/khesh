@@ -10,6 +10,7 @@ import type {
   Budget,
   BudgetPeriod,
   CurrencyCode,
+  JournalEntry,
   MinorUnits,
   TrialBalance,
 } from "./types";
@@ -438,10 +439,29 @@ export function budgetReport(
   return ok({ period, rows, unbudgeted });
 }
 
-export function journal(
-  book: Book,
-  filter?: { from?: string; to?: string; accountId?: string },
-): Result<Book["journal"]> {
+export type JournalFilter = { from?: string; to?: string; accountId?: string };
+
+/** The account ids a filter covers, or null for "every account". A group holds no
+ * postings of its own, so filtering by one means its whole subtree. */
+export function journalScope(book: Book, accountId: string | undefined): Set<string> | null {
+  if (accountId === undefined) return null;
+  return new Set([accountId, ...descendants(book, accountId).map((a) => a.id)]);
+}
+
+/** Whether one row belongs in a filtered journal. Shared with the pending rows the app
+ * merges in, so a virtual row obeys the filter by exactly the code a real entry does. */
+export function matchesJournalFilter(
+  entry: Pick<JournalEntry, "date" | "postings">,
+  filter: JournalFilter | undefined,
+  scope: Set<string> | null,
+): boolean {
+  if (filter?.from && entry.date < filter.from) return false;
+  if (filter?.to && entry.date > filter.to) return false;
+  if (scope && !entry.postings.some((p) => scope.has(p.accountId))) return false;
+  return true;
+}
+
+export function journal(book: Book, filter?: JournalFilter): Result<Book["journal"]> {
   if (filter?.from !== undefined && !isCalendarDate(filter.from)) {
     return err("ENTRY_DATE_INVALID", `Invalid date ${filter.from}`, { date: filter.from });
   }
@@ -452,18 +472,8 @@ export function journal(
     return err("ACCOUNT_NOT_FOUND", "Account not found", { id: filter.accountId });
   }
 
-  // A group holds no postings of its own, so filtering by one means its whole subtree.
-  const scope =
-    filter?.accountId === undefined
-      ? null
-      : new Set([filter.accountId, ...descendants(book, filter.accountId).map((a) => a.id)]);
-
-  const rows = book.journal.filter((entry) => {
-    if (filter?.from && entry.date < filter.from) return false;
-    if (filter?.to && entry.date > filter.to) return false;
-    if (scope && !entry.postings.some((p) => scope.has(p.accountId))) return false;
-    return true;
-  });
+  const scope = journalScope(book, filter?.accountId);
+  const rows = book.journal.filter((entry) => matchesJournalFilter(entry, filter, scope));
   rows.sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? 1 : -1;
     return a.id < b.id ? 1 : -1;

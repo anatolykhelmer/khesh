@@ -28,8 +28,8 @@ export { descendants } from "./book-utils";
 export { validateBook } from "./validate";
 export { EPOCH, normalizeBook } from "./normalize";
 export type { StoredBook } from "./normalize";
-export { accountPath, balance, balanceAsOf, balanceInRange, budgetReport, chart, journal, periodBreakdown, periodTotals, trialBalance } from "./queries";
-export type { BudgetReport, BudgetRow, PeriodBreakdown, PeriodSlice, PeriodTotals } from "./queries";
+export { accountPath, balance, balanceAsOf, balanceInRange, budgetReport, chart, journal, journalScope, matchesJournalFilter, periodBreakdown, periodTotals, trialBalance } from "./queries";
+export type { BudgetReport, BudgetRow, JournalFilter, PeriodBreakdown, PeriodSlice, PeriodTotals } from "./queries";
 export type {
   Account,
   AccountBalance,

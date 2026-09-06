@@ -102,4 +102,42 @@ describe("setRecurrencePaused", () => {
     const resumed = unwrap(setRecurrencePaused(paused, "r1", false, "2026-08-15", LATER));
     expect(unwrap(validateBook(resumed))).toBe(true);
   });
+
+  it("re-pausing keeps the original pause start, so all occurrences during the true pause are closed", () => {
+    // Create a weekly rule: 2026-04-01 (Wed) + weekly = 04-01, 04-08, 04-15, 04-22, ...
+    const book = unwrap(createBook({ name: "Household", homeCurrency: "ILS" }, NOW));
+    book.accounts = [
+      { id: "bank", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+      { id: "bill", parentId: null, name: "Bill", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    ];
+    const withWeekly = unwrap(
+      createRecurrence(
+        book,
+        {
+          id: "r2",
+          description: "Weekly bill",
+          fromAccountId: "bank",
+          lines: [{ toAccountId: "bill", amount: 100000 }],
+          every: 1,
+          unit: "week",
+          startDate: "2026-04-01",
+          endDate: null,
+        },
+        NOW,
+      ),
+    );
+    // Pause at 04-05, pause again at 04-10 (this overwrites pausedAt if not guarded)
+    const pausedFirst = unwrap(setRecurrencePaused(withWeekly, "r2", true, "2026-04-05", LATER));
+    expect(pausedFirst.recurrences[0].pausedAt).toBe("2026-04-05");
+    const pausedAgain = unwrap(setRecurrencePaused(pausedFirst, "r2", true, "2026-04-10", LATER));
+    // With the bug, pausedAt would become 2026-04-10. With the fix, it stays 2026-04-05.
+    expect(pausedAgain.recurrences[0].pausedAt).toBe("2026-04-05");
+    // Resume at 04-20
+    const resumed = unwrap(setRecurrencePaused(pausedAgain, "r2", false, "2026-04-20", LATER));
+    // Pause span is [04-05, 04-20]. Occurrences: 04-01 (before), 04-08 (inside), 04-15 (inside), 04-22 (after).
+    // 04-01 was already pending before the pause.
+    // 04-08 and 04-15 fall inside the pause and are closed.
+    // 04-22 is after the resume date.
+    expect(dueOccurrences(resumed, "2026-04-20").map((o) => o.date)).toEqual(["2026-04-01"]);
+  });
 });

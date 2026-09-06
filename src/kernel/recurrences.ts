@@ -223,7 +223,10 @@ export function setRecurrencePaused(
     book,
     ruleId,
     (rule) => {
-      if (paused) return { ...rule, pausedAt: today };
+      if (paused)
+        // The pause start is what the resume span is measured from, so the first pause wins.
+        // Re-pausing with a different today would forgive less (or more) than the pause actually covered.
+        return rule.pausedAt === null ? { ...rule, pausedAt: today } : rule;
       if (rule.pausedAt === null) return rule;
       const from = rule.pausedAt;
       const to = rule.endDate !== null && rule.endDate < today ? rule.endDate : today;

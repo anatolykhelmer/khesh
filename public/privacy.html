@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f5f2" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#15130f" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Khesh - Privacy Policy</title>
+    <style>
+      /* Palette copied from src/app/styles/tokens.css. This page must render without
+         the bundle, so it cannot import the tokens or the Heebo font the app loads
+         through @fontsource-variable. */
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f5f2;
+        --surface: #ffffff;
+        --ink: #1c1917;
+        --ink-muted: #6d655e;
+        --line: #e7e2dc;
+        --accent: #7c3aed;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15130f;
+          --surface: #211e19;
+          --ink: #f5f3f0;
+          --ink-muted: #948c82;
+          --line: #332f28;
+          --accent: #c4b5fd;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px 16px 48px;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 15px;
+        line-height: 1.6;
+      }
+
+      main {
+        max-width: 42rem;
+        margin: 0 auto;
+      }
+
+      .brand {
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-muted);
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 1.75rem;
+        margin: 8px 0 4px;
+      }
+
+      h2 {
+        font-size: 1.0625rem;
+        margin: 32px 0 8px;
+      }
+
+      .updated {
+        color: var(--ink-muted);
+        margin: 0 0 24px;
+      }
+
+      ul {
+        padding-inline-start: 20px;
+        margin: 8px 0;
+      }
+
+      li {
+        margin-bottom: 8px;
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      code {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-size: 0.9em;
+      }
+
+      footer {
+        margin-top: 40px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        color: var(--ink-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="brand">Khesh</p>
+      <h1>Privacy policy</h1>
+      <p class="updated">Last updated: 6 September 2026</p>
+
+      <p>
+        Khesh is a household ledger that runs entirely in your browser. There are no accounts
+        to create, no server of ours behind it, no telemetry, no cookies and no advertising.
+        Your book stays on your device unless you export it yourself or connect the optional
+        Google Drive sync - in which case it goes to your own Google Drive and nowhere else.
+      </p>
+
+      <h2>What stays on your device</h2>
+      <ul>
+        <li>
+          The book itself - accounts, journal entries, budgets, amounts, currencies and every
+          name you type - in the browser's IndexedDB storage.
+        </li>
+        <li>The interface language, in <code>localStorage</code>.</li>
+        <li>
+          If you connect sync: whether sync is connected, the id of the file it created in your
+          Drive, the email address of the connected Google account and the time of the last
+          sync, in a separate IndexedDB database named <code>khesh-sync</code>.
+        </li>
+      </ul>
+      <p>
+        None of this is sent to us; there is no server of ours to send it to. Clearing the
+        site's data in your browser removes all of it.
+      </p>
+
+      <h2>Optional Google Drive sync</h2>
+      <p>Sync is off until you connect it in Settings. When you do:</p>
+      <ul>
+        <li>
+          Khesh requests a single scope, <code>drive.file</code>. That scope covers only the
+          files the app itself creates - the one <code>khesh-book.json</code> it writes. The
+          rest of your Drive stays invisible to it.
+        </li>
+        <li>
+          Your book is stored in that file as plain, unencrypted JSON in your own Google Drive.
+          Anyone with access to that Drive account can read it. Google's own terms and privacy
+          policy govern the copy stored there.
+        </li>
+        <li>
+          Khesh reads the connected account's email address once, from Google's Drive API, so
+          that Settings can show which account is in use. It is kept on your device only.
+        </li>
+        <li>
+          The access token authorizing these requests is held in memory for as long as the tab
+          is open and is never written to storage. There is no refresh token and no session on
+          any server.
+        </li>
+      </ul>
+
+      <h2>Limited use</h2>
+      <p>
+        Khesh's use and transfer of information received from Google APIs to any other app
+        adheres to the
+        <a href="https://developers.google.com/terms/api-services-user-data-policy"
+          >Google API Services User Data Policy</a
+        >, including the Limited Use requirements. In practice nothing is transferred at all:
+        your data moves between your browser and your own Google Drive, and no copy reaches us
+        or any third party.
+      </p>
+
+      <h2>Deleting your data and revoking access</h2>
+      <ul>
+        <li>
+          <strong>Disconnect</strong> in Settings stops syncing and forgets the connection on
+          this device. The file in your Drive stays where it is.
+        </li>
+        <li>
+          Delete <code>khesh-book.json</code> in your Google Drive to remove the synced copy.
+        </li>
+        <li>
+          Revoke Khesh's access to your Google account at
+          <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a
+          >.
+        </li>
+        <li>
+          Clear the site's data in your browser, or uninstall the app, to remove the book and
+          everything listed above from the device. Export a backup from Settings first if you
+          want to keep it.
+        </li>
+      </ul>
+
+      <h2>Hosting and logs</h2>
+      <p>
+        The app's files are served as static files by Vercel, which - like any web host -
+        records ordinary request information such as IP address and user agent. Khesh adds no
+        analytics, no tracking pixels and no third-party scripts beyond Google Identity
+        Services, which loads only if you connect sync. Those host logs are not combined with
+        anything else.
+      </p>
+
+      <h2>Changes to this policy</h2>
+      <p>
+        If this policy changes, the date above changes with it. The page is part of the app's
+        public source code, so its full history is visible in the repository.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about this policy or about the app's data handling:
+        <a href="https://github.com/anatolykhelmer/khesh/issues"
+          >github.com/anatolykhelmer/khesh/issues</a
+        >.
+      </p>
+
+      <footer>
+        <p><a href="/">Back to Khesh</a></p>
+      </footer>
+    </main>
+  </body>
+</html>

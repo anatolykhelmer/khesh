@@ -3,6 +3,7 @@ import { isCalendarDate } from "./dates";
 import { validatePostings, type PostingInput } from "./entry-validation";
 import { createId } from "./ids";
 import { err, ok, type Result } from "./result";
+import { addTombstone } from "./tombstones";
 import type { Book, FxSpec } from "./types";
 
 export function postEntry(
@@ -13,6 +14,7 @@ export function postEntry(
     postings: PostingInput[];
     fx?: FxSpec;
   },
+  now: string,
 ): Result<Book> {
   if (!isCalendarDate(input.date)) {
     return err("ENTRY_DATE_INVALID", `Invalid date ${input.date}`, { date: input.date });
@@ -28,6 +30,7 @@ export function postEntry(
     kind: "standard",
     postings: input.postings.map((posting) => ({ ...posting })),
     ...(input.fx ? { fx: { ...input.fx } } : {}),
+    updatedAt: now,
   });
   return ok(next);
 }
@@ -41,6 +44,7 @@ export function updateEntry(
     postings?: PostingInput[];
     fx?: FxSpec | null;
   },
+  now: string,
 ): Result<Book> {
   const existing = book.journal.find((entry) => entry.id === input.id);
   if (!existing) {
@@ -67,6 +71,7 @@ export function updateEntry(
     date,
     description,
     postings: postings.map((posting) => ({ ...posting })),
+    updatedAt: now,
   };
   if (fx) updated.fx = { ...fx };
   else delete updated.fx;
@@ -74,11 +79,13 @@ export function updateEntry(
   return ok(next);
 }
 
-export function deleteEntry(book: Book, id: string): Result<Book> {
-  if (!book.journal.some((entry) => entry.id === id)) {
+export function deleteEntry(book: Book, id: string, now: string): Result<Book> {
+  const entry = book.journal.find((item) => item.id === id);
+  if (!entry) {
     return err("ENTRY_NOT_FOUND", "Journal entry not found", { id });
   }
   const next = cloneBook(book);
-  next.journal = next.journal.filter((entry) => entry.id !== id);
+  next.journal = next.journal.filter((item) => item.id !== id);
+  addTombstone(next, "entry", id, entry, now);
   return ok(next);
 }

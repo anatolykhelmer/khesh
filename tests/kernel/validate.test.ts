@@ -3,11 +3,11 @@ import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { validateBook } from "../../src/kernel/validate";
 import type { Book } from "../../src/kernel/types";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 describe("validateBook", () => {
   it("accepts a valid book", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -15,7 +15,7 @@ describe("validateBook", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -24,7 +24,7 @@ describe("validateBook", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       postEntry(book, {
@@ -34,13 +34,13 @@ describe("validateBook", () => {
           { accountId: book.accounts[1].id, side: "debit", amount: 1 },
           { accountId: book.accounts[0].id, side: "credit", amount: 1 },
         ],
-      }),
+      }, NOW),
     );
     expect(unwrap(validateBook(book))).toBe(true);
   });
 
   it("reports ACCOUNT_ID_DUPLICATE for duplicate account ids", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book.accounts.push(
       {
         id: "dup",
@@ -49,6 +49,7 @@ describe("validateBook", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
+        updatedAt: NOW,
       },
       {
         id: "dup",
@@ -57,6 +58,7 @@ describe("validateBook", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
+        updatedAt: NOW,
       },
     );
     const error = unwrapErr(validateBook(book));
@@ -65,7 +67,7 @@ describe("validateBook", () => {
   });
 
   it("reports ENTRY_ID_DUPLICATE for duplicate journal ids", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book.journal.push(
       {
         id: "dup",
@@ -73,6 +75,7 @@ describe("validateBook", () => {
         description: "A",
         kind: "standard",
         postings: [],
+        updatedAt: NOW,
       },
       {
         id: "dup",
@@ -80,6 +83,7 @@ describe("validateBook", () => {
         description: "B",
         kind: "standard",
         postings: [],
+        updatedAt: NOW,
       },
     );
     const error = unwrapErr(validateBook(book));
@@ -88,7 +92,7 @@ describe("validateBook", () => {
   });
 
   it("collects multiple violations", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book.accounts.push(
       {
         id: "a1",
@@ -97,6 +101,7 @@ describe("validateBook", () => {
         type: "asset",
         currency: "ils",
         isPlaceholder: false,
+        updatedAt: NOW,
       },
       {
         id: "a1",
@@ -105,6 +110,7 @@ describe("validateBook", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
+        updatedAt: NOW,
       },
     );
     const error = unwrapErr(validateBook(book));
@@ -116,7 +122,7 @@ describe("validateBook", () => {
 
 describe("validateBook budgets", () => {
   function fixture() {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
 
     book = unwrap(
       createAccount(book, {
@@ -125,7 +131,7 @@ describe("validateBook budgets", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, NOW),
     );
     const expensesId = book.accounts[book.accounts.length - 1].id;
 
@@ -136,7 +142,7 @@ describe("validateBook budgets", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     const foodId = book.accounts[book.accounts.length - 1].id;
 
@@ -147,7 +153,7 @@ describe("validateBook budgets", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     const cashId = book.accounts[book.accounts.length - 1].id;
 

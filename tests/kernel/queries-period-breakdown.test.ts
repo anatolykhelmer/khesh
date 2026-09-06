@@ -2,12 +2,12 @@ import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { periodBreakdown, periodTotals } from "../../src/kernel/queries";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 const RANGE = { from: "2026-08-01", to: "2026-08-31" };
 
 function tree() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
   book = unwrap(
     createAccount(book, {
       parentId: null,
@@ -15,7 +15,7 @@ function tree() {
       type: "asset",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -24,7 +24,7 @@ function tree() {
       type: "asset",
       currency: "USD",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -33,7 +33,7 @@ function tree() {
       type: "income",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -42,7 +42,7 @@ function tree() {
       type: "expense",
       currency: "ILS",
       isPlaceholder: true,
-    }),
+    }, NOW),
   );
   const cash = book.accounts[0].id;
   const usdCash = book.accounts[1].id;
@@ -55,7 +55,7 @@ function tree() {
       type: "expense",
       currency: "ILS",
       isPlaceholder: true,
-    }),
+    }, NOW),
   );
   const food = book.accounts[4].id;
   book = unwrap(
@@ -65,7 +65,7 @@ function tree() {
       type: "expense",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -74,7 +74,7 @@ function tree() {
       type: "expense",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -83,7 +83,7 @@ function tree() {
       type: "expense",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -92,7 +92,7 @@ function tree() {
       type: "expense",
       currency: "USD",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   return {
     book,
@@ -123,7 +123,7 @@ function spend(
         { accountId: expenseId, side: "debit", amount },
         { accountId: assetId, side: "credit", amount },
       ],
-    }),
+    }, NOW),
   );
 }
 
@@ -238,7 +238,7 @@ describe("periodBreakdown", () => {
           { accountId: t.cash, side: "debit", amount: 500 },
           { accountId: t.groceries, side: "credit", amount: 500 },
         ],
-      }),
+      }, NOW),
     );
     const result = unwrap(periodBreakdown(t.book, RANGE, t.expenses));
     expect(result.total).toBe(9500);

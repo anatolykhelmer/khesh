@@ -2,11 +2,11 @@ import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { journal, trialBalance } from "../../src/kernel/queries";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 describe("trialBalance and journal", () => {
   it("same-currency trial balance totals match", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -14,7 +14,7 @@ describe("trialBalance and journal", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -23,7 +23,7 @@ describe("trialBalance and journal", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       postEntry(book, {
@@ -33,7 +33,7 @@ describe("trialBalance and journal", () => {
           { accountId: book.accounts[1].id, side: "debit", amount: 3000 },
           { accountId: book.accounts[0].id, side: "credit", amount: 3000 },
         ],
-      }),
+      }, NOW),
     );
     const tb = unwrap(trialBalance(book));
     expect(tb.asOf).toBeNull();
@@ -43,7 +43,7 @@ describe("trialBalance and journal", () => {
   });
 
   it("FX trial balance totals may differ", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -51,7 +51,7 @@ describe("trialBalance and journal", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -60,7 +60,7 @@ describe("trialBalance and journal", () => {
         type: "asset",
         currency: "USD",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       postEntry(book, {
@@ -70,7 +70,7 @@ describe("trialBalance and journal", () => {
           { accountId: book.accounts[1].id, side: "debit", amount: 10000 },
           { accountId: book.accounts[0].id, side: "credit", amount: 37000 },
         ],
-      }),
+      }, NOW),
     );
     const tb = unwrap(trialBalance(book));
     expect(tb.byCurrency.ILS.debitTotal).not.toBe(tb.byCurrency.ILS.creditTotal);
@@ -78,7 +78,7 @@ describe("trialBalance and journal", () => {
   });
 
   it("filters journal by date and account", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -86,7 +86,7 @@ describe("trialBalance and journal", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -95,7 +95,7 @@ describe("trialBalance and journal", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -104,7 +104,7 @@ describe("trialBalance and journal", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     const cash = book.accounts[0].id;
     const food = book.accounts[1].id;
@@ -117,7 +117,7 @@ describe("trialBalance and journal", () => {
           { accountId: food, side: "debit", amount: 1 },
           { accountId: cash, side: "credit", amount: 1 },
         ],
-      }),
+      }, NOW),
     );
     book = unwrap(
       postEntry(book, {
@@ -127,7 +127,7 @@ describe("trialBalance and journal", () => {
           { accountId: rent, side: "debit", amount: 2 },
           { accountId: cash, side: "credit", amount: 2 },
         ],
-      }),
+      }, NOW),
     );
     const listed = unwrap(journal(book, { from: "2026-02-01", to: "2026-12-31", accountId: rent }));
     expect(listed).toHaveLength(1);
@@ -137,12 +137,12 @@ describe("trialBalance and journal", () => {
   });
 
   it("rejects invalid journal filter dates", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     expect(unwrapErr(journal(book, { from: "nope" })).code).toBe("ENTRY_DATE_INVALID");
   });
 
   it("filtering by a group covers its whole subtree", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -150,7 +150,7 @@ describe("trialBalance and journal", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -159,7 +159,7 @@ describe("trialBalance and journal", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, NOW),
     );
     const cash = book.accounts[0].id;
     const expenses = book.accounts[1].id;
@@ -170,7 +170,7 @@ describe("trialBalance and journal", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, NOW),
     );
     const home = book.accounts[2].id;
     book = unwrap(
@@ -180,7 +180,7 @@ describe("trialBalance and journal", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     const rent = book.accounts[3].id;
     book = unwrap(
@@ -190,7 +190,7 @@ describe("trialBalance and journal", () => {
         type: "income",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, NOW),
     );
     const income = book.accounts[4].id;
     book = unwrap(
@@ -201,7 +201,7 @@ describe("trialBalance and journal", () => {
           { accountId: rent, side: "debit", amount: 100 },
           { accountId: cash, side: "credit", amount: 100 },
         ],
-      }),
+      }, NOW),
     );
 
     // Two levels above the posting, and one level above.

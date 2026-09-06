@@ -2,11 +2,11 @@ import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { periodTotals } from "../../src/kernel/queries";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 describe("periodTotals", () => {
   function bookWithAccounts() {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -14,7 +14,7 @@ describe("periodTotals", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -23,7 +23,7 @@ describe("periodTotals", () => {
         type: "income",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -32,7 +32,7 @@ describe("periodTotals", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     return {
       book,
@@ -52,7 +52,7 @@ describe("periodTotals", () => {
           { accountId: cash, side: "debit", amount: 500000 },
           { accountId: salary, side: "credit", amount: 500000 },
         ],
-      }),
+      }, NOW),
     );
     book = unwrap(
       postEntry(book, {
@@ -62,7 +62,7 @@ describe("periodTotals", () => {
           { accountId: food, side: "debit", amount: 3000 },
           { accountId: cash, side: "credit", amount: 3000 },
         ],
-      }),
+      }, NOW),
     );
     const totals = unwrap(periodTotals(book, { from: "2026-08-01", to: "2026-08-31" }));
     expect(totals).toEqual({ ILS: { income: 500000, expense: 3000 } });
@@ -78,7 +78,7 @@ describe("periodTotals", () => {
           { accountId: food, side: "debit", amount: 1000 },
           { accountId: cash, side: "credit", amount: 1000 },
         ],
-      }),
+      }, NOW),
     );
     book = unwrap(
       postEntry(book, {
@@ -88,7 +88,7 @@ describe("periodTotals", () => {
           { accountId: food, side: "debit", amount: 2000 },
           { accountId: cash, side: "credit", amount: 2000 },
         ],
-      }),
+      }, NOW),
     );
     const totals = unwrap(periodTotals(book, { from: "2026-08-01", to: "2026-08-31" }));
     expect(totals).toEqual({ ILS: { income: 0, expense: 0 } });
@@ -103,7 +103,7 @@ describe("periodTotals", () => {
         type: "asset",
         currency: "USD",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -112,7 +112,7 @@ describe("periodTotals", () => {
         type: "expense",
         currency: "USD",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     const usdCash = book.accounts[book.accounts.length - 2].id;
     const usdRent = book.accounts[book.accounts.length - 1].id;
@@ -124,7 +124,7 @@ describe("periodTotals", () => {
           { accountId: usdRent, side: "debit", amount: 400000 },
           { accountId: usdCash, side: "credit", amount: 400000 },
         ],
-      }),
+      }, NOW),
     );
     book = unwrap(
       postEntry(book, {
@@ -134,7 +134,7 @@ describe("periodTotals", () => {
           { accountId: food, side: "debit", amount: 3000 },
           { accountId: book.accounts[0].id, side: "credit", amount: 3000 },
         ],
-      }),
+      }, NOW),
     );
     const totals = unwrap(periodTotals(book, { from: "2026-08-01", to: "2026-08-31" }));
     expect(totals).toEqual({

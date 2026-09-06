@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AccountNode } from "../../src/kernel";
 import { expandedForSelection, pathOf, visibleRows } from "../../src/app/account-tree";
+import { NOW } from "../helpers";
 
 function group(id: string, name: string, children: AccountNode[]): AccountNode {
   return {
@@ -10,6 +11,7 @@ function group(id: string, name: string, children: AccountNode[]): AccountNode {
     type: "expense",
     currency: "ILS",
     isPlaceholder: true,
+    updatedAt: NOW,
     children,
   };
 }
@@ -22,6 +24,7 @@ function leaf(id: string, name: string, currency = "ILS"): AccountNode {
     type: "expense",
     currency,
     isPlaceholder: false,
+    updatedAt: NOW,
     children: [],
   };
 }

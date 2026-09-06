@@ -1,12 +1,30 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createIndexedDbRepository } from "../adapters/indexeddb-repository";
 import { errorMessage } from "../service/error-messages";
 import { createLedgerApp } from "../service/ledger-app";
 import type { Book } from "../kernel";
 import { LedgerContext, type LedgerContextValue } from "./ledger-context";
+import { runExclusive } from "./sync/sync-lock";
+import { syncSignal } from "./sync/sync-signal";
+
+const CHANNEL_NAME = "khesh-sync";
 
 export function LedgerProvider({ children }: { children: ReactNode }) {
-  const app = useMemo(() => createLedgerApp(createIndexedDbRepository()), []);
+  const repo = useMemo(() => createIndexedDbRepository(), []);
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  const app = useMemo(
+    () =>
+      createLedgerApp(repo, {
+        // The sync engine (built in SyncProvider) is handed this same helper, so a
+        // commit here and a cycle there take one lock and cannot overwrite each other.
+        runExclusive,
+        afterCommit: (book) => {
+          syncSignal.emit(book);
+          channelRef.current?.postMessage("changed");
+        },
+      }),
+    [repo],
+  );
   const [book, setBook] = useState<Book | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +47,21 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     };
   }, [app]);
 
+  // Another tab (or this tab's sync engine) changed IndexedDB: reload our state from it.
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel(CHANNEL_NAME);
+    channelRef.current = channel;
+    channel.onmessage = async () => {
+      const result = await app.boot();
+      if (result.ok) setBook(result.value);
+    };
+    return () => {
+      channelRef.current = null;
+      channel.close();
+    };
+  }, [app]);
+
   const value: LedgerContextValue = {
     book,
     loading,
@@ -37,6 +70,11 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     setError,
     setBook,
     app,
+    repo,
+    announceBookChanged: (next) => {
+      setBook(next);
+      channelRef.current?.postMessage("changed");
+    },
   };
 
   return <LedgerContext.Provider value={value}>{children}</LedgerContext.Provider>;

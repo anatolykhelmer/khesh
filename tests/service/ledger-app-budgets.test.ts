@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { createMemoryRepository } from "../../src/adapters/memory-repository";
 import { monthRange } from "../../src/service/dates";
 import { createLedgerApp } from "../../src/service/ledger-app";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 const MONTH = monthRange(2026, 8);
 
 async function household() {
   const repo = createMemoryRepository(null);
-  const app = createLedgerApp(repo);
+  const app = createLedgerApp(repo, { now: () => NOW });
   const book = unwrap(await app.createHousehold("ILS"));
   const expenses = book.accounts.find((a) => a.name === "Expenses")!;
   return { repo, app, book, expenses };
@@ -26,7 +26,7 @@ describe("app.setBudget", () => {
       }),
     );
     const expected = [
-      { accountId: expenses.id, period: "month", currency: "ILS", limit: 400000 },
+      { accountId: expenses.id, period: "month", currency: "ILS", limit: 400000, updatedAt: NOW },
     ];
     expect(next.budgets).toEqual(expected);
     expect(unwrap(await repo.load())?.budgets).toEqual(expected);

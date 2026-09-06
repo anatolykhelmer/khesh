@@ -1,11 +1,11 @@
 import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 import type { Book } from "../../src/kernel/types";
 
 function ilsAndUsd(): { book: Book; cashIls: string; revolutUsd: string; foodIls: string } {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
   book = unwrap(
     createAccount(book, {
       parentId: null,
@@ -13,7 +13,7 @@ function ilsAndUsd(): { book: Book; cashIls: string; revolutUsd: string; foodIls
       type: "asset",
       currency: "ILS",
       isPlaceholder: true,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -22,7 +22,7 @@ function ilsAndUsd(): { book: Book; cashIls: string; revolutUsd: string; foodIls
       type: "expense",
       currency: "ILS",
       isPlaceholder: true,
-    }),
+    }, NOW),
   );
   const assets = book.accounts[0].id;
   const expenses = book.accounts[1].id;
@@ -33,7 +33,7 @@ function ilsAndUsd(): { book: Book; cashIls: string; revolutUsd: string; foodIls
       type: "asset",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -42,7 +42,7 @@ function ilsAndUsd(): { book: Book; cashIls: string; revolutUsd: string; foodIls
       type: "asset",
       currency: "USD",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   book = unwrap(
     createAccount(book, {
@@ -51,7 +51,7 @@ function ilsAndUsd(): { book: Book; cashIls: string; revolutUsd: string; foodIls
       type: "expense",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   return {
     book,
@@ -72,7 +72,7 @@ describe("postEntry FX B1", () => {
           { accountId: foodIls, side: "debit", amount: 4400 },
           { accountId: revolutUsd, side: "credit", amount: 1200 },
         ],
-      }),
+      }, NOW),
     );
     expect(next.journal).toHaveLength(1);
   });
@@ -87,7 +87,7 @@ describe("postEntry FX B1", () => {
           { accountId: revolutUsd, side: "debit", amount: 10000 },
           { accountId: cashIls, side: "credit", amount: 37000 },
         ],
-      }),
+      }, NOW),
     );
     expect(next.journal[0].fx).toBeUndefined();
   });
@@ -108,7 +108,7 @@ describe("postEntry FX B1", () => {
           baseAmount: 10000,
           quoteAmount: 37000,
         },
-      }),
+      }, NOW),
     );
     expect(next.journal[0].fx?.quoteAmount).toBe(37000);
   });
@@ -130,7 +130,7 @@ describe("postEntry FX B1", () => {
             baseAmount: 10000,
             quoteAmount: 1,
           },
-        }),
+        }, NOW),
       ).code,
     ).toBe("ENTRY_FX_RATE_MISMATCH");
   });
@@ -152,7 +152,7 @@ describe("postEntry FX B1", () => {
             baseAmount: 100,
             quoteAmount: 100,
           },
-        }),
+        }, NOW),
       ).code,
     ).toBe("ENTRY_FX_CURRENCY_COUNT");
   });
@@ -166,7 +166,7 @@ describe("postEntry FX B1", () => {
         type: "asset",
         currency: "EUR",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     const eurId = next.accounts[5].id;
     expect(
@@ -180,7 +180,7 @@ describe("postEntry FX B1", () => {
             { accountId: revolutUsd, side: "credit", amount: 10 },
             { accountId: eurId, side: "credit", amount: 10 },
           ],
-        }),
+        }, NOW),
       ).code,
     ).toBe("ENTRY_FX_CURRENCY_COUNT");
   });

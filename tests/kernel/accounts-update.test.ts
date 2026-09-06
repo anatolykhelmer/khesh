@@ -1,10 +1,10 @@
 import { createAccount, deleteAccount, updateAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 import type { Book } from "../../src/kernel/types";
 
 function bookWithAssets(): { book: Book; assetsId: string; cashId: string } {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
   book = unwrap(
     createAccount(book, {
       parentId: null,
@@ -12,7 +12,7 @@ function bookWithAssets(): { book: Book; assetsId: string; cashId: string } {
       type: "asset",
       currency: "ILS",
       isPlaceholder: true,
-    }),
+    }, NOW),
   );
   const assetsId = book.accounts[0].id;
   book = unwrap(
@@ -22,7 +22,7 @@ function bookWithAssets(): { book: Book; assetsId: string; cashId: string } {
       type: "asset",
       currency: "ILS",
       isPlaceholder: false,
-    }),
+    }, NOW),
   );
   const cashId = book.accounts[1].id;
   return { book, assetsId, cashId };
@@ -31,13 +31,13 @@ function bookWithAssets(): { book: Book; assetsId: string; cashId: string } {
 describe("updateAccount", () => {
   it("renames an account", () => {
     const { book, cashId } = bookWithAssets();
-    const next = unwrap(updateAccount(book, { id: cashId, name: " Wallet " }));
+    const next = unwrap(updateAccount(book, { id: cashId, name: " Wallet " }, NOW));
     expect(next.accounts.find((a) => a.id === cashId)?.name).toBe("Wallet");
   });
 
   it("rejects unknown id", () => {
     const { book } = bookWithAssets();
-    expect(unwrapErr(updateAccount(book, { id: "nope", name: "X" })).code).toBe(
+    expect(unwrapErr(updateAccount(book, { id: "nope", name: "X" }, NOW)).code).toBe(
       "ACCOUNT_NOT_FOUND",
     );
   });
@@ -51,37 +51,37 @@ describe("updateAccount", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     expect(
-      unwrapErr(updateAccount(withBank, { id: cashId, name: "Bank" })).code,
+      unwrapErr(updateAccount(withBank, { id: cashId, name: "Bank" }, NOW)).code,
     ).toBe("ACCOUNT_NAME_DUPLICATE");
   });
 
   it("rejects cycle", () => {
     const { book, assetsId } = bookWithAssets();
     expect(
-      unwrapErr(updateAccount(book, { id: assetsId, parentId: book.accounts[1].id })).code,
+      unwrapErr(updateAccount(book, { id: assetsId, parentId: book.accounts[1].id }, NOW)).code,
     ).toBe("ACCOUNT_CYCLE");
   });
 
   it("rejects type change when account has children", () => {
     const { book, assetsId } = bookWithAssets();
-    expect(unwrapErr(updateAccount(book, { id: assetsId, type: "liability" })).code).toBe(
+    expect(unwrapErr(updateAccount(book, { id: assetsId, type: "liability" }, NOW)).code).toBe(
       "ACCOUNT_HAS_CHILDREN",
     );
   });
 
   it("allows type/currency change on a posting-free leaf", () => {
     const { book, cashId } = bookWithAssets();
-    const next = unwrap(updateAccount(book, { id: cashId, type: "asset", currency: "USD" }));
+    const next = unwrap(updateAccount(book, { id: cashId, type: "asset", currency: "USD" }, NOW));
     expect(next.accounts.find((a) => a.id === cashId)?.currency).toBe("USD");
   });
 
   it("rejects turning placeholder off when it has children", () => {
     const { book, assetsId } = bookWithAssets();
     expect(
-      unwrapErr(updateAccount(book, { id: assetsId, isPlaceholder: false })).code,
+      unwrapErr(updateAccount(book, { id: assetsId, isPlaceholder: false }, NOW)).code,
     ).toBe("ACCOUNT_HAS_CHILDREN");
   });
 });
@@ -89,17 +89,17 @@ describe("updateAccount", () => {
 describe("deleteAccount", () => {
   it("deletes a leaf with no postings", () => {
     const { book, cashId } = bookWithAssets();
-    const next = unwrap(deleteAccount(book, cashId));
+    const next = unwrap(deleteAccount(book, cashId, NOW));
     expect(next.accounts.find((a) => a.id === cashId)).toBeUndefined();
   });
 
   it("rejects deleting a parent with children", () => {
     const { book, assetsId } = bookWithAssets();
-    expect(unwrapErr(deleteAccount(book, assetsId)).code).toBe("ACCOUNT_HAS_CHILDREN");
+    expect(unwrapErr(deleteAccount(book, assetsId, NOW)).code).toBe("ACCOUNT_HAS_CHILDREN");
   });
 
   it("rejects unknown id", () => {
     const { book } = bookWithAssets();
-    expect(unwrapErr(deleteAccount(book, "nope")).code).toBe("ACCOUNT_NOT_FOUND");
+    expect(unwrapErr(deleteAccount(book, "nope", NOW)).code).toBe("ACCOUNT_NOT_FOUND");
   });
 });

@@ -662,6 +662,12 @@ dialog.picker .twisty {
   padding: 0;
 }
 
+/* The privacy policy row is a link, not a button: same row presentation, minus the
+   underline an anchor brings with it. */
+a.row-button {
+  text-decoration: none;
+}
+
 .row-hint {
   font-size: var(--t-sm);
 }

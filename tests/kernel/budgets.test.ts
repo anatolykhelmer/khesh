@@ -2,7 +2,7 @@ import { createAccount, deleteAccount } from "../../src/kernel/accounts";
 import { removeBudget, setBudget } from "../../src/kernel/budgets";
 import { createBook } from "../../src/kernel/create-book";
 import type { AccountType, Book } from "../../src/kernel/types";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 function add(
   book: Book,
@@ -14,12 +14,12 @@ function add(
     isPlaceholder: boolean;
   },
 ): { book: Book; id: string } {
-  const next = unwrap(createAccount(book, input));
+  const next = unwrap(createAccount(book, input, NOW));
   return { book: next, id: next.accounts[next.accounts.length - 1].id };
 }
 
 function fixture() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
   const expenses = add(book, {
     parentId: null,
     name: "Expenses",
@@ -51,10 +51,10 @@ describe("setBudget", () => {
   it("adds a limit on a leaf", () => {
     const { book, food } = fixture();
     const next = unwrap(
-      setBudget(book, { accountId: food, period: "month", currency: "ILS", limit: 400000 }),
+      setBudget(book, { accountId: food, period: "month", currency: "ILS", limit: 400000 }, NOW),
     );
     expect(next.budgets).toEqual([
-      { accountId: food, period: "month", currency: "ILS", limit: 400000 },
+      { accountId: food, period: "month", currency: "ILS", limit: 400000, updatedAt: NOW },
     ]);
     expect(book.budgets).toEqual([]);
   });
@@ -62,7 +62,7 @@ describe("setBudget", () => {
   it("adds a limit on a group", () => {
     const { book, expenses } = fixture();
     const next = unwrap(
-      setBudget(book, { accountId: expenses, period: "year", currency: "ILS", limit: 900000 }),
+      setBudget(book, { accountId: expenses, period: "year", currency: "ILS", limit: 900000 }, NOW),
     );
     expect(next.budgets).toHaveLength(1);
     expect(next.budgets[0].accountId).toBe(expenses);
@@ -71,26 +71,26 @@ describe("setBudget", () => {
   it("overwrites the amount for an existing key instead of adding a second row", () => {
     const { book, food } = fixture();
     const once = unwrap(
-      setBudget(book, { accountId: food, period: "month", currency: "ILS", limit: 400000 }),
+      setBudget(book, { accountId: food, period: "month", currency: "ILS", limit: 400000 }, NOW),
     );
     const twice = unwrap(
-      setBudget(once, { accountId: food, period: "month", currency: "ILS", limit: 500000 }),
+      setBudget(once, { accountId: food, period: "month", currency: "ILS", limit: 500000 }, NOW),
     );
     expect(twice.budgets).toEqual([
-      { accountId: food, period: "month", currency: "ILS", limit: 500000 },
+      { accountId: food, period: "month", currency: "ILS", limit: 500000, updatedAt: NOW },
     ]);
   });
 
   it("keeps limits that differ in period or currency apart", () => {
     const { book, food } = fixture();
     let next = unwrap(
-      setBudget(book, { accountId: food, period: "month", currency: "ILS", limit: 400000 }),
+      setBudget(book, { accountId: food, period: "month", currency: "ILS", limit: 400000 }, NOW),
     );
     next = unwrap(
-      setBudget(next, { accountId: food, period: "year", currency: "ILS", limit: 4000000 }),
+      setBudget(next, { accountId: food, period: "year", currency: "ILS", limit: 4000000 }, NOW),
     );
     next = unwrap(
-      setBudget(next, { accountId: food, period: "month", currency: "USD", limit: 30000 }),
+      setBudget(next, { accountId: food, period: "month", currency: "USD", limit: 30000 }, NOW),
     );
     expect(next.budgets).toHaveLength(3);
   });
@@ -99,7 +99,7 @@ describe("setBudget", () => {
     const { book } = fixture();
     expect(
       unwrapErr(
-        setBudget(book, { accountId: "nope", period: "month", currency: "ILS", limit: 1 }),
+        setBudget(book, { accountId: "nope", period: "month", currency: "ILS", limit: 1 }, NOW),
       ).code,
     ).toBe("ACCOUNT_NOT_FOUND");
   });
@@ -108,7 +108,7 @@ describe("setBudget", () => {
     const { book, cash } = fixture();
     expect(
       unwrapErr(
-        setBudget(book, { accountId: cash, period: "month", currency: "ILS", limit: 1 }),
+        setBudget(book, { accountId: cash, period: "month", currency: "ILS", limit: 1 }, NOW),
       ).code,
     ).toBe("ACCOUNT_TYPE_MISMATCH");
   });
@@ -117,7 +117,7 @@ describe("setBudget", () => {
     const { book, food } = fixture();
     expect(
       unwrapErr(
-        setBudget(book, { accountId: food, period: "month", currency: "ils", limit: 1 }),
+        setBudget(book, { accountId: food, period: "month", currency: "ils", limit: 1 }, NOW),
       ).code,
     ).toBe("INVALID_CURRENCY_CODE");
   });
@@ -127,7 +127,7 @@ describe("setBudget", () => {
     for (const limit of [0, -100, 12.5]) {
       expect(
         unwrapErr(
-          setBudget(book, { accountId: food, period: "month", currency: "ILS", limit }),
+          setBudget(book, { accountId: food, period: "month", currency: "ILS", limit }, NOW),
         ).code,
       ).toBe("BUDGET_LIMIT_INVALID");
     }
@@ -138,16 +138,16 @@ describe("removeBudget", () => {
   it("removes the matching limit only", () => {
     const { book, food } = fixture();
     let next = unwrap(
-      setBudget(book, { accountId: food, period: "month", currency: "ILS", limit: 400000 }),
+      setBudget(book, { accountId: food, period: "month", currency: "ILS", limit: 400000 }, NOW),
     );
     next = unwrap(
-      setBudget(next, { accountId: food, period: "year", currency: "ILS", limit: 4000000 }),
+      setBudget(next, { accountId: food, period: "year", currency: "ILS", limit: 4000000 }, NOW),
     );
     const removed = unwrap(
-      removeBudget(next, { accountId: food, period: "month", currency: "ILS" }),
+      removeBudget(next, { accountId: food, period: "month", currency: "ILS" }, NOW),
     );
     expect(removed.budgets).toEqual([
-      { accountId: food, period: "year", currency: "ILS", limit: 4000000 },
+      { accountId: food, period: "year", currency: "ILS", limit: 4000000, updatedAt: NOW },
     ]);
     expect(next.budgets).toHaveLength(2);
   });
@@ -155,7 +155,7 @@ describe("removeBudget", () => {
   it("reports a missing limit", () => {
     const { book, food } = fixture();
     expect(
-      unwrapErr(removeBudget(book, { accountId: food, period: "month", currency: "ILS" })).code,
+      unwrapErr(removeBudget(book, { accountId: food, period: "month", currency: "ILS" }, NOW)).code,
     ).toBe("BUDGET_NOT_FOUND");
   });
 });
@@ -164,14 +164,14 @@ describe("deleteAccount and budgets", () => {
   it("drops the limits of the account it deletes", () => {
     const { book, food, expenses } = fixture();
     let next = unwrap(
-      setBudget(book, { accountId: food, period: "month", currency: "ILS", limit: 400000 }),
+      setBudget(book, { accountId: food, period: "month", currency: "ILS", limit: 400000 }, NOW),
     );
     next = unwrap(
-      setBudget(next, { accountId: expenses, period: "month", currency: "ILS", limit: 900000 }),
+      setBudget(next, { accountId: expenses, period: "month", currency: "ILS", limit: 900000 }, NOW),
     );
-    const deleted = unwrap(deleteAccount(next, food));
+    const deleted = unwrap(deleteAccount(next, food, NOW));
     expect(deleted.budgets).toEqual([
-      { accountId: expenses, period: "month", currency: "ILS", limit: 900000 },
+      { accountId: expenses, period: "month", currency: "ILS", limit: 900000, updatedAt: NOW },
     ]);
   });
 });

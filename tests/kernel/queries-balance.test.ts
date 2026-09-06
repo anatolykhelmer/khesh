@@ -3,11 +3,11 @@ import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { recordOpeningBalance } from "../../src/kernel/opening";
 import { accountPath, balance, balanceAsOf, chart } from "../../src/kernel/queries";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 describe("queries: path, chart, balance", () => {
   it("builds accountPath and chart tree", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -15,7 +15,7 @@ describe("queries: path, chart, balance", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -24,7 +24,7 @@ describe("queries: path, chart, balance", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -33,7 +33,7 @@ describe("queries: path, chart, balance", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     expect(unwrap(accountPath(book, book.accounts[2].id))).toBe("Assets:Bank:Leumi");
     const tree = unwrap(chart(book));
@@ -44,7 +44,7 @@ describe("queries: path, chart, balance", () => {
   });
 
   it("shows positive liability debt", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -52,7 +52,7 @@ describe("queries: path, chart, balance", () => {
         type: "liability",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -61,7 +61,7 @@ describe("queries: path, chart, balance", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       postEntry(book, {
@@ -71,7 +71,7 @@ describe("queries: path, chart, balance", () => {
           { accountId: book.accounts[1].id, side: "debit", amount: 5000 },
           { accountId: book.accounts[0].id, side: "credit", amount: 5000 },
         ],
-      }),
+      }, NOW),
     );
     expect(unwrap(balance(book, book.accounts[0].id))).toEqual({
       kind: "leaf",
@@ -81,7 +81,7 @@ describe("queries: path, chart, balance", () => {
   });
 
   it("balanceAsOf excludes later dates", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -89,10 +89,10 @@ describe("queries: path, chart, balance", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     const cashId = book.accounts[0].id;
-    book = unwrap(recordOpeningBalance(book, { accountId: cashId, amount: 10000, date: "2026-01-01" }));
+    book = unwrap(recordOpeningBalance(book, { accountId: cashId, amount: 10000, date: "2026-01-01" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -100,7 +100,7 @@ describe("queries: path, chart, balance", () => {
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     const foodId = book.accounts.find((a) => a.name === "Food")!.id;
     book = unwrap(
@@ -111,7 +111,7 @@ describe("queries: path, chart, balance", () => {
           { accountId: foodId, side: "debit", amount: 2000 },
           { accountId: cashId, side: "credit", amount: 2000 },
         ],
-      }),
+      }, NOW),
     );
     expect(unwrap(balanceAsOf(book, cashId, "2026-02-01"))).toEqual({
       kind: "leaf",
@@ -126,7 +126,7 @@ describe("queries: path, chart, balance", () => {
   });
 
   it("placeholder balance is a currency map", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -134,7 +134,7 @@ describe("queries: path, chart, balance", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: true,
-      }),
+      }, NOW),
     );
     const assetsId = book.accounts[0].id;
     book = unwrap(
@@ -144,7 +144,7 @@ describe("queries: path, chart, balance", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     book = unwrap(
       createAccount(book, {
@@ -153,12 +153,12 @@ describe("queries: path, chart, balance", () => {
         type: "asset",
         currency: "USD",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     const ilsId = book.accounts[1].id;
     const usdId = book.accounts[2].id;
-    book = unwrap(recordOpeningBalance(book, { accountId: ilsId, amount: 100, date: "2026-01-01" }));
-    book = unwrap(recordOpeningBalance(book, { accountId: usdId, amount: 50, date: "2026-01-01" }));
+    book = unwrap(recordOpeningBalance(book, { accountId: ilsId, amount: 100, date: "2026-01-01" }, NOW));
+    book = unwrap(recordOpeningBalance(book, { accountId: usdId, amount: 50, date: "2026-01-01" }, NOW));
     expect(unwrap(balance(book, assetsId))).toEqual({
       kind: "placeholder",
       balances: { ILS: 100, USD: 50 },
@@ -166,7 +166,7 @@ describe("queries: path, chart, balance", () => {
   });
 
   it("rejects unknown account and bad asOf", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     expect(unwrapErr(balance(book, "nope")).code).toBe("ACCOUNT_NOT_FOUND");
     expect(unwrapErr(accountPath(book, "nope")).code).toBe("ACCOUNT_NOT_FOUND");
     let withCash = unwrap(
@@ -176,7 +176,7 @@ describe("queries: path, chart, balance", () => {
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
-      }),
+      }, NOW),
     );
     expect(unwrapErr(balanceAsOf(withCash, withCash.accounts[0].id, "bad")).code).toBe(
       "ENTRY_DATE_INVALID",

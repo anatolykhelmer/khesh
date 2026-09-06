@@ -3,7 +3,7 @@ import { createIndexedDbRepository } from "../../src/adapters/indexeddb-reposito
 import { importJson } from "../../src/adapters/import-book";
 import { createBook } from "../../src/kernel/create-book";
 import { bookToJson } from "../../src/adapters/json-codec";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 import type { Book } from "../../src/kernel/types";
 
 describe("IndexedDbRepository", () => {
@@ -15,14 +15,14 @@ describe("IndexedDbRepository", () => {
 
   it("save then load returns the same book", async () => {
     const repo = createIndexedDbRepository("khesh-test-roundtrip");
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     unwrap(await repo.save(book));
     expect(unwrap(await repo.load())).toEqual(book);
   });
 
   it("failed import does not overwrite existing snapshot", async () => {
     const repo = createIndexedDbRepository("khesh-test-import");
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }));
+    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     unwrap(await repo.save(book));
     const failed = unwrapErr(await importJson(repo, "not-json"));
     expect(failed.code).toBe("JSON_PARSE_FAILED");
@@ -30,7 +30,7 @@ describe("IndexedDbRepository", () => {
     unwrap(
       await importJson(
         repo,
-        bookToJson(unwrap(createBook({ name: "Other", homeCurrency: "USD" }))),
+        bookToJson(unwrap(createBook({ name: "Other", homeCurrency: "USD" }, NOW))),
       ),
     );
     expect(unwrap(await repo.load())?.name).toBe("Other");
@@ -47,5 +47,22 @@ describe("IndexedDbRepository", () => {
     };
     unwrap(await repo.save(legacy as unknown as Book));
     expect(unwrap(await repo.load())?.budgets).toEqual([]);
+  });
+
+  it("refuses a snapshot from a newer schema instead of downgrading it", async () => {
+    const repo = createIndexedDbRepository("khesh-test-future-schema");
+    const future = {
+      schemaVersion: 3,
+      name: "Home",
+      homeCurrency: "ILS",
+      metaUpdatedAt: NOW,
+      accounts: [],
+      journal: [],
+      budgets: [],
+      tombstones: [],
+      fieldThisBuildCannotSee: "keep me",
+    };
+    unwrap(await repo.save(future as unknown as Book));
+    expect(unwrapErr(await repo.load()).code).toBe("BOOK_INVALID");
   });
 });

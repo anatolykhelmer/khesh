@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { todayCalendarDate } from "../../service/dates";
 import { ChevronBack } from "../components/icons";
 import { ImportBookButton } from "../components/ImportBookButton";
+import { SyncSection } from "../components/SyncSection";
 import { useLedger } from "../ledger-context";
 
 export function SettingsScreen() {
@@ -49,6 +50,16 @@ export function SettingsScreen() {
             onSuccess={() => navigate("/dashboard")}
           />
           <p className="muted row-hint">{t("settings.importHint")}</p>
+        </li>
+      </ul>
+
+      <SyncSection />
+
+      <ul className="settings-list group">
+        <li className="settings-row">
+          <a className="row-button" href="/privacy.html" target="_blank" rel="noopener">
+            {t("settings.privacyLink")}
+          </a>
         </li>
       </ul>
     </main>

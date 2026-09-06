@@ -9,6 +9,7 @@ import {
 import { isCurrencyCode } from "./currency";
 import { createId } from "./ids";
 import { err, ok, type Result } from "./result";
+import { addTombstone, budgetKeyOf } from "./tombstones";
 import type { AccountType, Book, CurrencyCode } from "./types";
 
 export function createAccount(
@@ -20,6 +21,7 @@ export function createAccount(
     currency: CurrencyCode;
     isPlaceholder: boolean;
   },
+  now: string,
 ): Result<Book> {
   const name = input.name.trim();
   if (name.length === 0) {
@@ -66,6 +68,7 @@ export function createAccount(
     type: input.type,
     currency: input.currency,
     isPlaceholder: input.isPlaceholder,
+    updatedAt: now,
   });
   return ok(next);
 }
@@ -80,6 +83,7 @@ export function updateAccount(
     type?: AccountType;
     currency?: CurrencyCode;
   },
+  now: string,
 ): Result<Book> {
   const account = findAccount(book, input.id);
   if (!account) {
@@ -170,11 +174,12 @@ export function updateAccount(
     isPlaceholder,
     type,
     currency,
+    updatedAt: now,
   };
   return ok(next);
 }
 
-export function deleteAccount(book: Book, id: string): Result<Book> {
+export function deleteAccount(book: Book, id: string, now: string): Result<Book> {
   const account = findAccount(book, id);
   if (!account) {
     return err("ACCOUNT_NOT_FOUND", "Account not found", { id });
@@ -187,7 +192,12 @@ export function deleteAccount(book: Book, id: string): Result<Book> {
   }
   const next = cloneBook(book);
   next.accounts = next.accounts.filter((item) => item.id !== id);
+  addTombstone(next, "account", id, account, now);
   // A limit without its account is meaningless, so it goes with the account.
+  const removedBudgets = next.budgets.filter((budget) => budget.accountId === id);
   next.budgets = next.budgets.filter((budget) => budget.accountId !== id);
+  for (const budget of removedBudgets) {
+    addTombstone(next, "budget", budgetKeyOf(budget), budget, now);
+  }
   return ok(next);
 }

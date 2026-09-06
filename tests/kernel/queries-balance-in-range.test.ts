@@ -151,6 +151,16 @@ describe("balanceInRange", () => {
     });
   });
 
+  it("treats an inverted range as empty, not as an error", () => {
+    let { book, cash, food } = bookWithCashAndFood();
+    book = spend(book, cash, food, "2026-08-10", 1000);
+    expect(unwrap(balanceInRange(book, food, { from: "2026-08-31", to: "2026-08-01" }))).toEqual({
+      kind: "leaf",
+      currency: "ILS",
+      amount: 0,
+    });
+  });
+
   it("rejects invalid dates and unknown accounts", () => {
     const { book, food } = bookWithCashAndFood();
     expect(unwrapErr(balanceInRange(book, food, { from: "2026-13-01", to: "2026-08-31" })).code)

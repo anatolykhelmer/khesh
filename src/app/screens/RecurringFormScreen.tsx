@@ -72,7 +72,11 @@ export function RecurringFormScreen() {
     const nextUnit = next.unit ?? unit;
     setEvery(nextEvery);
     setUnit(nextUnit);
-    if (!editing || startDate !== editing.startDate) return;
+    // `startShifted` is what separates "this screen moved the date" from "the user
+    // moved it". Testing the date against the rule's own start alone would not: the
+    // shift below falsifies that comparison, so the guard would fire once per edit
+    // session and then silently stop recomputing on every later schedule change.
+    if (!editing || (!startShifted && startDate !== editing.startDate)) return;
     const parsedEvery = Number(nextEvery);
     const upcoming = nextOccurrence(
       {
@@ -215,7 +219,7 @@ export function RecurringFormScreen() {
                 required
               />
               <select
-                aria-label={t("recurring.everyLabel")}
+                aria-label={t("recurring.unitLabel")}
                 value={unit}
                 onChange={(e) => changeSchedule({ unit: e.target.value as RecurrenceUnit })}
               >

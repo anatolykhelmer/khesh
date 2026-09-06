@@ -1,0 +1,94 @@
+import { describe, expect, it } from "vitest";
+import { createLedgerApp } from "../../src/service/ledger-app";
+import { createMemoryRepository } from "../../src/adapters/memory-repository";
+import { balance } from "../../src/kernel/queries";
+import { recurrenceEntryId } from "../../src/kernel/occurrences";
+import type { Book } from "../../src/kernel/types";
+import { unwrap, unwrapErr, NOW } from "../helpers";
+
+const TODAY = "2026-06-15";
+
+const schedule = { every: 1, unit: "month" as const, startDate: "2026-04-01", endDate: null };
+
+/** One app, one repository, one book with a rule already on it. Every test starts here —
+ * calling this twice would hand back two unrelated repositories. */
+async function withRule() {
+  const app = createLedgerApp(createMemoryRepository(), { now: () => NOW });
+  let book = unwrap(await app.createHousehold("ILS"));
+  const assets = book.accounts.find((a) => a.type === "asset" && a.parentId === null)!;
+  const expenses = book.accounts.find((a) => a.type === "expense" && a.parentId === null)!;
+  book = unwrap(await app.addAccount(book, { parentId: assets.id, name: "Bank", isPlaceholder: false, currency: "ILS" }));
+  book = unwrap(await app.addAccount(book, { parentId: expenses.id, name: "Rent", isPlaceholder: false, currency: "ILS" }));
+  const bank = book.accounts.find((a) => a.name === "Bank")!;
+  const rent = book.accounts.find((a) => a.name === "Rent")!;
+  book = unwrap(
+    await app.addRecurrence(book, {
+      description: "Rent",
+      fromAccountId: bank.id,
+      lines: [{ toAccountId: rent.id, amount: 300000 }],
+      ...schedule,
+    }),
+  );
+  return { app, book, bank, rent, ruleId: book.recurrences[0].id };
+}
+
+function leafAmount(book: Book, accountId: string): number | null {
+  const result = unwrap(balance(book, accountId));
+  return result.kind === "leaf" ? result.amount : null;
+}
+
+describe("recurrences through LedgerApp", () => {
+  it("derives due rows with a renderable preview", async () => {
+    const { app, book } = await withRule();
+    const rows = app.dueRows(book, TODAY);
+    expect(rows.map((r) => r.date)).toEqual(["2026-04-01", "2026-05-01", "2026-06-01"]);
+    expect(rows[0].description).toBe("Rent");
+    expect(rows[0].currency).toBe("ILS");
+    expect(rows[0].total).toBe(300000);
+    expect(rows[0].preview.id).toBe(rows[0].entryId);
+    expect(rows[0].preview.postings).toHaveLength(2);
+  });
+
+  it("a due row is not money: balances ignore it entirely", async () => {
+    const { app, book, rent } = await withRule();
+    expect(app.dueRows(book, TODAY).length).toBeGreaterThan(0);
+    expect(leafAmount(book, rent.id)).toBe(0);
+  });
+
+  it("posts one occurrence under its deterministic id and removes it from the queue", async () => {
+    const { app, book, rent, ruleId } = await withRule();
+    const next = unwrap(await app.postOccurrence(book, ruleId, "2026-05-01"));
+
+    expect(next.journal.map((e) => e.id)).toContain(recurrenceEntryId(ruleId, "2026-05-01"));
+    expect(app.dueRows(next, TODAY).map((r) => r.date)).toEqual(["2026-04-01", "2026-06-01"]);
+    expect(leafAmount(next, rent.id)).toBe(300000);
+  });
+
+  it("applies overrides but keeps the occurrence's own id", async () => {
+    const { app, book, rent, ruleId } = await withRule();
+    const next = unwrap(
+      await app.postOccurrence(book, ruleId, "2026-05-01", {
+        date: "2026-05-03",
+        lines: [{ toAccountId: rent.id, amount: 310000 }],
+      }),
+    );
+    const entry = next.journal.find((e) => e.id === recurrenceEntryId(ruleId, "2026-05-01"))!;
+    // The occurrence date is what the id is built from; the entry's own date is free.
+    expect(entry.date).toBe("2026-05-03");
+    expect(entry.postings.find((p) => p.side === "debit")!.amount).toBe(310000);
+    expect(app.dueRows(next, TODAY).map((r) => r.date)).toEqual(["2026-04-01", "2026-06-01"]);
+  });
+
+  it("refuses to post from a rule that does not exist", async () => {
+    const { app, book } = await withRule();
+    expect(unwrapErr(await app.postOccurrence(book, "nope", "2026-05-01")).code).toBe(
+      "RECURRENCE_NOT_FOUND",
+    );
+  });
+
+  it("round-trips rules through export and import", async () => {
+    const { app, book } = await withRule();
+    const restored = unwrap(await app.importJson(app.exportJson(book)));
+    expect(restored.recurrences).toEqual(book.recurrences);
+  });
+});

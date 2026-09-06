@@ -36,7 +36,8 @@
     "currencySubtitle": "Used for your household books.",
     "currencyListLabel": "Home currency",
     "continue": "Continue",
-    "restore": "Restore from backup"
+    "restore": "Restore from backup",
+    "aboutLink": "What is Khesh?"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -101,6 +102,7 @@
     "importButton": "Import backup",
     "importHint": "Replaces the current book with the contents of the file.",
     "importConfirm": "Importing replaces the book on this device. Continue?",
+    "aboutLink": "About Khesh",
     "privacyLink": "Privacy policy"
   },
   "sync": {

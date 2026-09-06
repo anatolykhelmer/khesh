@@ -6,6 +6,19 @@
   justify-content: center;
 }
 
+/* Onboarding is the only screen a visitor with no book can reach, so it carries the one
+   link out to the page that explains what Khesh is. Muted, centred and below the actions:
+   it is an escape hatch, not a competitor to Continue. The underline stays - it is the
+   only affordance marking it as a link rather than a caption. */
+.onboarding-about {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  font-size: var(--t-sm);
+  color: var(--ink-muted);
+}
+
 .currency-list {
   display: flex;
   flex-direction: column;

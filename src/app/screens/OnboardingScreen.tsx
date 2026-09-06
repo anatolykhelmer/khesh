@@ -93,6 +93,9 @@ export function OnboardingScreen() {
         disabled={busy}
         onBusyChange={setImporting}
       />
+      <a className="onboarding-about" href="/about.html" target="_blank" rel="noopener">
+        {t("onboarding.aboutLink")}
+      </a>
     </main>
   );
 }

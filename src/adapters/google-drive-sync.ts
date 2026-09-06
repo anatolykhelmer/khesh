@@ -175,7 +175,14 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
     if (response.status === 412) {
       return err("SYNC_REMOTE_CHANGED", "The Drive file moved since it was read");
     }
-    if (!response.ok) return err("SYNC_STORE_FAILED", `Drive responded ${response.status}`);
+    // `status` in the details is what tells a status Drive answered with from a transport
+    // failure, which carries none. The guarded write below retries on the former only:
+    // retrying a request that never got an answer would just spend the timeout twice.
+    if (!response.ok) {
+      return err("SYNC_STORE_FAILED", `Drive responded ${response.status}`, {
+        status: response.status,
+      });
+    }
     return ok(response);
   }
 
@@ -241,6 +248,12 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
       const id = await resolveFileId();
       if (!id.ok) return id;
       if (id.value !== null) {
+        const patch = (extra?: Record<string, string>) =>
+          authFetch(`${UPLOAD_URL}/${id.value}?uploadType=media&fields=id,modifiedTime`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", ...extra },
+            body: payload,
+          });
         // Guarded only when the caller named the rev this validator came from. Drive v3
         // documents no precondition for files.update, so an ETag it did send may still be
         // ignored here: then this is exactly the unconditional PATCH it always was, and
@@ -249,11 +262,17 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
           ifUnchanged !== undefined && validator !== null && validator.rev === ifUnchanged
             ? { "If-Match": validator.etag }
             : undefined;
-        const patched = await authFetch(`${UPLOAD_URL}/${id.value}?uploadType=media&fields=id,modifiedTime`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", ...guard },
-          body: payload,
-        });
+        let patched = await patch(guard);
+        // Ignoring the header is one way an undocumented precondition can go; rejecting
+        // it outright (a 400, say) is the other, and that one would fail every guarded
+        // write forever while reporting a network problem the user cannot act on. Any
+        // status other than the three that mean something here retires the guard and
+        // tries again plain, so the precondition can cost a round trip and never the
+        // ability to sync. 412 is excluded deliberately: it is a real refusal, and the
+        // engine answers it by re-running the whole cycle.
+        if (guard !== undefined && !patched.ok && patched.error.details?.status !== undefined) {
+          patched = await patch();
+        }
         if (!patched.ok) return patched;
         const data = (await patched.value.json()) as { modifiedTime?: string };
         // Whatever was in Drive is now this payload; the old validator describes neither.

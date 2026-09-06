@@ -214,6 +214,56 @@ describe("drive sync store", () => {
     expect(noEtag.calls.find((c) => c.method === "PATCH")!.headers["If-Match"]).toBeUndefined();
   });
 
+  it("retires the guard and retries once when Drive rejects the header itself", async () => {
+    // If-Match is undocumented for files.update, so Drive may reject it rather than
+    // ignore it. Without this fallback every guarded write would fail forever, reported
+    // as SYNC_STORE_FAILED -- a network problem the user cannot act on, from a network
+    // that is fine.
+    const { store, calls } = makeStore((call) => {
+      if (call.url.includes("alt=media")) {
+        return new Response("{}", { status: 200, headers: { ETag: '"etag-7"' } });
+      }
+      if (call.method === "PATCH") {
+        return call.headers["If-Match"] !== undefined
+          ? json({ error: "unsupported header" }, 400)
+          : json({ id: "f9", modifiedTime: "rev-8" });
+      }
+      return json({ modifiedTime: "rev-7" });
+    }, "f9");
+
+    const read = unwrap(await store.read())!;
+    expect(unwrap(await store.write("PAYLOAD", read.rev))).toEqual({ rev: "rev-8" });
+
+    const patches = calls.filter((c) => c.method === "PATCH");
+    expect(patches).toHaveLength(2); // exactly one retry, not a loop
+    expect(patches[0].headers["If-Match"]).toBe('"etag-7"');
+    expect(patches[1].headers["If-Match"]).toBeUndefined();
+    expect(patches[1].body).toBe("PAYLOAD");
+  });
+
+  it("does not retry an unguarded write, nor a guarded one that never got an answer", async () => {
+    // The retry exists for a status Drive answered with. A plain write has no guard to
+    // retire, and a transport failure would only spend the timeout a second time.
+    const plain = makeStore(() => json({}, 400), "f9");
+    expect(unwrapErr(await plain.store.write("PAYLOAD")).code).toBe("SYNC_STORE_FAILED");
+    expect(plain.calls.filter((c) => c.method === "PATCH")).toHaveLength(1);
+
+    let patches = 0;
+    const dead = makeStore((call) => {
+      if (call.url.includes("alt=media")) {
+        return new Response("{}", { status: 200, headers: { ETag: '"etag-7"' } });
+      }
+      if (call.method === "PATCH") {
+        patches += 1;
+        throw new TypeError("offline");
+      }
+      return json({ modifiedTime: "rev-7" });
+    }, "f9");
+    const read = unwrap(await dead.store.read())!;
+    expect(unwrapErr(await dead.store.write("PAYLOAD", read.rev)).code).toBe("SYNC_STORE_FAILED");
+    expect(patches).toBe(1);
+  });
+
   it("maps 412 to SYNC_REMOTE_CHANGED, distinctly from a generic store failure", async () => {
     const { store } = makeStore((call) => {
       if (call.url.includes("alt=media")) {

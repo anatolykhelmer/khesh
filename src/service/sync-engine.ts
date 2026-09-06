@@ -75,9 +75,10 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       setState({ kind: "manualResolution", lastSyncAt, errorCode: code });
     // Everything else, SYNC_FILE_AMBIGUOUS included, is `error`. Two files named
     // khesh-book.json is not a book conflict the user can settle from here: both
-    // manualResolution actions write through the store, which would pick one of the two
-    // files by the same guess this refusal exists to avoid. The fix is in Drive, so the
-    // state carries the code and the section explains it.
+    // manualResolution actions go through the store, whose own id resolution refuses on
+    // ambiguity, so either choice would just re-raise this error under a heading asking
+    // the user to pick a book. The fix is in Drive, so the state carries the code and
+    // the section explains it.
     else setState({ kind: "error", lastSyncAt, errorCode: code });
   };
 

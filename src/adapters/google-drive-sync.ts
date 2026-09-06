@@ -7,6 +7,15 @@ const FILE_NAME = "khesh-book.json";
 const FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files";
 const ABOUT_URL = "https://www.googleapis.com/drive/v3/about";
+/**
+ * Ceiling on any one Drive call. A cycle holds the sync lock across its network round
+ * trips, and `commit()` takes that same lock — so an unbounded fetch (a captive portal,
+ * a dead connection: the browser's own TCP timeout is tens of seconds to minutes) would
+ * block the user from saving a transaction that needs no network whatever. Matches the
+ * GIS token timeout, and an abort lands in the same place a dropped connection does:
+ * SYNC_STORE_FAILED, which the engine shows as `offline`.
+ */
+const REQUEST_TIMEOUT_MS = 15000;
 
 type TokenResponse = { access_token?: string; expires_in?: number; error?: string };
 type TokenClient = { requestAccessToken(config?: { prompt?: "" | "consent" }): void };
@@ -142,10 +151,13 @@ export type DriveStoreDeps = {
   getFileId: () => string | null;
   onFileId: (id: string) => void | Promise<void>;
   fetchImpl?: typeof fetch;
+  /** Per-call ceiling; only the tests have reason to shorten it. */
+  timeoutMs?: number;
 };
 
 export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const timeoutMs = deps.timeoutMs ?? REQUEST_TIMEOUT_MS;
   /**
    * The validator Drive handed back with the payload of a given rev, so `write` can turn
    * the caller's "I merged against this rev" into the only precondition HTTP offers.
@@ -164,9 +176,12 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
     try {
       response = await fetchImpl(url, {
         ...init,
+        signal: AbortSignal.timeout(timeoutMs),
         headers: { ...(init?.headers as Record<string, string> | undefined), Authorization: `Bearer ${token.value}` },
       });
     } catch {
+      // A timeout aborts into here alongside a dropped connection, which is right: from
+      // the user's side "Drive did not answer" and "Drive is unreachable" are one thing.
       return err("SYNC_STORE_FAILED", "Network failure talking to Drive");
     }
     if (response.status === 401) return err("SYNC_AUTH_REQUIRED", "Drive rejected the token");
@@ -308,11 +323,13 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
 export async function fetchAccountEmail(
   getToken: (interactive?: boolean) => Promise<Result<string>>,
   fetchImpl: typeof fetch = fetch,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<Result<string>> {
   const token = await getToken(false);
   if (!token.ok) return token;
   try {
     const response = await fetchImpl(`${ABOUT_URL}?fields=user(emailAddress)`, {
+      signal: AbortSignal.timeout(timeoutMs), // this one runs during connect, not a cycle
       headers: { Authorization: `Bearer ${token.value}` },
     });
     if (!response.ok) return err("SYNC_STORE_FAILED", `Drive responded ${response.status}`);

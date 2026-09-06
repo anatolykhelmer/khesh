@@ -292,6 +292,32 @@ describe("drive sync store", () => {
     expect(unwrapErr(await network.store.probe()).code).toBe("SYNC_STORE_FAILED");
   });
 
+  it("aborts a call that never answers instead of holding the sync lock open", async () => {
+    // The cycle holds the sync lock across its round trips and commit() takes that same
+    // lock, so an unbounded fetch would block a purely local save for as long as the
+    // browser's own TCP timeout. This promise settles only if the signal aborts it.
+    const hung: typeof fetch = (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+      });
+    const store = createDriveSyncStore({
+      getToken: async () => ok("tok-1"),
+      getFileId: () => "f9",
+      onFileId: () => undefined,
+      fetchImpl: hung,
+      timeoutMs: 20,
+    });
+
+    const startedAt = Date.now();
+    // `offline` is exactly the right story for "Drive did not answer".
+    expect(unwrapErr(await store.probe()).code).toBe("SYNC_STORE_FAILED");
+    expect(unwrapErr(await store.write("PAYLOAD")).code).toBe("SYNC_STORE_FAILED");
+    expect(unwrapErr(await fetchAccountEmail(async () => ok("tok-1"), hung, 20)).code).toBe(
+      "SYNC_STORE_FAILED",
+    );
+    expect(Date.now() - startedAt).toBeLessThan(2000); // it aborted, it did not hang
+  });
+
   it("fetchAccountEmail reads drive/v3/about", async () => {
     const { impl, calls } = stubFetch(() => json({ user: { emailAddress: "a@b.c" } }));
     expect(unwrap(await fetchAccountEmail(async () => ok("tok"), impl))).toBe("a@b.c");

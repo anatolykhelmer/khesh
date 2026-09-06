@@ -1,6 +1,7 @@
 import {
   accountPath,
   balance,
+  balanceInRange,
   budgetReport,
   chart,
   createAccount,
@@ -460,6 +461,14 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
 
     balanceOf(book: Book, accountId: string): Result<AccountBalance> {
       return balance(book, accountId);
+    },
+
+    balanceInRange(
+      book: Book,
+      accountId: string,
+      range: { from: string; to: string },
+    ): Result<AccountBalance> {
+      return balanceInRange(book, accountId, range);
     },
 
     periodTotals(

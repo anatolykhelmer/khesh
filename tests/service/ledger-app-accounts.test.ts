@@ -87,6 +87,46 @@ describe("LedgerApp addAccount", () => {
     });
   });
 
+  it("balanceInRange passes the kernel's ranged figure through for a leaf and its root", async () => {
+    const { app, book, expenses } = await seeded();
+    const assets = byName(book, "Assets");
+    let current = unwrap(
+      await app.addAccount(book, { parentId: assets.id, name: "Cash", isPlaceholder: false }),
+    );
+    current = unwrap(
+      await app.addAccount(current, { parentId: expenses.id, name: "Food", isPlaceholder: false }),
+    );
+    const cash = byName(current, "Cash").id;
+    const food = byName(current, "Food").id;
+    current = unwrap(
+      await app.addEntry(current, {
+        date: "2026-08-10",
+        description: "in range",
+        fromAccountId: cash,
+        lines: [{ toAccountId: food, amount: 1200 }],
+      }),
+    );
+    current = unwrap(
+      await app.addEntry(current, {
+        date: "2026-09-02",
+        description: "out of range",
+        fromAccountId: cash,
+        lines: [{ toAccountId: food, amount: 5000 }],
+      }),
+    );
+
+    const august = { from: "2026-08-01", to: "2026-08-31" };
+    expect(unwrap(app.balanceInRange(current, food, august))).toEqual({
+      kind: "leaf",
+      currency: "USD",
+      amount: 1200,
+    });
+    expect(unwrap(app.balanceInRange(current, expenses.id, august))).toEqual({
+      kind: "placeholder",
+      balances: { USD: 1200 },
+    });
+  });
+
   it("inherits the parent type rather than the root type", async () => {
     const { app, book, expenses } = await seeded();
     const next = unwrap(

@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { accountPathLabel, formatAccountBalance } from "../format";
+import { accountFigure, monthFigureLabel } from "../account-figure";
 import { currencySymbol } from "../currencies";
 import { AccountKindChoice } from "../components/AccountKindChoice";
 import { ChevronBack } from "../components/icons";
@@ -56,8 +57,13 @@ export function AccountDetailScreen() {
     setEditing(true);
   }
 
-  function balanceLabel(): string {
-    const result = app.balanceOf(currentBook, currentAccount.id);
+  const figure = accountFigure(currentAccount.type);
+
+  function figureLabel(): string {
+    const result =
+      figure.kind === "month"
+        ? app.balanceInRange(currentBook, currentAccount.id, figure.range)
+        : app.balanceOf(currentBook, currentAccount.id);
     if (!result.ok) return "—";
     return formatAccountBalance(result.value, currentBook.homeCurrency);
   }
@@ -109,9 +115,11 @@ export function AccountDetailScreen() {
           </div>
         )}
         <div>
-          <dt>{t("accountDetail.balanceLabel")}</dt>
+          <dt>
+            {figure.kind === "month" ? monthFigureLabel(figure) : t("accountDetail.balanceLabel")}
+          </dt>
           <dd>
-            <Ltr>{balanceLabel()}</Ltr>
+            <Ltr>{figureLabel()}</Ltr>
           </dd>
         </div>
         {currentAccount.isPlaceholder ? (

@@ -6,11 +6,12 @@ import type {
   Book,
   Budget,
   JournalEntry,
+  Recurrence,
   Tombstone,
   TombstoneKind,
 } from "./types";
 
-type AnyRecord = Account | JournalEntry | Budget;
+type AnyRecord = Account | JournalEntry | Budget | Recurrence;
 type Claim =
   | { alive: true; at: string; record: AnyRecord }
   | { alive: false; at: string; stone: Tombstone };
@@ -43,6 +44,9 @@ function* liveClaims(book: Book): Generator<[string, Claim]> {
       `budget|${budgetKeyOf(budget)}`,
       { alive: true, at: budget.updatedAt, record: budget },
     ];
+  }
+  for (const rule of book.recurrences) {
+    yield [`recurrence|${rule.id}`, { alive: true, at: rule.updatedAt, record: rule }];
   }
 }
 
@@ -106,6 +110,7 @@ function sortBook(book: Book): void {
   book.accounts.sort(byId);
   book.journal.sort(byId);
   book.budgets.sort((x, y) => compareStrings(budgetKeyOf(x), budgetKeyOf(y)));
+  book.recurrences.sort(byId);
   book.tombstones.sort((x, y) =>
     compareStrings(`${x.kind}|${x.key}`, `${y.kind}|${y.key}`),
   );
@@ -176,6 +181,10 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
       for (const posting of entry.postings) referenced.add(posting.accountId);
     }
     for (const budget of draft.budgets) referenced.add(budget.accountId);
+    for (const rule of draft.recurrences) {
+      referenced.add(rule.fromAccountId);
+      for (const line of rule.lines) referenced.add(line.toAccountId);
+    }
 
     const missing = [...referenced].filter((id) => !live.has(id)).sort();
     if (missing.length === 0) break;
@@ -315,6 +324,22 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
   const typeById = new Map(draft.accounts.map((a) => [a.id, a.type]));
   draft.budgets = draft.budgets.filter((b) => typeById.get(b.accountId) === "expense");
 
+  // 7. A recurrence is only postable while every account it touches is a leaf and they
+  //    all share one currency. Rung 1 has restored the accounts, so this drops exactly the
+  //    rules a concurrent retype or currency change made impossible — the same treatment
+  //    rung 6 gives a budget whose account stopped being an expense.
+  const accountById = new Map(draft.accounts.map((a) => [a.id, a]));
+  draft.recurrences = draft.recurrences.filter((rule) => {
+    const involved = [rule.fromAccountId, ...rule.lines.map((line) => line.toAccountId)];
+    const currencies = new Set<string>();
+    for (const id of involved) {
+      const account = accountById.get(id);
+      if (!account || account.isPlaceholder) return false;
+      currencies.add(account.currency);
+    }
+    return currencies.size === 1;
+  });
+
   return null;
 }
 
@@ -389,13 +414,6 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
         canonicalJson({ name: b.name, homeCurrency: b.homeCurrency });
   const meta = metaFromA ? a : b;
 
-  // `recurrences` is not folded in below the way accounts/journal/budgets are: no
-  // command populates it yet, though an imported or synced file can already carry
-  // rules in (jsonToBook/decodeEnvelope accept and preserve a v3 book's `recurrences`
-  // as-is) — so a merge input can hold rules that this draft silently drops. Wiring
-  // it into `liveClaims`/`collectClaims` is for whichever task adds the
-  // create/update/delete commands, alongside the property tests that would exercise
-  // it; the loud failure below is what stands in for that until then.
   const draft: Book = {
     schemaVersion: 3,
     name: meta.name,
@@ -418,20 +436,7 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
     } else if (kind === "budget") {
       draft.budgets.push(structuredClone(claim.record) as Budget);
     } else {
-      // `kind` is derived from a string slice and cast, so widening `TombstoneKind`
-      // no longer makes this dispatch exhaustive by construction — tsc cannot flag a
-      // missing branch here the way it could when the union was only
-      // account/entry/budget. `recurrence` is the one kind this switch does not
-      // handle yet, and nothing above ever yields a *live* `recurrence|` claim
-      // (`liveClaims` only reads accounts/journal/budgets), so this is unreachable
-      // today. Left as a thrown error rather than folding it into `draft.budgets` (the
-      // silent miscategorization this branch replaces — a recurrence stored as a
-      // Budget, then quietly deleted by the rung-6 repair filter) or a swallowed
-      // `SYNC_MERGE_CONFLICT` Result (which would misreport a code bug as a
-      // resolvable data conflict): reaching this line means `liveClaims` started
-      // yielding a kind this switch was never taught, which is an invariant a future
-      // caller broke, not a merge outcome for a caller to handle gracefully.
-      throw new Error(`mergeBooks: unhandled live claim kind "${kind}"`);
+      draft.recurrences.push(structuredClone(claim.record) as Recurrence);
     }
   }
 
@@ -472,6 +477,7 @@ export function bookFingerprint(book: Book): string {
     budgets: [...book.budgets].sort((x, y) =>
       compareStrings(budgetKeyOf(x), budgetKeyOf(y)),
     ),
+    recurrences: [...book.recurrences].sort(byId),
     tombstones: [...book.tombstones].sort((x, y) =>
       compareStrings(`${x.kind}|${x.key}`, `${y.kind}|${y.key}`),
     ),

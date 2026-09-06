@@ -7,6 +7,7 @@ export { deleteEntry, postEntry, updateEntry } from "./journal";
 export { removeBudget, setBudget } from "./budgets";
 export { createRecurrence, deleteRecurrence, updateRecurrence } from "./recurrences";
 export type { RecurrenceInput } from "./recurrences";
+export { recurrenceEntryId } from "./occurrences";
 export {
   recordOpeningBalance,
   isOpeningBalancesGroupId,

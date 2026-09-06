@@ -17,8 +17,8 @@ export type RecurrenceInput = {
   endDate: string | null;
 };
 
-/** An error Result for invalid input, or null when valid. Mirrors the journal's own
- * `invalidEntryInput`: same rules, checked before anything is written. */
+/** An error Result for invalid input, or null when valid. Mirrors the pattern of
+ * `invalidEntryInput` in `src/service/ledger-app.ts`: same rules, checked before anything is written. */
 function invalidInput(book: Book, input: RecurrenceInput): Result<Book> | null {
   if (!Number.isInteger(input.every) || input.every < 1 || !UNITS.has(input.unit)) {
     return err("RECURRENCE_SCHEDULE_INVALID", "Invalid recurrence interval", {

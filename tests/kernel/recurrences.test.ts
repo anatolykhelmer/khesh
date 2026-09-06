@@ -38,6 +38,20 @@ describe("createRecurrence", () => {
     expect(rule.updatedAt).toBe(NOW);
   });
 
+  it("honors an explicit id when provided", () => {
+    const customId = "my-custom-rule-id";
+    const book = unwrap(createRecurrence(bookWithAccounts(), { ...input, id: customId }, NOW));
+    expect(book.recurrences).toHaveLength(1);
+    expect(book.recurrences[0].id).toBe(customId);
+  });
+
+  it("refuses a duplicate id", () => {
+    const customId = "my-custom-rule-id";
+    let book = unwrap(createRecurrence(bookWithAccounts(), { ...input, id: customId }, NOW));
+    const result = createRecurrence(book, { ...input, id: customId }, NOW);
+    expect(unwrapErr(result).code).toBe("RECURRENCE_ID_DUPLICATE");
+  });
+
   it("accepts a split across several accounts", () => {
     const book = unwrap(
       createRecurrence(

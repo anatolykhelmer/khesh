@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f5f2" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#15130f" media="(prefers-color-scheme: dark)" />
+    <meta
+      name="description"
+      content="Khesh is a free, open-source household ledger that runs entirely in your browser, keeping your money in double-entry books. No account, no server, no telemetry."
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Khesh - Offline-first household ledger</title>
+    <style>
+      /* Palette copied from src/app/styles/tokens.css. Like privacy.html, this page must
+         render without the bundle, so it cannot import the tokens or the Heebo font the
+         app loads through @fontsource-variable. */
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f5f2;
+        --surface: #ffffff;
+        --ink: #1c1917;
+        --ink-muted: #6d655e;
+        --line: #e7e2dc;
+        --accent: #7c3aed;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15130f;
+          --surface: #211e19;
+          --ink: #f5f3f0;
+          --ink-muted: #948c82;
+          --line: #332f28;
+          --accent: #c4b5fd;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px 16px 48px;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 15px;
+        line-height: 1.6;
+      }
+
+      main {
+        max-width: 42rem;
+        margin: 0 auto;
+      }
+
+      .brand {
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-muted);
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 1.75rem;
+        line-height: 1.25;
+        margin: 8px 0 16px;
+      }
+
+      h2 {
+        font-size: 1.0625rem;
+        margin: 32px 0 8px;
+      }
+
+      .lede {
+        font-size: 1.0625rem;
+        margin: 0 0 8px;
+      }
+
+      ul {
+        padding-inline-start: 20px;
+        margin: 8px 0;
+      }
+
+      li {
+        margin-bottom: 8px;
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      code {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-size: 0.9em;
+      }
+
+      footer {
+        margin-top: 40px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        color: var(--ink-muted);
+      }
+
+      footer a + a {
+        margin-inline-start: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="brand">Khesh</p>
+      <h1>A household ledger that runs in your browser</h1>
+
+      <p class="lede">
+        Khesh is a free, open-source app for keeping the books of a household. It records
+        every shekel, dollar or euro that moves using double-entry bookkeeping, the same
+        method an accountant uses, so the numbers always balance and you can see where the
+        money actually went.
+      </p>
+      <p>
+        It runs entirely in your web browser. There is no account to create, nothing to sign
+        up for, and no server of ours behind it - the book is stored on your own device, and
+        the app keeps working with no connection at all.
+      </p>
+
+      <h2>What you can do with it</h2>
+      <ul>
+        <li>
+          Keep accounts for cash, bank accounts, cards, income and expense categories,
+          organised as a tree you shape yourself.
+        </li>
+        <li>
+          Record income, expenses and transfers as double-entry entries - including one
+          payment split across several categories, and entries that cross currencies.
+        </li>
+        <li>Set a monthly limit per category and watch what is left of it as the month runs.</li>
+        <li>
+          See your balances, this month's spending and a breakdown of where it went on the
+          dashboard, and longer trends on the statistics screen.
+        </li>
+        <li>
+          Export the whole book as a JSON file at any time, and import it back - on this
+          device or on another one.
+        </li>
+        <li>Use it in English or in Hebrew, with full right-to-left layout.</li>
+        <li>
+          Install it to your home screen. It is a progressive web app, so it launches and
+          works offline like any other app on the device.
+        </li>
+      </ul>
+
+      <h2>Who it is for</h2>
+      <p>
+        People and families who want to keep their own books - to know what they have, what
+        they spend it on and whether they are inside the month's plan - without handing their
+        finances to a service, and who are happy for the data to live on their own device.
+      </p>
+
+      <h2>Where your data lives</h2>
+      <p>
+        The book is stored in your browser's IndexedDB storage, on the device you are using.
+        There are no accounts, no server of ours, no telemetry, no advertising and no
+        cookies. Nothing leaves the browser unless you export a backup yourself, or you turn
+        on the optional Google Drive sync described below.
+      </p>
+
+      <h2>Optional Google Drive sync</h2>
+      <p>
+        Because there is no server, a second device would otherwise know nothing about your
+        book. Sync closes that gap using storage you already own: your own Google Drive. It
+        is switched off until you connect it in Settings, and the app works fully without it.
+      </p>
+      <ul>
+        <li>
+          When you connect it, Khesh asks Google for one scope, <code>drive.file</code>. That
+          scope covers only files the app itself creates, so the rest of your Drive stays
+          invisible to it.
+        </li>
+        <li>
+          It creates a single file, <code>khesh-book.json</code>, in that Drive account and
+          keeps it up to date as you work. Your other devices read the same file, so the book
+          stays in step across all of them.
+        </li>
+        <li>
+          The file is plain JSON in your own Drive. It is not sent to us - there is nowhere
+          of ours to send it to - and it is not shared with anyone else.
+        </li>
+        <li>
+          Disconnect in Settings to stop syncing, and revoke the app's access at any time at
+          <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+        </li>
+      </ul>
+      <p>
+        The full account of what is stored, where, and how to delete it is in the
+        <a href="/privacy.html">privacy policy</a>.
+      </p>
+
+      <h2>Open source</h2>
+      <p>
+        Khesh is released under the MIT licence and developed in the open, so every claim on
+        this page can be checked against the code:
+        <a href="https://github.com/anatolykhelmer/khesh">github.com/anatolykhelmer/khesh</a>.
+      </p>
+
+      <footer>
+        <p>
+          <a href="/">Open the app</a> &middot; <a href="/privacy.html">Privacy policy</a>
+          &middot; <a href="https://github.com/anatolykhelmer/khesh">Source on GitHub</a>
+        </p>
+      </footer>
+    </main>
+  </body>
+</html>

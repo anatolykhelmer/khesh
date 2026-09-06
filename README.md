@@ -4,7 +4,7 @@ Offline-first household ledger using double-entry bookkeeping. Frontend-only (Vi
 
 ## Privacy
 
-No accounts, no server, no telemetry. Data never leaves the browser unless you export it yourself from Settings, or you connect the optional sync to your own Google Drive - then the book is stored, unencrypted, in a `khesh-book.json` file in that Google account's Drive and nowhere else. There is still no server of ours and no telemetry. The full policy is at [privacy.html](public/privacy.html), served at `/privacy.html`.
+No accounts, no server, no telemetry. Data never leaves the browser unless you export it yourself from Settings, or you connect the optional sync to your own Google Drive - then the book is stored, unencrypted, in a `khesh-book.json` file in that Google account's Drive and nowhere else. There is still no server of ours and no telemetry. The full policy is at [privacy.html](public/privacy.html), served at `/privacy.html`. A plain-language description of the app - what it does, and what the Drive scope is for - is at [about.html](public/about.html), served at `/about.html`; that URL is the one registered with Google as the app's home page.
 
 ## Disclaimer
 

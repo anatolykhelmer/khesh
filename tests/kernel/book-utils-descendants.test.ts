@@ -5,13 +5,14 @@ import { NOW } from "../helpers";
 
 function makeBook(accounts: Book["accounts"]): Book {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     name: "Probe",
     homeCurrency: "ILS",
     metaUpdatedAt: NOW,
     accounts,
     journal: [],
     budgets: [],
+    recurrences: [],
     tombstones: [],
   };
 }

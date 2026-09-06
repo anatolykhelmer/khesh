@@ -389,14 +389,20 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
         canonicalJson({ name: b.name, homeCurrency: b.homeCurrency });
   const meta = metaFromA ? a : b;
 
+  // `recurrences` is not folded in below the way accounts/journal/budgets are: no
+  // command populates it yet (schema v3 only makes the collection exist), so every
+  // book merge sees empty on both sides. Wiring it into `liveClaims`/`collectClaims`
+  // is for whichever task adds the create/update/delete commands, alongside the
+  // property tests that would exercise it.
   const draft: Book = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     name: meta.name,
     homeCurrency: meta.homeCurrency,
     metaUpdatedAt: meta.metaUpdatedAt,
     accounts: [],
     journal: [],
     budgets: [],
+    recurrences: [],
     tombstones: [],
   };
   for (const [key, claim] of merged) {

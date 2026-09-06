@@ -52,13 +52,14 @@ describe("IndexedDbRepository", () => {
   it("refuses a snapshot from a newer schema instead of downgrading it", async () => {
     const repo = createIndexedDbRepository("khesh-test-future-schema");
     const future = {
-      schemaVersion: 3,
+      schemaVersion: 4,
       name: "Home",
       homeCurrency: "ILS",
       metaUpdatedAt: NOW,
       accounts: [],
       journal: [],
       budgets: [],
+      recurrences: [],
       tombstones: [],
       fieldThisBuildCannotSee: "keep me",
     };

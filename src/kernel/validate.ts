@@ -16,7 +16,8 @@ const ACCOUNT_TYPES = new Set<AccountType>([
 ]);
 const POSTING_SIDES = new Set<PostingSide>(["debit", "credit"]);
 const JOURNAL_KINDS = new Set<JournalEntryKind>(["standard", "opening"]);
-const TOMBSTONE_KINDS = new Set<string>(["account", "entry", "budget"]);
+const TOMBSTONE_KINDS = new Set<string>(["account", "entry", "budget", "recurrence"]);
+const RECURRENCE_UNITS = new Set<string>(["week", "month", "year"]);
 
 function isAccountRecord(value: unknown): value is Account {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -25,7 +26,7 @@ function isAccountRecord(value: unknown): value is Account {
 export function validateBook(book: Book): Result<true> {
   const violations: LedgerError[] = [];
 
-  if (book.schemaVersion !== 2) {
+  if (book.schemaVersion !== 3) {
     violations.push({
       code: "BOOK_INVALID_SCHEMA_VERSION",
       message: `Unsupported schemaVersion ${String(book.schemaVersion)}`,
@@ -290,6 +291,137 @@ export function validateBook(book: Book): Result<true> {
         });
       }
       budgetKeys.add(key);
+    }
+  }
+
+  if (!Array.isArray(book.recurrences)) {
+    violations.push({ code: "BOOK_INVALID", message: "Book recurrences must be an array" });
+  } else {
+    const ruleIds = new Set<string>();
+    for (const rule of book.recurrences) {
+      if (!rule || typeof rule !== "object") {
+        violations.push({ code: "BOOK_INVALID", message: "Invalid recurrence element" });
+        continue;
+      }
+      liveKeys.add(`recurrence|${String(rule.id)}`);
+      if (ruleIds.has(rule.id)) {
+        violations.push({
+          code: "RECURRENCE_ID_DUPLICATE",
+          message: `Duplicate recurrence id ${rule.id}`,
+          details: { id: rule.id },
+        });
+      }
+      ruleIds.add(rule.id);
+      if (typeof rule.updatedAt !== "string") {
+        violations.push({
+          code: "BOOK_INVALID",
+          message: "Record missing updatedAt",
+          details: { id: rule.id },
+        });
+      }
+      if (!Number.isInteger(rule.every) || rule.every < 1 || !RECURRENCE_UNITS.has(rule.unit)) {
+        violations.push({
+          code: "RECURRENCE_SCHEDULE_INVALID",
+          message: "Invalid recurrence interval",
+          details: { id: rule.id, every: rule.every, unit: rule.unit },
+        });
+      }
+      if (!isCalendarDate(rule.startDate)) {
+        violations.push({
+          code: "RECURRENCE_SCHEDULE_INVALID",
+          message: `Invalid start date ${String(rule.startDate)}`,
+          details: { id: rule.id },
+        });
+      }
+      if (rule.endDate !== null && (!isCalendarDate(rule.endDate) || rule.endDate < rule.startDate)) {
+        violations.push({
+          code: "RECURRENCE_SCHEDULE_INVALID",
+          message: "End date must be null or on/after the start date",
+          details: { id: rule.id },
+        });
+      }
+      if (rule.pausedAt !== null && !isCalendarDate(rule.pausedAt)) {
+        violations.push({
+          code: "RECURRENCE_SCHEDULE_INVALID",
+          message: `Invalid pausedAt ${String(rule.pausedAt)}`,
+          details: { id: rule.id },
+        });
+      }
+      for (const list of [rule.skipped, rule.deferred]) {
+        if (!Array.isArray(list) || !list.every((date) => isCalendarDate(date))) {
+          violations.push({
+            code: "RECURRENCE_SCHEDULE_INVALID",
+            message: "Skipped and deferred must be arrays of calendar dates",
+            details: { id: rule.id },
+          });
+        }
+      }
+      if (!Array.isArray(rule.lines) || rule.lines.length === 0) {
+        violations.push({
+          code: "ENTRY_TOO_FEW_ACCOUNTS",
+          message: "A recurrence needs at least one line",
+          details: { id: rule.id },
+        });
+        continue;
+      }
+      // `line.toAccountId` below dereferences every element, so — same reason the
+      // journal loop above tracks `postingsWellShaped` before calling
+      // `validatePostings` — this may only run once every element is confirmed to be
+      // an object. A malformed line makes the account/currency checks unknowable, so
+      // the whole rule is skipped rather than run on the survivors.
+      let linesWellShaped = true;
+      for (const line of rule.lines) {
+        if (!line || typeof line !== "object") {
+          violations.push({
+            code: "BOOK_INVALID",
+            message: "Invalid recurrence line element",
+            details: { id: rule.id },
+          });
+          linesWellShaped = false;
+        }
+      }
+      if (!linesWellShaped) continue;
+      const involved = [rule.fromAccountId, ...rule.lines.map((line) => line.toAccountId)];
+      const currencies = new Set<string>();
+      let accountsResolved = true;
+      for (const accountId of involved) {
+        const account = book.accounts.find(
+          (item) => isAccountRecord(item) && item.id === accountId,
+        );
+        if (!account) {
+          violations.push({
+            code: "ACCOUNT_NOT_FOUND",
+            message: "Recurrence references a missing account",
+            details: { id: rule.id, accountId },
+          });
+          accountsResolved = false;
+          continue;
+        }
+        if (account.isPlaceholder) {
+          violations.push({
+            code: "ACCOUNT_IS_PLACEHOLDER",
+            message: "A recurrence cannot post to a category",
+            details: { id: rule.id, accountId },
+          });
+        }
+        currencies.add(account.currency);
+      }
+      if (accountsResolved && currencies.size > 1) {
+        violations.push({
+          code: "RECURRENCE_CURRENCY_MISMATCH",
+          message: "Every account in a recurrence must share one currency",
+          details: { id: rule.id, currencies: [...currencies] },
+        });
+      }
+      for (const line of rule.lines) {
+        if (!Number.isInteger(line?.amount) || line.amount <= 0) {
+          violations.push({
+            code: "ENTRY_AMOUNT_INVALID",
+            message: "Amount must be an integer > 0",
+            details: { id: rule.id, amount: line?.amount },
+          });
+        }
+      }
     }
   }
 

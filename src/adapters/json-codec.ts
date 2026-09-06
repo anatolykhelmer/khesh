@@ -1,5 +1,5 @@
 import { err, ok, type Result } from "../kernel/result";
-import type { Account, Book, Budget, JournalEntry, Posting } from "../kernel/types";
+import type { Account, Book, Budget, JournalEntry, Posting, Recurrence } from "../kernel/types";
 import { validateBook } from "../kernel/validate";
 import { normalizeBook, type StoredBook } from "../kernel/normalize";
 
@@ -13,6 +13,7 @@ const ACCOUNT_TYPES = new Set<Account["type"]>([
 const POSTING_SIDES = new Set<Posting["side"]>(["debit", "credit"]);
 const JOURNAL_KINDS = new Set<JournalEntry["kind"]>(["standard", "opening"]);
 const BUDGET_PERIODS = new Set<Budget["period"]>(["month", "year"]);
+const RECURRENCE_UNITS = new Set<Recurrence["unit"]>(["week", "month", "year"]);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -70,7 +71,30 @@ function isBudgetShape(value: unknown): value is Budget {
   );
 }
 
-/** A v1 file and a v2 file both pass here; `jsonToBook` gates the version itself. */
+function isRecurrenceShape(value: unknown): value is Recurrence {
+  if (!isObject(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.description === "string" &&
+    typeof value.fromAccountId === "string" &&
+    Array.isArray(value.lines) &&
+    value.lines.every(
+      (line: unknown) =>
+        isObject(line) && typeof line.toAccountId === "string" && typeof line.amount === "number",
+    ) &&
+    typeof value.every === "number" &&
+    typeof value.unit === "string" &&
+    RECURRENCE_UNITS.has(value.unit as Recurrence["unit"]) &&
+    typeof value.startDate === "string" &&
+    (value.endDate === null || typeof value.endDate === "string") &&
+    (value.pausedAt === null || typeof value.pausedAt === "string") &&
+    Array.isArray(value.skipped) &&
+    Array.isArray(value.deferred) &&
+    (value.updatedAt === undefined || typeof value.updatedAt === "string")
+  );
+}
+
+/** A v1, v2 or v3 file all pass here; `jsonToBook` gates the version itself. */
 function isBookShape(value: unknown): value is StoredBook {
   if (!isObject(value)) return false;
   return (
@@ -81,7 +105,9 @@ function isBookShape(value: unknown): value is StoredBook {
     value.accounts.every(isAccountShape) &&
     Array.isArray(value.journal) &&
     value.journal.every(isJournalEntryShape) &&
-    (!("budgets" in value) || (Array.isArray(value.budgets) && value.budgets.every(isBudgetShape)))
+    (!("budgets" in value) || (Array.isArray(value.budgets) && value.budgets.every(isBudgetShape))) &&
+    (!("recurrences" in value) ||
+      (Array.isArray(value.recurrences) && value.recurrences.every(isRecurrenceShape)))
   );
 }
 
@@ -99,7 +125,7 @@ export function jsonToBook(raw: string): Result<Book> {
   if (!isBookShape(parsed)) {
     return err("JSON_INVALID_BOOK", "JSON is not a Book snapshot");
   }
-  if (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2) {
+  if (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2 && parsed.schemaVersion !== 3) {
     return err("BOOK_INVALID_SCHEMA_VERSION", `Unsupported schemaVersion ${String(parsed.schemaVersion)}`, {
       schemaVersion: parsed.schemaVersion,
     });

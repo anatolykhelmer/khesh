@@ -39,7 +39,7 @@ const envelope = (book: unknown) =>
   JSON.stringify({ app: "khesh", format: 1, encrypted: false, book });
 
 describe("sync envelope", () => {
-  it("round-trips a v2 book", () => {
+  it("round-trips a v3 book", () => {
     const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     const decoded = unwrap(decodeEnvelope(encodeEnvelope(book)));
     expect(decoded).toEqual(book);
@@ -59,8 +59,9 @@ describe("sync envelope", () => {
       book: { schemaVersion: 1, name: "Home", homeCurrency: "ILS", accounts: [], journal: [], budgets: [] },
     });
     const decoded = unwrap(decodeEnvelope(raw));
-    expect(decoded.schemaVersion).toBe(2);
+    expect(decoded.schemaVersion).toBe(3);
     expect(decoded.metaUpdatedAt).toBe(EPOCH);
+    expect(decoded.recurrences).toEqual([]);
   });
 
   it("rejects garbage and wrong shapes as SYNC_ENVELOPE_INVALID", () => {
@@ -85,7 +86,7 @@ describe("sync envelope", () => {
       app: "khesh",
       format: 1,
       encrypted: false,
-      book: { ...book, schemaVersion: 3 },
+      book: { ...book, schemaVersion: 4 },
     };
     expect(unwrapErr(decodeEnvelope(JSON.stringify(futureSchema))).code).toBe("SYNC_FORMAT_UNSUPPORTED");
   });

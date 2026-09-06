@@ -2,9 +2,9 @@ import { createBook } from "../../src/kernel/create-book";
 import { NOW, unwrap, unwrapErr } from "../helpers";
 
 describe("createBook", () => {
-  it("creates an empty book with schemaVersion 2", () => {
+  it("creates an empty book with schemaVersion 3", () => {
     const book = unwrap(createBook({ name: " Family ", homeCurrency: "ILS" }, NOW));
-    expect(book.schemaVersion).toBe(2);
+    expect(book.schemaVersion).toBe(3);
     expect(book.name).toBe("Family");
     expect(book.homeCurrency).toBe("ILS");
     expect(book.accounts).toEqual([]);

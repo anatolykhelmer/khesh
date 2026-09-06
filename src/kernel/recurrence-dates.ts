@@ -1,6 +1,5 @@
 import { isCalendarDate } from "./dates";
-
-export type RecurrenceUnit = "week" | "month" | "year";
+import type { RecurrenceUnit } from "./types";
 
 const DAY_MS = 86_400_000;
 

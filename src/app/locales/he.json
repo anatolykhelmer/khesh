@@ -59,7 +59,10 @@
     "budgetOver_one": "תקציב: קטגוריה אחת בחריגה",
     "budgetOver_two": "תקציב: שתי קטגוריות בחריגה",
     "budgetOver_many": "תקציב: {{count}} קטגוריות בחריגה",
-    "budgetOver_other": "תקציב: {{count}} קטגוריות בחריגה"
+    "budgetOver_other": "תקציב: {{count}} קטגוריות בחריגה",
+    "dueNow": "ממתינות לרישום",
+    "dueMore_one": "עוד {{count}}",
+    "dueMore_other": "עוד {{count}}"
   },
   "budget": {
     "title": "תקציב",

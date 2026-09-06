@@ -389,6 +389,27 @@ button {
   white-space: nowrap;
 }
 
+/* A pending row is not money yet, so it reads as a quieter, greyed-out version of a
+   confirmed one rather than gaining any attention-grabbing colour of its own. */
+.journal-row.pending .journal-title,
+.journal-row.pending .journal-amount {
+  color: var(--ink-muted);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: var(--s-2);
+  padding: 0 var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  font-size: var(--t-xs);
+  font-weight: 400;
+  vertical-align: middle;
+}
+
 .filter-bar {
   display: flex;
   align-items: center;

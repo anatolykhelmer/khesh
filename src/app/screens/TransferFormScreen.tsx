@@ -20,24 +20,36 @@ const EMPTY_LINE: LineDraft = { toAccountId: "", amount: "" };
 
 export function TransferFormScreen() {
   const { t } = useTranslation();
-  const { entryId } = useParams<{ entryId?: string }>();
+  const { entryId, ruleId, date: occurrenceDate } = useParams<{
+    entryId?: string;
+    ruleId?: string;
+    date?: string;
+  }>();
   const navigate = useNavigate();
   const { book, app, setError } = useLedger();
   const { busy, run } = useLedgerMutation();
 
   const existing = book && entryId ? book.journal.find((e) => e.id === entryId) : undefined;
   const existingShape = existing ? inferEntryLines(existing) : null;
+  const rule = book && ruleId ? book.recurrences.find((r) => r.id === ruleId) : undefined;
 
-  const [date, setDate] = useState(existing?.date ?? todayCalendarDate());
-  const [description, setDescription] = useState(existing?.description ?? "");
-  const [fromAccountId, setFromAccountId] = useState(existingShape?.fromAccountId ?? "");
+  const [date, setDate] = useState(existing?.date ?? occurrenceDate ?? todayCalendarDate());
+  const [description, setDescription] = useState(existing?.description ?? rule?.description ?? "");
+  const [fromAccountId, setFromAccountId] = useState(
+    existingShape?.fromAccountId ?? rule?.fromAccountId ?? "",
+  );
   const [lines, setLines] = useState<LineDraft[]>(
     existingShape
       ? existingShape.lines.map((line) => ({
           toAccountId: line.toAccountId,
           amount: minorToMajor(line.amount),
         }))
-      : [EMPTY_LINE],
+      : rule
+        ? rule.lines.map((line) => ({
+            toAccountId: line.toAccountId,
+            amount: minorToMajor(line.amount),
+          }))
+        : [EMPTY_LINE],
   );
   const [fromAmount, setFromAmount] = useState(
     existingShape && existingShape.fromAmount !== existingShape.total
@@ -68,6 +80,16 @@ export function TransferFormScreen() {
       <main className="screen">
         <h1>{t("transferForm.titleEdit")}</h1>
         <p className="muted">{t("transferForm.onlyStandardEditable")}</p>
+      </main>
+    );
+  }
+
+  // Reachable when the rule was deleted on another device while this screen was open.
+  if (ruleId && !rule) {
+    return (
+      <main className="screen">
+        <h1>{t("transferForm.titleNew")}</h1>
+        <p className="muted">{errorMessage("RECURRENCE_NOT_FOUND")}</p>
       </main>
     );
   }
@@ -185,7 +207,9 @@ export function TransferFormScreen() {
       () =>
         entryId
           ? app.updateEntry(currentBook, entryId, input)
-          : app.addEntry(currentBook, input),
+          : ruleId && occurrenceDate
+            ? app.postOccurrence(currentBook, ruleId, occurrenceDate, input)
+            : app.addEntry(currentBook, input),
       () => navigate("/journal"),
     );
   }

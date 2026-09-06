@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -6,22 +6,34 @@ import {
   formatYearMonth,
   monthRange,
   shiftYearMonth,
+  todayCalendarDate,
   yearRange,
 } from "../../service/dates";
 import { formatMinor, monthLabel } from "../format";
 import { currencySymbol } from "../currencies";
 import { heroState } from "../dashboard-state";
 import { expenseRootId } from "../stats-state";
+import { DueRowItem } from "../components/DueRowItem";
 import { Ltr } from "../components/Ltr";
 import { ChevronBack, ChevronForward, Gear } from "../components/icons";
 import { useLedger } from "../ledger-context";
+import { useLedgerMutation } from "../use-ledger-mutation";
 
 const TOP_CATEGORIES = 4;
+const DASHBOARD_DUE_ROWS = 3;
 
 export function DashboardScreen() {
   const { t } = useTranslation();
   const { book, app } = useLedger();
   const [{ year, month }, setYearMonth] = useState(currentYearMonth());
+  const today = todayCalendarDate();
+  // Deferred rows are filtered out here and only here: "Later" removes a row from this
+  // card, but the recurring queue and the journal still show it.
+  const due = useMemo(
+    () => (book ? app.dueRows(book, today).filter((row) => !row.deferred) : []),
+    [book, app, today],
+  );
+  const { busy, run } = useLedgerMutation();
 
   if (!book) return null;
 
@@ -135,6 +147,29 @@ export function DashboardScreen() {
           <ChevronForward />
         </button>
       </div>
+
+      {due.length > 0 ? (
+        <>
+          <h2 className="section-label">{t("dashboard.dueNow")}</h2>
+          <ul className="due-list group">
+            {due.slice(0, DASHBOARD_DUE_ROWS).map((row) => (
+              <DueRowItem
+                key={row.entryId}
+                row={row}
+                busy={busy}
+                onPost={() => run(() => app.postOccurrence(currentBook, row.ruleId, row.date))}
+                onSkip={() => run(() => app.skipOccurrence(currentBook, row.ruleId, row.date))}
+                onDefer={() => run(() => app.deferOccurrence(currentBook, row.ruleId, row.date))}
+              />
+            ))}
+          </ul>
+          {due.length > DASHBOARD_DUE_ROWS ? (
+            <Link className="secondary link-button" to="/recurring">
+              {t("dashboard.dueMore", { count: due.length - DASHBOARD_DUE_ROWS })}
+            </Link>
+          ) : null}
+        </>
+      ) : null}
 
       <p className="hero-label">{t("dashboard.spentIn", { month: monthLabel(month) })}</p>
       <Link

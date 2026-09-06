@@ -43,6 +43,7 @@ function Shell() {
           <Route path="/new" element={<TransferFormScreen key="new" />} />
           <Route path="/journal/:entryId" element={<EntryDetailScreen />} />
           <Route path="/journal/:entryId/edit" element={<TransferFormScreen key="edit" />} />
+          <Route path="/recurring/:ruleId/post/:date" element={<TransferFormScreen key="post" />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </div>

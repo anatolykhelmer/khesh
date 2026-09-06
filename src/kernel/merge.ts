@@ -390,10 +390,12 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
   const meta = metaFromA ? a : b;
 
   // `recurrences` is not folded in below the way accounts/journal/budgets are: no
-  // command populates it yet (schema v3 only makes the collection exist), so every
-  // book merge sees empty on both sides. Wiring it into `liveClaims`/`collectClaims`
-  // is for whichever task adds the create/update/delete commands, alongside the
-  // property tests that would exercise it.
+  // command populates it yet, though an imported or synced file can already carry
+  // rules in (jsonToBook/decodeEnvelope accept and preserve a v3 book's `recurrences`
+  // as-is) — so a merge input can hold rules that this draft silently drops. Wiring
+  // it into `liveClaims`/`collectClaims` is for whichever task adds the
+  // create/update/delete commands, alongside the property tests that would exercise
+  // it; the loud failure below is what stands in for that until then.
   const draft: Book = {
     schemaVersion: 3,
     name: meta.name,
@@ -413,8 +415,23 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
       draft.accounts.push(structuredClone(claim.record) as Account);
     } else if (kind === "entry") {
       draft.journal.push(structuredClone(claim.record) as JournalEntry);
-    } else {
+    } else if (kind === "budget") {
       draft.budgets.push(structuredClone(claim.record) as Budget);
+    } else {
+      // `kind` is derived from a string slice and cast, so widening `TombstoneKind`
+      // no longer makes this dispatch exhaustive by construction — tsc cannot flag a
+      // missing branch here the way it could when the union was only
+      // account/entry/budget. `recurrence` is the one kind this switch does not
+      // handle yet, and nothing above ever yields a *live* `recurrence|` claim
+      // (`liveClaims` only reads accounts/journal/budgets), so this is unreachable
+      // today. Left as a thrown error rather than folding it into `draft.budgets` (the
+      // silent miscategorization this branch replaces — a recurrence stored as a
+      // Budget, then quietly deleted by the rung-6 repair filter) or a swallowed
+      // `SYNC_MERGE_CONFLICT` Result (which would misreport a code bug as a
+      // resolvable data conflict): reaching this line means `liveClaims` started
+      // yielding a kind this switch was never taught, which is an invariant a future
+      // caller broke, not a merge outcome for a caller to handle gracefully.
+      throw new Error(`mergeBooks: unhandled live claim kind "${kind}"`);
     }
   }
 

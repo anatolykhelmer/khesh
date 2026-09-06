@@ -26,6 +26,34 @@ function ruleOn(accountId: string, toAccountId: string): Recurrence {
   };
 }
 
+/** Bank (asset) and Rent (expense), both ILS — a rule between them is well-formed,
+ * so every schedule/placeholder/duplicate case below only ever breaks the one thing
+ * it patches in. */
+function bookWithTwoAccounts(): Book {
+  const book = emptyBook();
+  book.accounts = [
+    { id: "a", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "b", parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+  ];
+  return book;
+}
+
+/** Same pattern as tests/kernel/validate-v2.test.ts's `violations`/`codes` helpers:
+ * validateBook always wraps every failure in the same BOOK_INVALID envelope, so only
+ * digging into `details.violations` can tell one rejection reason from another. */
+function violations(result: ReturnType<typeof validateBook>) {
+  const error = unwrapErr(result);
+  return error.details?.violations as Array<{
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  }>;
+}
+
+function codes(result: ReturnType<typeof validateBook>) {
+  return violations(result).map((v) => v.code);
+}
+
 describe("schema v3", () => {
   it("creates books at version 3 with an empty recurrences array", () => {
     const book = emptyBook();
@@ -62,38 +90,58 @@ describe("schema v3", () => {
   });
 
   it("rejects a rule whose accounts do not share one currency", () => {
-    const book = emptyBook();
-    book.accounts = [
-      { id: "a", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-      { id: "b", parentId: null, name: "Rent", type: "expense", currency: "USD", isPlaceholder: false, updatedAt: NOW },
-    ];
+    const book = bookWithTwoAccounts();
+    book.accounts[1] = { ...book.accounts[1], currency: "USD" };
     book.recurrences = [ruleOn("a", "b")];
-    expect(unwrapErr(validateBook(book)).code).toBe("BOOK_INVALID");
+    expect(codes(validateBook(book))).toContain("RECURRENCE_CURRENCY_MISMATCH");
   });
 
   it("accepts a well-formed rule", () => {
-    const book = emptyBook();
-    book.accounts = [
-      { id: "a", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-      { id: "b", parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    ];
+    const book = bookWithTwoAccounts();
     book.recurrences = [ruleOn("a", "b")];
     expect(unwrap(validateBook(book))).toBe(true);
+  });
+
+  it("rejects a rule that posts to a placeholder account", () => {
+    const book = bookWithTwoAccounts();
+    book.accounts[1] = { ...book.accounts[1], isPlaceholder: true };
+    book.recurrences = [ruleOn("a", "b")];
+    expect(codes(validateBook(book))).toContain("ACCOUNT_IS_PLACEHOLDER");
+  });
+
+  it("rejects two rules sharing an id", () => {
+    const book = bookWithTwoAccounts();
+    book.recurrences = [ruleOn("a", "b"), { ...ruleOn("a", "b"), description: "Rent (2)" }];
+    expect(codes(validateBook(book))).toContain("RECURRENCE_ID_DUPLICATE");
+  });
+
+  // One case per schedule field the brief added, each pinned to
+  // RECURRENCE_SCHEDULE_INVALID rather than the generic BOOK_INVALID wrapper —
+  // otherwise a typo that made the whole block reject unconditionally would pass
+  // just as well as a correct check.
+  it.each([
+    ["a non-positive every", { every: 0 }],
+    ["an unrecognized unit", { unit: "day" as unknown as Recurrence["unit"] }],
+    ["a malformed startDate", { startDate: "2026-02-30" }],
+    ["an endDate before startDate", { endDate: "2025-12-31" }],
+    ["a malformed pausedAt", { pausedAt: "not-a-date" }],
+    ["a non-date in skipped", { skipped: ["not-a-date"] }],
+  ] as Array<[string, Partial<Recurrence>]>)("rejects a rule with %s", (_label, patch) => {
+    const book = bookWithTwoAccounts();
+    book.recurrences = [{ ...ruleOn("a", "b"), ...patch }];
+    expect(codes(validateBook(book))).toContain("RECURRENCE_SCHEDULE_INVALID");
   });
 
   // validateBook's contract is to return a Result, never throw — a corrupted Drive
   // file can carry a null element inside a recurrence's `lines`, and the account/
   // currency checks below dereference every line directly.
   it("reports a null recurrence line element instead of throwing", () => {
-    const book = emptyBook();
-    book.accounts = [
-      { id: "a", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    ];
-    const broken = structuredClone(ruleOn("a", "a"));
+    const book = bookWithTwoAccounts();
+    const broken = structuredClone(ruleOn("a", "b"));
     (broken.lines as unknown[]).push(null);
     book.recurrences = [broken];
-    const error = unwrapErr(validateBook(book));
-    const messages = (error.details?.violations as Array<{ message: string }>).map((v) => v.message);
-    expect(messages).toContain("Invalid recurrence line element");
+    expect(violations(validateBook(book)).map((v) => v.message)).toContain(
+      "Invalid recurrence line element",
+    );
   });
 });

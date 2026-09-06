@@ -100,7 +100,8 @@
     "exportHint": "Downloads your whole book as a JSON file.",
     "importButton": "Import backup",
     "importHint": "Replaces the current book with the contents of the file.",
-    "importConfirm": "Importing replaces the book on this device. Continue?"
+    "importConfirm": "Importing replaces the book on this device. Continue?",
+    "privacyLink": "Privacy policy"
   },
   "sync": {
     "title": "Sync",

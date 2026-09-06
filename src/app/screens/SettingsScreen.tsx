@@ -54,6 +54,14 @@ export function SettingsScreen() {
       </ul>
 
       <SyncSection />
+
+      <ul className="settings-list group">
+        <li className="settings-row">
+          <a className="row-button" href="/privacy.html" target="_blank" rel="noopener">
+            {t("settings.privacyLink")}
+          </a>
+        </li>
+      </ul>
     </main>
   );
 }

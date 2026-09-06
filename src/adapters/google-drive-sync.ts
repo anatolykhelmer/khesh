@@ -146,6 +146,26 @@ export function createGoogleAuth(clientId: string): GoogleAuth {
   };
 }
 
+/**
+ * Reading a body is as much a network operation as the request that produced it, and it
+ * fails separately: on a stalled connection the headers arrive, `fetch` resolves ok, and
+ * the same AbortSignal fires here instead — headers in, body stream dropped, which is an
+ * ordinary way for a flaky link to behave.
+ *
+ * Left to reject, that escapes `read`/`write` as an unhandled rejection rather than a
+ * Result. Every `syncNow` call site is `void engine.syncNow()`, so nothing would catch
+ * it: `fail()` never runs, the engine sits in `syncing`, and the section disables the
+ * one button that state offers the user. Malformed JSON lands here too and means the
+ * same thing — no usable body — so neither is worth telling apart.
+ */
+async function readBody<T>(read: () => Promise<T>): Promise<Result<T>> {
+  try {
+    return ok(await read());
+  } catch {
+    return err("SYNC_STORE_FAILED", "Could not read Drive's response");
+  }
+}
+
 export type DriveStoreDeps = {
   getToken: (interactive?: boolean) => Promise<Result<string>>;
   getFileId: () => string | null;
@@ -217,8 +237,9 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
     const query = encodeURIComponent(`name='${FILE_NAME}' and trashed=false`);
     const found = await authFetch(`${FILES_URL}?q=${query}&spaces=drive&fields=files(id,modifiedTime)`);
     if (!found.ok) return found;
-    const data = (await found.value.json()) as { files?: Array<{ id: string }> };
-    const files = data.files ?? [];
+    const data = await readBody(() => found.value.json() as Promise<{ files?: Array<{ id: string }> }>);
+    if (!data.ok) return data;
+    const files = data.value.files ?? [];
     if (files.length > 1) {
       return err("SYNC_FILE_AMBIGUOUS", `Drive holds ${files.length} files named ${FILE_NAME}`, {
         fileIds: files.map((file) => file.id),
@@ -232,8 +253,9 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
   async function metadata(id: string): Promise<Result<string>> {
     const response = await authFetch(`${FILES_URL}/${id}?fields=modifiedTime`);
     if (!response.ok) return response;
-    const data = (await response.value.json()) as { modifiedTime?: string };
-    return ok(data.modifiedTime ?? "");
+    const data = await readBody(() => response.value.json() as Promise<{ modifiedTime?: string }>);
+    if (!data.ok) return data;
+    return ok(data.value.modifiedTime ?? "");
   }
 
   return {
@@ -254,9 +276,11 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
       if (!rev.ok) return rev;
       const media = await authFetch(`${FILES_URL}/${id.value}?alt=media`);
       if (!media.ok) return media;
+      const payload = await readBody(() => media.value.text());
+      if (!payload.ok) return payload;
       const etag = media.value.headers.get("ETag");
       validator = etag === null ? null : { rev: rev.value, etag };
-      return ok({ payload: await media.value.text(), rev: rev.value });
+      return ok({ payload: payload.value, rev: rev.value });
     },
 
     async write(payload: string, ifUnchanged?: string) {
@@ -289,10 +313,12 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
           patched = await patch();
         }
         if (!patched.ok) return patched;
-        const data = (await patched.value.json()) as { modifiedTime?: string };
+        const data = await readBody(() => patched.value.json() as Promise<{ modifiedTime?: string }>);
         // Whatever was in Drive is now this payload; the old validator describes neither.
+        // Retired even when the body did not arrive: the PATCH itself did land.
         validator = null;
-        return ok({ rev: data.modifiedTime ?? "" });
+        if (!data.ok) return data;
+        return ok({ rev: data.value.modifiedTime ?? "" });
       }
       const boundary = "khesh-envelope";
       const body = [
@@ -313,9 +339,12 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
         body,
       });
       if (!created.ok) return created;
-      const data = (await created.value.json()) as { id: string; modifiedTime?: string };
-      await deps.onFileId(data.id);
-      return ok({ rev: data.modifiedTime ?? "" });
+      const data = await readBody(
+        () => created.value.json() as Promise<{ id: string; modifiedTime?: string }>,
+      );
+      if (!data.ok) return data;
+      await deps.onFileId(data.value.id);
+      return ok({ rev: data.value.modifiedTime ?? "" });
     },
   };
 }

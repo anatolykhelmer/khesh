@@ -318,6 +318,46 @@ describe("drive sync store", () => {
     expect(Date.now() - startedAt).toBeLessThan(2000); // it aborted, it did not hang
   });
 
+  it("reports a body that stalls past the timeout rather than rejecting out of the store", async () => {
+    // The other half of a stalled connection, and the ordinary one: headers arrive,
+    // `fetch` resolves, and the abort fires while the body stream is still open. That
+    // rejection used to escape read/write as an unhandled rejection instead of a Result
+    // -- every syncNow call site is `void engine.syncNow()`, so nothing reported it, the
+    // engine stayed in `syncing`, and that state disables its own Sync now button.
+    const stallingBody = (stalls: (url: string) => boolean): typeof fetch =>
+      async (input, init) => {
+        if (!stalls(String(input))) return json({ id: "f9", modifiedTime: "rev-7" });
+        const stall = () =>
+          new Promise<never>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+          });
+        return { ok: true, status: 200, headers: new Headers(), json: stall, text: stall } as unknown as Response;
+      };
+    const storeWith = (fetchImpl: typeof fetch, fileId: string | null) =>
+      createDriveSyncStore({
+        getToken: async () => ok("tok-1"),
+        getFileId: () => fileId,
+        onFileId: () => undefined,
+        fetchImpl,
+        timeoutMs: 20,
+      });
+
+    const startedAt = Date.now();
+    // One case per body read in the module: the name search, the metadata lookup, the
+    // media download, the PATCH's response and the create's response.
+    const search = storeWith(stallingBody((u) => u.includes("?q=")), null);
+    expect(unwrapErr(await search.probe()).code).toBe("SYNC_STORE_FAILED");
+    const meta = storeWith(stallingBody((u) => u.includes("fields=modifiedTime")), "f9");
+    expect(unwrapErr(await meta.probe()).code).toBe("SYNC_STORE_FAILED");
+    const media = storeWith(stallingBody((u) => u.includes("alt=media")), "f9");
+    expect(unwrapErr(await media.read()).code).toBe("SYNC_STORE_FAILED");
+    const patch = storeWith(stallingBody((u) => u.includes("/upload/")), "f9");
+    expect(unwrapErr(await patch.write("PAYLOAD")).code).toBe("SYNC_STORE_FAILED");
+    const create = storeWith(stallingBody((u) => u.includes("/upload/")), null);
+    expect(unwrapErr(await create.write("PAYLOAD")).code).toBe("SYNC_STORE_FAILED");
+    expect(Date.now() - startedAt).toBeLessThan(3000); // each aborted, none hung
+  });
+
   it("fetchAccountEmail reads drive/v3/about", async () => {
     const { impl, calls } = stubFetch(() => json({ user: { emailAddress: "a@b.c" } }));
     expect(unwrap(await fetchAccountEmail(async () => ok("tok"), impl))).toBe("a@b.c");

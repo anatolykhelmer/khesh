@@ -2,6 +2,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { todayCalendarDate } from "../../service/dates";
 import { ChevronBack } from "../components/icons";
+import { DangerZone } from "../components/DangerZone";
 import { ImportBookButton } from "../components/ImportBookButton";
 import { SyncSection } from "../components/SyncSection";
 import { useLedger } from "../ledger-context";
@@ -67,6 +68,8 @@ export function SettingsScreen() {
           </a>
         </li>
       </ul>
+
+      <DangerZone />
     </main>
   );
 }

@@ -433,25 +433,22 @@ function tombstoneKeys(book: Book): Set<string> {
 }
 
 /**
- * BL-037 (`docs/product/BACKLOG.md`): a repair rung that drops a record it finds
- * unpostable after the union — rung 6 for a budget, rung 7 for a recurrence — removes it
- * from the draft without writing a tombstone. When that record had just beaten a real
- * tombstone from one of the sources on an equal-`updatedAt` tie (`later()` keeps live
- * data on a live/dead tie), the result ends up with no trace of the record at all —
- * neither live nor dead — so re-merging the source that held the tombstone reinstates
- * it. That is a real, pre-existing convergence bug, not a scenario this suite should
- * quietly stop generating; it is asserted around instead, from outside `mergeBooks`,
- * since nothing here can see which repair rung fired. The signal is exactly BL-037's
- * shape and nothing else can produce it: the claim-dispatch loop in `mergeBooks` always
- * files every input key as either live or a tombstone before repair runs, so a key that
- * was live in a source but is neither live nor tombstoned in the output can only mean a
- * repair rung dropped it silently.
+ * Keys that were live in a source and came back neither live nor tombstoned — records
+ * the merge made disappear leaving no claim behind. Keys rather than a bare `false`, so
+ * a failure names the record.
+ *
+ * `mergeBooks`'s claim-dispatch loop files every input key as either live or a tombstone
+ * before the repair ladder runs, and no rung removes a record without writing the
+ * tombstone that says so, so this is empty by construction. It is the property the
+ * merge's convergence rests on: a key with no claim at all is one the next merge with
+ * either source re-decides from scratch, which is how BL-037 turned a repair-rung drop
+ * into a merge that was not a no-op the second time round.
  */
-function silentlyDropped(inputs: readonly Book[], output: Book): boolean {
+function vanished(inputs: readonly Book[], output: Book): string[] {
   const outputLive = liveRecordKeys(output);
   const outputDead = tombstoneKeys(output);
-  return inputs.some((input) =>
-    [...liveRecordKeys(input)].some((key) => !outputLive.has(key) && !outputDead.has(key)),
+  return inputs.flatMap((input) =>
+    [...liveRecordKeys(input)].filter((key) => !outputLive.has(key) && !outputDead.has(key)),
   );
 }
 
@@ -483,22 +480,16 @@ describe("mergeBooks properties", () => {
           // Having returned a book rather than refusing, it must be one whose entries
           // still mean what the devices recorded.
           expect(reinterpreted(ab.value, [a, b])).toEqual([]);
+          // Every record either survived or left a tombstone. Checked before the
+          // convergence assertions below rather than after, because a vanished key is
+          // exactly what makes them fail (BL-037) and this names the record they would
+          // only report as a whole-book diff.
+          expect(vanished([a, b], ab.value)).toEqual([]);
           // Idempotence and convergence: replaying the merge, or re-merging either
-          // source into the result, must be a no-op. Re-merging `ab.value` with itself
-          // always holds this: there is nothing outside `ab.value` for that merge to
-          // pull back in, so it cannot exhibit BL-037 (see `silentlyDropped`) and always
-          // runs.
+          // source into the result, must be a no-op.
           expect(unwrap(mergeBooks(ab.value, ab.value))).toEqual(ab.value);
-          // Re-merging with a source can fail this — known issue BL-037 — only when a
-          // repair rung silently dropped a record that had just beaten that source's own
-          // tombstone; `silentlyDropped` is this test's only way to notice that happened,
-          // since nothing outside `mergeBooks` can see which rung fired. Skipped only for
-          // that specific condition, not for the scenario as a whole: the checks above
-          // (symmetry, validity, meaning-preservation) already ran unconditionally.
-          if (!silentlyDropped([a, b], ab.value)) {
-            expect(unwrap(mergeBooks(ab.value, a))).toEqual(ab.value);
-            expect(unwrap(mergeBooks(ab.value, b))).toEqual(ab.value);
-          }
+          expect(unwrap(mergeBooks(ab.value, a))).toEqual(ab.value);
+          expect(unwrap(mergeBooks(ab.value, b))).toEqual(ab.value);
         },
       ),
       // ~0.55ms a scenario, so this is the share of the run the whole suite can

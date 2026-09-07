@@ -1,6 +1,6 @@
 import { canonicalJson } from "./canonical-json";
 import { err, ok, type Result } from "./result";
-import { budgetKeyOf } from "./tombstones";
+import { addTombstone, budgetKeyOf } from "./tombstones";
 import type {
   Account,
   Book,
@@ -139,6 +139,18 @@ function findCycle(accounts: Account[], index: Map<string, Account>): string[] |
 }
 
 /**
+ * One millisecond past `stamp`, or null when it will not parse — a record whose stamp is
+ * unreadable came from outside the kernel, and the ladder invents nothing for it.
+ *
+ * The millisecond comes from the record rather than a clock so that `mergeBooks` stays
+ * pure and its result stays a function of its two arguments alone.
+ */
+function oneTickPast(stamp: string): string | null {
+  const at = Date.parse(stamp);
+  return Number.isNaN(at) ? null : new Date(at + 1).toISOString();
+}
+
+/**
  * Stamp a record the ladder just rewrote one millisecond past the version it was
  * derived from. Mutates the record.
  *
@@ -150,16 +162,73 @@ function findCycle(accounts: Account[], index: Map<string, Account>): string[] |
  * ahead of the parentId the tie originally turned on), so the merge settles on a
  * different book each time two devices that already agree sync again.
  *
- * The millisecond comes from the record, not from a clock, so `mergeBooks` stays pure
- * and its result stays a function of its two arguments alone. A rung only calls this
- * where it actually changed something, so re-merging an already-repaired book finds
- * nothing to repair and stamps nothing.
+ * A rung only calls this where it actually changed something, so re-merging an
+ * already-repaired book finds nothing to repair and stamps nothing.
  */
 function repaired(record: { updatedAt: string }): void {
-  const at = Date.parse(record.updatedAt);
   // A record whose stamp will not parse came from outside the kernel; leave it be
   // rather than invent one. validateBook is what rejects it.
-  if (!Number.isNaN(at)) record.updatedAt = new Date(at + 1).toISOString();
+  const next = oneTickPast(record.updatedAt);
+  if (next !== null) record.updatedAt = next;
+}
+
+/**
+ * The records a rung still allows, with a tombstone written into `draft` for each one it
+ * drops. Mutates `draft`; the caller assigns the survivors back.
+ *
+ * A drop is a delete, and — exactly as `repaired` argues for a rewrite — last-writer-wins
+ * is the only channel this format has for saying so. Filtering the array and writing
+ * nothing leaves the merged book with no claim on that key at all: neither the record nor
+ * any trace of its removal. The next merge then re-decides the key from scratch, and when
+ * one device holds a real tombstone for it — the one `later` discarded on a live/dead tie
+ * in favour of the copy this rung has just dropped — that merge adopts the tombstone
+ * outright and returns a different book. A sync round that should have settled instead
+ * hands `bookFingerprint` a change and writes again.
+ *
+ * `deletedAt` is one millisecond past the dropped record's own stamp, which is what makes
+ * the drop settle by outranking rather than by being re-derived: every copy of the record
+ * still out there is stamped at `updatedAt` by definition, so the tombstone beats all of
+ * them. A device that goes on to *edit* the record wins on merit, as last-writer-wins
+ * intends, and the rung — if the account state still forbids the record — drops it again
+ * one tick past that newer stamp.
+ *
+ * The cost is that the drop is permanent: a rule dropped because a concurrent edit left
+ * its accounts in two currencies stays dropped once that currency is put back. That is
+ * the intended reading. The record is already gone from every device that has synced
+ * (the engine saves the merge result over the local book), so the behaviour it replaces
+ * was not "it comes back when you fix the account" but "it comes back if some device
+ * skipped the sync" — and re-creating it is a normal write, which clears the tombstone.
+ *
+ * Ordering: only rung 1 consumes tombstones, and only account ones, so a budget or
+ * recurrence tombstone written below it is inert for the rest of the ladder. A future
+ * rung that drops *accounts* this way must run after rung 1 for the same reason, or its
+ * tombstone would be read straight back and the account resurrected.
+ */
+function keepValid<T extends AnyRecord>(
+  draft: Book,
+  kind: TombstoneKind,
+  records: readonly T[],
+  keyOf: (record: T) => string,
+  valid: (record: T) => boolean,
+): T[] {
+  const kept: T[] = [];
+  for (const record of records) {
+    if (valid(record)) {
+      kept.push(record);
+      continue;
+    }
+    // An unparseable stamp leaves the tombstone on the record's own: `oneTickPast`
+    // refuses to invent a date, and a recorded delete that ties is still better than a
+    // record that vanishes. Such a book came from outside the kernel either way — a
+    // stamp `validateBook` waves through because it only asks for a string. It then
+    // carries that stamp into `deletedAt`, where `decodeEnvelope`'s canonical-timestamp
+    // gate refuses it on the receiving device: the record used to disappear here and
+    // take the bad stamp with it, and now the removal is recorded instead. A refusal
+    // the user can see beats a book that syncs by quietly shedding what it cannot spell.
+    const deletedAt = oneTickPast(record.updatedAt) ?? record.updatedAt;
+    addTombstone(draft, kind, keyOf(record), record, deletedAt);
+  }
+  return kept;
 }
 
 /** What made a draft irreparable, for the refusal's `details`. `mergeBooks` refuses for
@@ -320,26 +389,39 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
 
   // 6. A budget only makes sense on an expense account. Rung 1 has already restored
   //    every account a budget references, so this drops exactly the limits whose
-  //    account was concurrently retyped away from expense.
+  //    account was concurrently retyped away from expense — each one tombstoned by
+  //    `keepValid`, which is what keeps the merge idempotent.
   const typeById = new Map(draft.accounts.map((a) => [a.id, a.type]));
-  draft.budgets = draft.budgets.filter((b) => typeById.get(b.accountId) === "expense");
+  draft.budgets = keepValid(
+    draft,
+    "budget",
+    draft.budgets,
+    budgetKeyOf,
+    (b) => typeById.get(b.accountId) === "expense",
+  );
 
   // 7. A recurrence is only postable while every account it touches is not a placeholder
   //    and they all share one currency. Rung 1 has restored the accounts, so this drops
   //    exactly the rules a concurrent retype-to-placeholder or currency change made
-  //    impossible — the same treatment rung 6 gives a budget whose account stopped being
-  //    an expense.
+  //    impossible — the same treatment, tombstone included, rung 6 gives a budget whose
+  //    account stopped being an expense.
   const accountById = new Map(draft.accounts.map((a) => [a.id, a]));
-  draft.recurrences = draft.recurrences.filter((rule) => {
-    const involved = [rule.fromAccountId, ...rule.lines.map((line) => line.toAccountId)];
-    const currencies = new Set<string>();
-    for (const id of involved) {
-      const account = accountById.get(id);
-      if (!account || account.isPlaceholder) return false;
-      currencies.add(account.currency);
-    }
-    return currencies.size === 1;
-  });
+  draft.recurrences = keepValid(
+    draft,
+    "recurrence",
+    draft.recurrences,
+    (rule) => rule.id,
+    (rule) => {
+      const involved = [rule.fromAccountId, ...rule.lines.map((line) => line.toAccountId)];
+      const currencies = new Set<string>();
+      for (const id of involved) {
+        const account = accountById.get(id);
+        if (!account || account.isPlaceholder) return false;
+        currencies.add(account.currency);
+      }
+      return currencies.size === 1;
+    },
+  );
 
   return null;
 }

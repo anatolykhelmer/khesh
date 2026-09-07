@@ -62,6 +62,33 @@ describe("merging recurrences", () => {
     );
     const merged = unwrap(mergeBooks(a, b));
     expect(merged.recurrences).toEqual([]);
+    expect(merged.tombstones.map((t) => `${t.kind}|${t.key}`)).toEqual(["recurrence|r1"]);
+    expect(unwrap(validateBook(merged))).toBe(true);
+  });
+
+  it("leaves a tombstone for the rule it drops, so the delete stops coming back", () => {
+    // The same shape as the budget half of this in `merge.test.ts`: B deletes the rule
+    // at the instant A last wrote it, so `later` hands the live/dead tie to A's live copy
+    // and discards B's tombstone — then rung 7 drops that copy, because B also moved an
+    // account it touches to another currency. With nothing written in its place the
+    // merged book holds no claim on `r1` at all, and re-merging B pulls B's tombstone
+    // back in: `mergeBooks(mergeBooks(a, b), b)` stops being `mergeBooks(a, b)`.
+    const base = unwrap(createRecurrence(seeded(), { ...input, id: "r1" }, NOW));
+    const a = base;
+    const b = unwrap(deleteRecurrence(base, "r1", NOW));
+    b.accounts = b.accounts.map((account) =>
+      account.id === "rent" ? { ...account, currency: "USD", updatedAt: LATER } : account,
+    );
+
+    const merged = unwrap(mergeBooks(a, b));
+    expect(merged.recurrences).toEqual([]);
+    expect(merged.tombstones.map((t) => `${t.kind}|${t.key}`)).toEqual(["recurrence|r1"]);
+    // Derived from the rule the rung dropped, one millisecond on, so it outranks the
+    // copy A still holds instead of tying with it.
+    expect(merged.tombstones[0].deletedAt).toBe("2026-09-02T10:00:00.001Z");
+    expect(unwrap(mergeBooks(b, a))).toEqual(merged);
+    expect(unwrap(mergeBooks(merged, a))).toEqual(merged);
+    expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
     expect(unwrap(validateBook(merged))).toBe(true);
   });
 

@@ -3,6 +3,7 @@ import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { removeBudget, setBudget } from "../../src/kernel/budgets";
 import { mergeBooks } from "../../src/kernel/merge";
+import { budgetKeyOf } from "../../src/kernel/tombstones";
 import { validateBook } from "../../src/kernel/validate";
 import type { Book } from "../../src/kernel/types";
 import { unwrap, unwrapErr } from "../helpers";
@@ -163,7 +164,9 @@ describe("mergeBooks repair ladder", () => {
     const merged = mergedBothOrders(a, b);
     expect(merged.accounts.find((x) => x.id === foodId)?.type).toBe("income");
     expect(merged.budgets).toHaveLength(0);
-    expect(merged.tombstones).toHaveLength(0);
+    // Food's own tombstone is gone — the restore consumed it — and the only one left is
+    // the limit's, written by the rung that dropped it.
+    expect(merged.tombstones.map((t) => t.kind)).toEqual(["budget"]);
     expect(unwrap(mergeBooks(merged, a))).toEqual(merged);
     expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
   });
@@ -238,6 +241,31 @@ describe("mergeBooks repair ladder", () => {
     const b = unwrap(updateAccount(leafed, { id: cafesId, type: "income", parentId: null }, T(2)));
     const merged = mergedBothOrders(a, b);
     expect(merged.budgets).toHaveLength(0);
+  });
+
+  it("leaves a tombstone for the budget it drops, so the delete stops coming back", () => {
+    // B removes the limit and retypes Food in the same instant; A still holds the limit.
+    // `later` hands a live/dead tie to the data, so B's tombstone loses — and rung 6 then
+    // drops the very record that beat it, because Food is no longer an expense. Writing
+    // nothing would leave the merged book with no claim at all on that key: re-merging B
+    // would adopt B's tombstone outright, so a merge that should be a no-op would hand
+    // the sync engine a changed fingerprint every round.
+    const { book, foodId } = base();
+    const key = { accountId: foodId, period: "month" as const, currency: "ILS" };
+    const a = unwrap(setBudget(book, { ...key, limit: 100 }, T(1)));
+    const b = unwrap(
+      updateAccount(unwrap(removeBudget(a, key, T(1))), { id: foodId, type: "income" }, T(1)),
+    );
+    const merged = mergedBothOrders(a, b);
+    expect(merged.budgets).toHaveLength(0);
+    expect(merged.tombstones.map((t) => `${t.kind}|${t.key}`)).toEqual([
+      `budget|${budgetKeyOf(key)}`,
+    ]);
+    // One millisecond past the record it dropped, so it outranks the copy A still holds
+    // rather than tying with it, and it comes from the record instead of a clock.
+    expect(merged.tombstones[0].deletedAt).toBe("2026-09-02T10:01:00.001Z");
+    expect(unwrap(mergeBooks(merged, a))).toEqual(merged);
+    expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
   });
 
   it("breaks a parent cycle by detaching its lowest-id member", () => {

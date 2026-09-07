@@ -280,6 +280,16 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       });
     },
 
+    /**
+     * Erase the local book. Takes the same lock as every persisting write, so it cannot
+     * land inside a sync cycle, and deliberately does not fire `afterCommit`: that hook
+     * exists to offer a new book to Drive, and a reset has none to offer. The caller
+     * clears its own context state; there is no book to hand back.
+     */
+    async resetAll(): Promise<Result<void>> {
+      return runExclusive(() => repo.clear());
+    },
+
     async createHousehold(homeCurrency: CurrencyCode): Promise<Result<Book>> {
       const created = createBook({ name: HOUSEHOLD_BOOK_NAME, homeCurrency }, nowIso());
       if (!created.ok) return created;

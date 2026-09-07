@@ -71,7 +71,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     setBook,
     app,
     repo,
-    announceBookChanged: (next) => {
+    announceBookChanged: (next: Book | null) => {
       setBook(next);
       channelRef.current?.postMessage("changed");
     },

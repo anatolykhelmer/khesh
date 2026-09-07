@@ -706,6 +706,15 @@ a.row-button {
   font-size: var(--t-sm);
 }
 
+/* `.row-button` is defined after `.danger` in this file and, at equal specificity, wins
+   on background, colour and padding — a destructive settings row that reused `.danger`
+   alone would render as ordinary ink. It states its own colour rather than reordering
+   the file. Solid red stays for the confirm button, which is a standalone `.danger`. */
+.row-button.danger {
+  background: transparent;
+  color: var(--danger-ink);
+}
+
 .budget-list {
   list-style: none;
   padding: 0;

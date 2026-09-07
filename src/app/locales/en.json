@@ -108,7 +108,11 @@
     "importHint": "Replaces the current book with the contents of the file.",
     "importConfirm": "Importing replaces the book on this device. Continue?",
     "aboutLink": "About Khesh",
-    "privacyLink": "Privacy policy"
+    "privacyLink": "Privacy policy",
+    "resetButton": "Erase all data",
+    "resetHint": "Deletes the book on this device and disconnects sync.",
+    "resetWarning": "Deletes every account, entry, budget and recurring rule on this device, and disconnects Google Drive sync. The file in your Drive is not deleted — you can connect to it again. Export a backup first if you might want this book back.",
+    "resetConfirm": "Yes, erase everything"
   },
   "sync": {
     "title": "Sync",

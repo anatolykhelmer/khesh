@@ -15,8 +15,9 @@ export type LedgerContextValue = {
   app: LedgerAppInstance;
   repo: LedgerRepository;
   /** Adopt a book written outside a mutation (sync merge, first connect) and tell
-   * the other tabs to reload. */
-  announceBookChanged: (book: Book) => void;
+   * the other tabs to reload. `null` is a reset: the tabs that hear it boot into
+   * onboarding, the same as a fresh install. */
+  announceBookChanged: (book: Book | null) => void;
 };
 
 export const LedgerContext = createContext<LedgerContextValue | null>(null);

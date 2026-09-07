@@ -171,7 +171,9 @@ export function JournalScreen() {
 
       {rows.length === 0 ? (
         <p className="muted">
-          {currentBook.journal.length === 0 ? t("journal.noEntriesYet") : t("journal.noEntriesMatch")}
+          {currentBook.journal.length === 0 && isDefaultFilter(currentFilter)
+            ? t("journal.noEntriesYet")
+            : t("journal.noEntriesMatch")}
         </p>
       ) : (
         <ul className="journal-list group">

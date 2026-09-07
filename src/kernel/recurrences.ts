@@ -177,6 +177,9 @@ export function skipOccurrence(
   today: string,
   now: string,
 ): Result<Book> {
+  if (!isCalendarDate(date) || !isCalendarDate(today)) {
+    return err("RECURRENCE_SCHEDULE_INVALID", "Skip date must be a calendar date", { date, today });
+  }
   return withRule(
     book,
     ruleId,
@@ -193,6 +196,9 @@ export function deferOccurrence(
   today: string,
   now: string,
 ): Result<Book> {
+  if (!isCalendarDate(date) || !isCalendarDate(today)) {
+    return err("RECURRENCE_SCHEDULE_INVALID", "Defer date must be a calendar date", { date, today });
+  }
   return withRule(
     book,
     ruleId,
@@ -219,6 +225,9 @@ export function setRecurrencePaused(
   today: string,
   now: string,
 ): Result<Book> {
+  if (!isCalendarDate(today)) {
+    return err("RECURRENCE_SCHEDULE_INVALID", "Today must be a calendar date", { today });
+  }
   return withRule(
     book,
     ruleId,

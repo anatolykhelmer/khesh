@@ -56,6 +56,15 @@ describe("skipOccurrence", () => {
     );
   });
 
+  it("refuses a malformed date rather than letting it into the skipped list", () => {
+    expect(unwrapErr(skipOccurrence(withRule(), "r1", "2026-02-30", TODAY, LATER)).code).toBe(
+      "RECURRENCE_SCHEDULE_INVALID",
+    );
+    expect(unwrapErr(skipOccurrence(withRule(), "r1", "2026-05-01", "not-a-date", LATER)).code).toBe(
+      "RECURRENCE_SCHEDULE_INVALID",
+    );
+  });
+
   it("drops dates that fell out of the window, so the list cannot grow forever", () => {
     const book = withRule();
     book.recurrences[0].skipped = ["2000-01-01", "2026-04-01"];
@@ -71,9 +80,24 @@ describe("deferOccurrence", () => {
     expect(due.map((o) => o.date)).toEqual(["2026-04-01", "2026-05-01", "2026-06-01"]);
     expect(due.find((o) => o.date === "2026-05-01")?.deferred).toBe(true);
   });
+
+  it("refuses a malformed date rather than letting it into the deferred list", () => {
+    expect(unwrapErr(deferOccurrence(withRule(), "r1", "2026-02-30", TODAY, LATER)).code).toBe(
+      "RECURRENCE_SCHEDULE_INVALID",
+    );
+    expect(unwrapErr(deferOccurrence(withRule(), "r1", "2026-05-01", "not-a-date", LATER)).code).toBe(
+      "RECURRENCE_SCHEDULE_INVALID",
+    );
+  });
 });
 
 describe("setRecurrencePaused", () => {
+  it("refuses a malformed today rather than writing it into pausedAt", () => {
+    expect(unwrapErr(setRecurrencePaused(withRule(), "r1", true, "not-a-date", LATER)).code).toBe(
+      "RECURRENCE_SCHEDULE_INVALID",
+    );
+  });
+
   it("pausing silences the rule entirely", () => {
     const book = unwrap(setRecurrencePaused(withRule(), "r1", true, "2026-05-10", LATER));
     expect(book.recurrences[0].pausedAt).toBe("2026-05-10");

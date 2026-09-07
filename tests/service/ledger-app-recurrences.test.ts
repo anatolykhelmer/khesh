@@ -53,7 +53,7 @@ describe("recurrences through LedgerApp", () => {
     const { app, book, rent, ruleId } = await withRule();
     // Post one genuine occurrence, so the account carries a specific, non-zero balance —
     // then confirm the *other* occurrences still sitting in the queue never touch it.
-    const posted = unwrap(await app.postOccurrence(book, ruleId, "2026-04-01"));
+    const posted = unwrap(await app.postOccurrence(book, ruleId, "2026-04-01", undefined, TODAY));
     const rows = app.dueRows(posted, TODAY);
     expect(rows.map((r) => r.date)).toEqual(["2026-05-01", "2026-06-01"]);
     expect(leafAmount(posted, rent.id)).toBe(300000);
@@ -61,7 +61,7 @@ describe("recurrences through LedgerApp", () => {
 
   it("posts one occurrence under its deterministic id and removes it from the queue", async () => {
     const { app, book, rent, ruleId } = await withRule();
-    const next = unwrap(await app.postOccurrence(book, ruleId, "2026-05-01"));
+    const next = unwrap(await app.postOccurrence(book, ruleId, "2026-05-01", undefined, TODAY));
 
     expect(next.journal.map((e) => e.id)).toContain(recurrenceEntryId(ruleId, "2026-05-01"));
     expect(app.dueRows(next, TODAY).map((r) => r.date)).toEqual(["2026-04-01", "2026-06-01"]);
@@ -71,10 +71,16 @@ describe("recurrences through LedgerApp", () => {
   it("applies overrides but keeps the occurrence's own id", async () => {
     const { app, book, rent, ruleId } = await withRule();
     const next = unwrap(
-      await app.postOccurrence(book, ruleId, "2026-05-01", {
-        date: "2026-05-03",
-        lines: [{ toAccountId: rent.id, amount: 310000 }],
-      }),
+      await app.postOccurrence(
+        book,
+        ruleId,
+        "2026-05-01",
+        {
+          date: "2026-05-03",
+          lines: [{ toAccountId: rent.id, amount: 310000 }],
+        },
+        TODAY,
+      ),
     );
     const entry = next.journal.find((e) => e.id === recurrenceEntryId(ruleId, "2026-05-01"))!;
     // The occurrence date is what the id is built from; the entry's own date is free.
@@ -101,10 +107,16 @@ describe("recurrences through LedgerApp", () => {
     const usdCard = withUsd.accounts.find((a) => a.name === "USD Card")!;
 
     const next = unwrap(
-      await app.postOccurrence(withUsd, ruleId, "2026-04-01", {
-        fromAccountId: usdCard.id,
-        fromAmount: 82000,
-      }),
+      await app.postOccurrence(
+        withUsd,
+        ruleId,
+        "2026-04-01",
+        {
+          fromAccountId: usdCard.id,
+          fromAmount: 82000,
+        },
+        TODAY,
+      ),
     );
 
     const entry = next.journal.find((e) => e.id === recurrenceEntryId(ruleId, "2026-04-01"))!;
@@ -123,9 +135,36 @@ describe("recurrences through LedgerApp", () => {
 
   it("refuses to post from a rule that does not exist", async () => {
     const { app, book } = await withRule();
-    expect(unwrapErr(await app.postOccurrence(book, "nope", "2026-05-01")).code).toBe(
-      "RECURRENCE_NOT_FOUND",
+    expect(
+      unwrapErr(await app.postOccurrence(book, "nope", "2026-05-01", undefined, TODAY)).code,
+    ).toBe("RECURRENCE_NOT_FOUND");
+  });
+
+  // Confirm an occurrence, delete the entry, then press browser Back to the same
+  // /recurring/:ruleId/post/:date route and submit again. The tombstone must hold: the
+  // deleted payment must not be resurrectable through the route that originally posted it.
+  it("refuses to re-post an occurrence that was posted and then deleted", async () => {
+    const { app, book, ruleId } = await withRule();
+    const posted = unwrap(await app.postOccurrence(book, ruleId, "2026-05-01", undefined, TODAY));
+    const deleted = unwrap(await app.deleteEntry(posted, recurrenceEntryId(ruleId, "2026-05-01")));
+
+    const result = await app.postOccurrence(deleted, ruleId, "2026-05-01", undefined, TODAY);
+    expect(unwrapErr(result).code).toBe("RECURRENCE_OCCURRENCE_UNAVAILABLE");
+    expect(deleted.journal.some((e) => e.id === recurrenceEntryId(ruleId, "2026-05-01"))).toBe(
+      false,
     );
+  });
+
+  // Deferral only hides an occurrence from the Dashboard card; dueOccurrences still offers
+  // it, so confirming a deferred row must keep working under the same gate.
+  it("still posts a deferred occurrence", async () => {
+    const { app, book, ruleId } = await withRule();
+    const deferred = unwrap(await app.deferOccurrence(book, ruleId, "2026-05-01"));
+
+    const next = unwrap(
+      await app.postOccurrence(deferred, ruleId, "2026-05-01", undefined, TODAY),
+    );
+    expect(next.journal.map((e) => e.id)).toContain(recurrenceEntryId(ruleId, "2026-05-01"));
   });
 
   it("round-trips rules through export and import", async () => {

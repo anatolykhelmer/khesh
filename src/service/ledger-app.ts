@@ -525,6 +525,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       ruleId: string,
       date: string,
       overrides?: Partial<EntryInput>,
+      today: string = todayCalendarDate(),
     ): Promise<Result<Book>> {
       const rule = book.recurrences.find((item) => item.id === ruleId);
       if (!rule) return err("RECURRENCE_NOT_FOUND", "Recurrence not found", { id: ruleId });
@@ -533,8 +534,9 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       // tombstoned (posted-then-deleted), skipped, paused, already-posted and out-of-window
       // dates in one check, rather than re-deriving each rule here. A deferred occurrence is
       // still offered by dueOccurrences — deferral only hides it from the Dashboard card — so
-      // confirming a deferred row keeps working.
-      const offered = dueOccurrences(book, todayCalendarDate()).some(
+      // confirming a deferred row keeps working. `today` defaults to the clock, same seam
+      // as `dueRows`, so tests can pin it instead of drifting with the 12-month window.
+      const offered = dueOccurrences(book, today).some(
         (occurrence) => occurrence.ruleId === ruleId && occurrence.date === date,
       );
       if (!offered) {

@@ -49,7 +49,7 @@ function ensureObAccounts(
   if (!book.accounts.some((account) => account.id === OB_PARENT_ID)) {
     if (obNameCollision(book, null, groupName)) {
       return err(
-        "ACCOUNT_NAME_DUPLICATE",
+        "ACCOUNT_OPENING_GROUP_NAME_TAKEN",
         "Cannot create Opening Balances system account: name already used among root accounts",
         { name: groupName },
       );

@@ -14,6 +14,7 @@ describe("errorMessage", () => {
       "ACCOUNT_CYCLE",
       "ACCOUNT_IS_SYSTEM",
       "ACCOUNT_TYPE_MISMATCH",
+      "ACCOUNT_OPENING_GROUP_NAME_TAKEN",
     ]) {
       expect(errorMessage(code)).not.toBe("Something went wrong");
     }

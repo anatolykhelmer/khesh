@@ -294,6 +294,7 @@
   "errors": {
     "ACCOUNT_NAME_INVALID": "נא להזין שם חשבון",
     "ACCOUNT_NAME_DUPLICATE": "שם החשבון הזה כבר בשימוש כאן",
+    "ACCOUNT_OPENING_GROUP_NAME_TAKEN": "חשבון ראשי בשם יתרות פתיחה כבר קיים — יש לשנות את שמו כדי ש-Khesh יוכל ליצור את הקבוצה שלו",
     "ACCOUNT_PARENT_INVALID": "נא לבחור חשבון הורה תקין",
     "ACCOUNT_PARENT_NOT_PLACEHOLDER": "יש ליצור חשבונות תחת קטגוריה",
     "ACCOUNT_TYPE_MISMATCH": "סוג החשבון חייב להתאים לקטגוריה שלו",

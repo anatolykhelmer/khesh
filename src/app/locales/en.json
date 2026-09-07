@@ -288,6 +288,7 @@
   "errors": {
     "ACCOUNT_NAME_INVALID": "Enter an account name",
     "ACCOUNT_NAME_DUPLICATE": "That account name is already used here",
+    "ACCOUNT_OPENING_GROUP_NAME_TAKEN": "A top-level account is already named Opening Balances — rename it so Khesh can create its own group",
     "ACCOUNT_PARENT_INVALID": "Choose a valid parent account",
     "ACCOUNT_PARENT_NOT_PLACEHOLDER": "Accounts must be created under a category",
     "ACCOUNT_TYPE_MISMATCH": "Account type must match its category",

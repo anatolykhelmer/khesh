@@ -142,7 +142,7 @@ describe("recordOpeningBalance", () => {
     const error = unwrapErr(
       recordOpeningBalance(book, { accountId: cashId, amount: 100, date: "2026-01-01" }, NOW),
     );
-    expect(error.code).toBe("ACCOUNT_NAME_DUPLICATE");
+    expect(error.code).toBe("ACCOUNT_OPENING_GROUP_NAME_TAKEN");
     expect(book).toEqual(snapshot);
     expect(book.accounts.some((account) => account.id === "sys:ob")).toBe(false);
   });

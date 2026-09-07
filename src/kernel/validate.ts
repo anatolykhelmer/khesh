@@ -422,6 +422,26 @@ export function validateBook(book: Book): Result<true> {
           });
         }
       }
+      // Mirrors createRecurrence's own line checks, so a hand-edited snapshot cannot carry
+      // a structurally illegal rule past import, Drive sync or the IndexedDB load.
+      const toAccountIds = new Set<string>();
+      for (const line of rule.lines) {
+        if (line.toAccountId === rule.fromAccountId) {
+          violations.push({
+            code: "ENTRY_TOO_FEW_ACCOUNTS",
+            message: "From and To must be different accounts",
+            details: { id: rule.id },
+          });
+        }
+        if (toAccountIds.has(line.toAccountId)) {
+          violations.push({
+            code: "ENTRY_TOO_FEW_ACCOUNTS",
+            message: "Each line must use a different account",
+            details: { id: rule.id, toAccountId: line.toAccountId },
+          });
+        }
+        toAccountIds.add(line.toAccountId);
+      }
     }
   }
 

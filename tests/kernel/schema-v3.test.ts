@@ -109,6 +109,30 @@ describe("schema v3", () => {
     expect(codes(validateBook(book))).toContain("ACCOUNT_IS_PLACEHOLDER");
   });
 
+  // Mirrors createRecurrence's own line checks (tests/kernel/recurrences.test.ts) — a
+  // hand-edited snapshot must not carry a structurally illegal rule past import, Drive
+  // sync or the IndexedDB load just because it skipped the command that normally guards
+  // this.
+  it("rejects a rule whose line targets its own source account", () => {
+    const book = bookWithTwoAccounts();
+    book.recurrences = [ruleOn("a", "a")];
+    expect(codes(validateBook(book))).toContain("ENTRY_TOO_FEW_ACCOUNTS");
+  });
+
+  it("rejects a rule with a repeated target account", () => {
+    const book = bookWithTwoAccounts();
+    book.recurrences = [
+      {
+        ...ruleOn("a", "b"),
+        lines: [
+          { toAccountId: "b", amount: 300000 },
+          { toAccountId: "b", amount: 100000 },
+        ],
+      },
+    ];
+    expect(codes(validateBook(book))).toContain("ENTRY_TOO_FEW_ACCOUNTS");
+  });
+
   it("rejects two rules sharing an id", () => {
     const book = bookWithTwoAccounts();
     book.recurrences = [ruleOn("a", "b"), { ...ruleOn("a", "b"), description: "Rent (2)" }];
@@ -143,5 +167,17 @@ describe("schema v3", () => {
     expect(violations(validateBook(book)).map((v) => v.message)).toContain(
       "Invalid recurrence line element",
     );
+  });
+
+  // The new from/duplicate-target checks dereference `line.toAccountId` directly, once
+  // past the "well-shaped" guard above — a line missing that field must still be reported
+  // rather than throwing.
+  it("does not throw when a well-shaped line lacks toAccountId", () => {
+    const book = bookWithTwoAccounts();
+    const broken = structuredClone(ruleOn("a", "b"));
+    (broken.lines as unknown[])[0] = { amount: 300000 };
+    book.recurrences = [broken];
+    expect(() => validateBook(book)).not.toThrow();
+    expect(unwrapErr(validateBook(book)).code).toBe("BOOK_INVALID");
   });
 });

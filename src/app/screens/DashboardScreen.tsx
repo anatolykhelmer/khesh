@@ -71,6 +71,39 @@ export function DashboardScreen() {
     </div>
   );
 
+  // Always present, due rows or not — mirrors the budget hero's permanent `setLimit`
+  // entry below so a book with no rules yet still has a door to `/recurring`. Shared
+  // with the empty-book branch right below so a book whose only activity is recurring
+  // rules is not stranded behind `heroState`'s "empty" case, which used to return
+  // before this card was ever reached.
+  const recurringSection =
+    due.length > 0 ? (
+      <>
+        <h2 className="section-label">{t("dashboard.dueNow")}</h2>
+        <ul className="due-list group">
+          {due.slice(0, DASHBOARD_DUE_ROWS).map((row) => (
+            <DueRowItem
+              key={row.entryId}
+              row={row}
+              busy={busy}
+              onPost={() => run(() => app.postOccurrence(currentBook, row.ruleId, row.date))}
+              onSkip={() => run(() => app.skipOccurrence(currentBook, row.ruleId, row.date))}
+              onDefer={() => run(() => app.deferOccurrence(currentBook, row.ruleId, row.date))}
+            />
+          ))}
+        </ul>
+        <Link className="secondary link-button" to="/recurring">
+          {due.length > DASHBOARD_DUE_ROWS
+            ? t("dashboard.dueMore", { count: due.length - DASHBOARD_DUE_ROWS })
+            : t("dashboard.recurringLink")}
+        </Link>
+      </>
+    ) : (
+      <p className="hero-note dash-recurring-empty">
+        <Link to="/recurring">{t("dashboard.recurringEmpty")}</Link>
+      </p>
+    );
+
   if (hero.kind === "empty") {
     return (
       <main className="screen">
@@ -82,6 +115,7 @@ export function DashboardScreen() {
             {t("dashboard.emptyAction")}
           </Link>
         </div>
+        {recurringSection}
       </main>
     );
   }
@@ -148,28 +182,7 @@ export function DashboardScreen() {
         </button>
       </div>
 
-      {due.length > 0 ? (
-        <>
-          <h2 className="section-label">{t("dashboard.dueNow")}</h2>
-          <ul className="due-list group">
-            {due.slice(0, DASHBOARD_DUE_ROWS).map((row) => (
-              <DueRowItem
-                key={row.entryId}
-                row={row}
-                busy={busy}
-                onPost={() => run(() => app.postOccurrence(currentBook, row.ruleId, row.date))}
-                onSkip={() => run(() => app.skipOccurrence(currentBook, row.ruleId, row.date))}
-                onDefer={() => run(() => app.deferOccurrence(currentBook, row.ruleId, row.date))}
-              />
-            ))}
-          </ul>
-          {due.length > DASHBOARD_DUE_ROWS ? (
-            <Link className="secondary link-button" to="/recurring">
-              {t("dashboard.dueMore", { count: due.length - DASHBOARD_DUE_ROWS })}
-            </Link>
-          ) : null}
-        </>
-      ) : null}
+      {recurringSection}
 
       <p className="hero-label">{t("dashboard.spentIn", { month: monthLabel(month) })}</p>
       <Link

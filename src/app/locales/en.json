@@ -60,7 +60,9 @@
     "budgetOver_other": "Budget: {{count}} categories over",
     "dueNow": "Due now",
     "dueMore_one": "{{count}} more",
-    "dueMore_other": "{{count}} more"
+    "dueMore_other": "{{count}} more",
+    "recurringLink": "Recurring",
+    "recurringEmpty": "Nothing repeats yet"
   },
   "budget": {
     "title": "Budget",

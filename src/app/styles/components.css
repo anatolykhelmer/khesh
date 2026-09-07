@@ -1074,3 +1074,8 @@ a.row-button {
   margin: 0 0 var(--s-5);
   max-width: 28ch;
 }
+
+/* Sits below .dash-empty's own CTA, which carries no bottom margin of its own. */
+.dash-recurring-empty {
+  margin-block-start: var(--s-5);
+}

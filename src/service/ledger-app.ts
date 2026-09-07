@@ -533,6 +533,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         date: overrides?.date ?? date,
         description: overrides?.description ?? rule.description,
         fromAccountId: overrides?.fromAccountId ?? rule.fromAccountId,
+        fromAmount: overrides?.fromAmount,
         lines: overrides?.lines ?? rule.lines.map((line) => ({ ...line })),
       };
       const invalid = invalidEntryInput(book, input);

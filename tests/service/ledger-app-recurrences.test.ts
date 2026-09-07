@@ -83,6 +83,44 @@ describe("recurrences through LedgerApp", () => {
     expect(app.dueRows(next, TODAY).map((r) => r.date)).toEqual(["2026-04-01", "2026-06-01"]);
   });
 
+  // The rule itself must be same-currency (RECURRENCE_CURRENCY_MISMATCH refuses
+  // otherwise), but the post screen's account picker lets the user redirect a single
+  // occurrence to a different-currency account before confirming it, and that reaches
+  // `invalidEntryInput`'s cross-currency branch, which requires `fromAmount`.
+  it("forwards a fromAmount override so a redirected occurrence can post cross-currency", async () => {
+    const { app, book, ruleId } = await withRule();
+    const assets = book.accounts.find((a) => a.type === "asset" && a.parentId === null)!;
+    const withUsd = unwrap(
+      await app.addAccount(book, {
+        parentId: assets.id,
+        name: "USD Card",
+        isPlaceholder: false,
+        currency: "USD",
+      }),
+    );
+    const usdCard = withUsd.accounts.find((a) => a.name === "USD Card")!;
+
+    const next = unwrap(
+      await app.postOccurrence(withUsd, ruleId, "2026-04-01", {
+        fromAccountId: usdCard.id,
+        fromAmount: 82000,
+      }),
+    );
+
+    const entry = next.journal.find((e) => e.id === recurrenceEntryId(ruleId, "2026-04-01"))!;
+    expect(entry.fx).toEqual({
+      baseCurrency: "USD",
+      baseAmount: 82000,
+      quoteCurrency: "ILS",
+      quoteAmount: 300000,
+    });
+    expect(entry.postings.find((p) => p.side === "credit")).toEqual({
+      accountId: usdCard.id,
+      side: "credit",
+      amount: 82000,
+    });
+  });
+
   it("refuses to post from a rule that does not exist", async () => {
     const { app, book } = await withRule();
     expect(unwrapErr(await app.postOccurrence(book, "nope", "2026-05-01")).code).toBe(

@@ -213,6 +213,7 @@
   "transferForm": {
     "titleEdit": "Edit entry",
     "titleNew": "New entry",
+    "titlePostOccurrence": "Post payment",
     "onlyStandardEditable": "Only standard transfers can be edited.",
     "notEnoughAccounts": "Add at least two leaf accounts before posting.",
     "dateLabel": "Date",

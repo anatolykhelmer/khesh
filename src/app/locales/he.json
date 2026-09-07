@@ -216,6 +216,7 @@
   "transferForm": {
     "titleEdit": "עריכת תנועה",
     "titleNew": "תנועה חדשה",
+    "titlePostOccurrence": "רישום תשלום",
     "onlyStandardEditable": "ניתן לערוך רק העברות רגילות.",
     "notEnoughAccounts": "יש להוסיף לפחות שני חשבונות עלים לפני רישום.",
     "dateLabel": "תאריך",

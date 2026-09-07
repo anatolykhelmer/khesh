@@ -23,7 +23,7 @@ export function DueRowItem({
       <Link className="due-main" to={`/recurring/${row.ruleId}/post/${row.date}`}>
         <div>
           <div className="due-title">{row.description}</div>
-          <div className="muted">{formatDate(row.date)}</div>
+          <div className="muted"><Ltr>{formatDate(row.date)}</Ltr></div>
         </div>
         <div className="due-amount">
           <Ltr>{formatMinor(row.total, row.currency)}</Ltr>

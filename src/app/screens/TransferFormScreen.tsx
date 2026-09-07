@@ -218,7 +218,13 @@ export function TransferFormScreen() {
 
   return (
     <main className="screen">
-      <h1>{entryId ? t("transferForm.titleEdit") : t("transferForm.titleNew")}</h1>
+      <h1>
+        {entryId
+          ? t("transferForm.titleEdit")
+          : ruleId
+            ? t("transferForm.titlePostOccurrence")
+            : t("transferForm.titleNew")}
+      </h1>
       {!canSubmit ? <p className="muted">{t("transferForm.notEnoughAccounts")}</p> : null}
       <form className="stack-form" onSubmit={onSubmit}>
         <div className="group form-group">

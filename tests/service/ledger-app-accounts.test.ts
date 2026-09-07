@@ -10,7 +10,7 @@ async function seeded() {
   const book = unwrap(await app.createHousehold("USD"));
   const assets = book.accounts.find((a) => a.name === "Assets")!;
   const expenses = book.accounts.find((a) => a.name === "Expenses")!;
-  return { app, book, assets, expenses };
+  return { app, book, assets, expenses, repo };
 }
 
 function byName(book: Book, name: string) {
@@ -154,6 +154,33 @@ describe("LedgerApp addAccount", () => {
         }),
       ).code,
     ).toBe("ACCOUNT_IS_PLACEHOLDER");
+  });
+
+  it("saves nothing when the opening balance cannot be recorded", async () => {
+    const { app, book, assets, repo } = await seeded();
+    // The system group needs this name; a root account holding it makes
+    // recordOpeningBalance fail after the account itself was already built.
+    const renamed = unwrap(
+      await app.editAccount(book, {
+        id: byName(book, "Liabilities").id,
+        name: "Opening Balances",
+      }),
+    );
+
+    const error = unwrapErr(
+      await app.addAccount(renamed, {
+        parentId: assets.id,
+        name: "Cash",
+        isPlaceholder: false,
+        openingAmount: 5000,
+      }),
+    );
+    expect(error.code).toBe("ACCOUNT_OPENING_GROUP_NAME_TAKEN");
+
+    // The point of the test: storage must not hold what the caller was never given.
+    const stored = unwrap(await repo.load())!;
+    expect(stored.accounts.some((a) => a.name === "Cash")).toBe(false);
+    expect(stored.accounts.some((a) => a.id.startsWith("sys:ob"))).toBe(false);
   });
 
   it("rejects a leaf as parent", async () => {

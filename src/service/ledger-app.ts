@@ -362,11 +362,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
           },
           nowIso(),
         );
-        if (!opened.ok) {
-          const saved = await commit(next);
-          if (!saved.ok) return saved;
-          return opened;
-        }
+        if (!opened.ok) return opened;
         next = opened.value;
       }
 

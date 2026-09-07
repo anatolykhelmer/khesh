@@ -66,4 +66,19 @@ describe("IndexedDbRepository", () => {
     unwrap(await repo.save(future as unknown as Book));
     expect(unwrapErr(await repo.load()).code).toBe("BOOK_INVALID");
   });
+
+  it("clear removes the saved book", async () => {
+    const repo = createIndexedDbRepository("khesh-test-clear");
+    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    unwrap(await repo.save(book));
+    unwrap(await repo.clear());
+    expect(unwrap(await repo.load())).toBeNull();
+  });
+
+  it("clear succeeds when there is nothing stored, so a second reset is not an error", async () => {
+    const repo = createIndexedDbRepository("khesh-test-clear-empty");
+    unwrap(await repo.clear());
+    unwrap(await repo.clear());
+    expect(unwrap(await repo.load())).toBeNull();
+  });
 });

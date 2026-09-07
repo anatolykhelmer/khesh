@@ -55,6 +55,9 @@ function createFailingSaveRepository(): LedgerRepository {
     async save() {
       return err("STORAGE_WRITE_FAILED", "disk full");
     },
+    async clear() {
+      return ok(undefined);
+    },
   };
 }
 

@@ -104,6 +104,7 @@ function committingAfterReload(inner: LedgerRepository, onReload: () => void): L
       return result;
     },
     save: (book) => inner.save(book),
+    clear: () => inner.clear(),
   };
 }
 

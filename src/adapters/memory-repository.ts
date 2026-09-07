@@ -12,5 +12,9 @@ export function createMemoryRepository(initial: Book | null = null): LedgerRepos
       current = book;
       return ok(undefined);
     },
+    async clear(): Promise<Result<void>> {
+      current = null;
+      return ok(undefined);
+    },
   };
 }

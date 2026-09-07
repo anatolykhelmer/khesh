@@ -47,5 +47,16 @@ export function createIndexedDbRepository(dbName = "khesh-ledger"): LedgerReposi
         return err("STORAGE_WRITE_FAILED", "Failed to write IndexedDB");
       }
     },
+    async clear(): Promise<Result<void>> {
+      try {
+        const db = await getDb();
+        // One key, not deleteDB: deleting the database blocks while another tab holds
+        // it open, which is exactly the case the BroadcastChannel wiring exists for.
+        await db.delete(STORE, KEY);
+        return ok(undefined);
+      } catch {
+        return err("STORAGE_WRITE_FAILED", "Failed to clear IndexedDB");
+      }
+    },
   };
 }

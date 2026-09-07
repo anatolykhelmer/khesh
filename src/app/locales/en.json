@@ -295,6 +295,7 @@
     "ACCOUNT_IS_SYSTEM": "That account can't be changed",
     "ACCOUNT_HAS_CHILDREN": "Remove the nested accounts first",
     "ACCOUNT_HAS_POSTINGS": "This account already has entries — delete them first",
+    "ACCOUNT_HAS_RECURRENCES": "This account is used by a recurring transaction — edit or remove it first",
     "ACCOUNT_CYCLE": "An account can't be moved inside itself",
     "ACCOUNT_TYPE_LOCKED": "Type can't change once the account has entries",
     "ACCOUNT_CURRENCY_LOCKED": "Currency can't change once the account has entries",

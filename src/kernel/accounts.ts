@@ -3,6 +3,7 @@ import {
   findAccount,
   hasChildren,
   hasPostings,
+  recurrencesReferencing,
   siblingNameTaken,
   wouldCreateCycle,
 } from "./book-utils";
@@ -126,6 +127,24 @@ export function updateAccount(
     });
   }
 
+  // A recurrence requires every account it touches to share one currency
+  // (RECURRENCE_CURRENCY_MISMATCH in validateBook). Changing this account's currency
+  // out from under a live rule would write a book validateBook then refuses to load —
+  // refuse here instead, the same way ACCOUNT_HAS_POSTINGS refuses below.
+  if (currency !== account.currency) {
+    const brokenByCurrency = recurrencesReferencing(book, account.id).some((rule) => {
+      const others = [rule.fromAccountId, ...rule.lines.map((line) => line.toAccountId)].filter(
+        (otherId) => otherId !== account.id,
+      );
+      return others.some((otherId) => findAccount(book, otherId)?.currency !== currency);
+    });
+    if (brokenByCurrency) {
+      return err("ACCOUNT_HAS_RECURRENCES", "Cannot change currency while a recurring rule depends on it", {
+        id: account.id,
+      });
+    }
+  }
+
   if (!isPlaceholder && hasChildren(book, account.id)) {
     return err("ACCOUNT_HAS_CHILDREN", "Cannot unset placeholder while account has children", {
       id: account.id,
@@ -134,6 +153,16 @@ export function updateAccount(
 
   if (isPlaceholder && hasPostings(book, account.id)) {
     return err("ACCOUNT_HAS_POSTINGS", "Cannot make placeholder after postings", {
+      id: account.id,
+    });
+  }
+
+  // A recurrence cannot post to a placeholder (ACCOUNT_IS_PLACEHOLDER in validateBook).
+  // Deleting an account is an explicit destructive act, so deleteAccount cascades its
+  // rules with it; flipping a leaf into a category is not destructive on its face, so
+  // it must refuse rather than silently orphan the rule into an unloadable book.
+  if (isPlaceholder && recurrencesReferencing(book, account.id).length > 0) {
+    return err("ACCOUNT_HAS_RECURRENCES", "Cannot make placeholder while a recurring rule posts to it", {
       id: account.id,
     });
   }

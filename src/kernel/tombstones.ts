@@ -1,4 +1,4 @@
-import type { Account, Book, Budget, BudgetPeriod, CurrencyCode, JournalEntry, TombstoneKind } from "./types";
+import type { Account, Book, Budget, BudgetPeriod, CurrencyCode, JournalEntry, Recurrence, TombstoneKind } from "./types";
 
 export function budgetKeyOf(b: {
   accountId: string;
@@ -13,7 +13,7 @@ export function addTombstone(
   book: Book,
   kind: TombstoneKind,
   key: string,
-  record: Account | JournalEntry | Budget,
+  record: Account | JournalEntry | Budget | Recurrence,
   deletedAt: string,
 ): void {
   book.tombstones = book.tombstones.filter((t) => !(t.kind === kind && t.key === key));

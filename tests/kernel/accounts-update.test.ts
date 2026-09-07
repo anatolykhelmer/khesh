@@ -1,5 +1,7 @@
 import { createAccount, deleteAccount, updateAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
+import { createRecurrence } from "../../src/kernel/recurrences";
+import { validateBook } from "../../src/kernel/validate";
 import { NOW, unwrap, unwrapErr } from "../helpers";
 import type { Book } from "../../src/kernel/types";
 
@@ -28,11 +30,49 @@ function bookWithAssets(): { book: Book; assetsId: string; cashId: string } {
   return { book, assetsId, cashId };
 }
 
+/** A book with one live recurrence: Cash (asset) -> Rent (expense), both ILS. Used to
+ * confirm `updateAccount` refuses an edit that would leave a rule referencing a
+ * placeholder or spanning more than one currency — the two invariants `validateBook`
+ * enforces on `book.recurrences`. */
+function bookWithRule(): {
+  book: Book;
+  cashId: string;
+  rentId: string;
+  ruleId: string;
+} {
+  const { book, cashId } = bookWithAssets();
+  const withExpense = unwrap(
+    createAccount(
+      book,
+      { parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false },
+      NOW,
+    ),
+  );
+  const rentId = withExpense.accounts[withExpense.accounts.length - 1].id;
+  const withRule = unwrap(
+    createRecurrence(
+      withExpense,
+      {
+        description: "Rent",
+        fromAccountId: cashId,
+        lines: [{ toAccountId: rentId, amount: 300000 }],
+        every: 1,
+        unit: "month",
+        startDate: "2026-01-01",
+        endDate: null,
+      },
+      NOW,
+    ),
+  );
+  return { book: withRule, cashId, rentId, ruleId: withRule.recurrences[0].id };
+}
+
 describe("updateAccount", () => {
   it("renames an account", () => {
     const { book, cashId } = bookWithAssets();
     const next = unwrap(updateAccount(book, { id: cashId, name: " Wallet " }, NOW));
     expect(next.accounts.find((a) => a.id === cashId)?.name).toBe("Wallet");
+    expect(unwrap(validateBook(next))).toBe(true);
   });
 
   it("rejects unknown id", () => {
@@ -76,6 +116,7 @@ describe("updateAccount", () => {
     const { book, cashId } = bookWithAssets();
     const next = unwrap(updateAccount(book, { id: cashId, type: "asset", currency: "USD" }, NOW));
     expect(next.accounts.find((a) => a.id === cashId)?.currency).toBe("USD");
+    expect(unwrap(validateBook(next))).toBe(true);
   });
 
   it("rejects turning placeholder off when it has children", () => {
@@ -83,6 +124,34 @@ describe("updateAccount", () => {
     expect(
       unwrapErr(updateAccount(book, { id: assetsId, isPlaceholder: false }, NOW)).code,
     ).toBe("ACCOUNT_HAS_CHILDREN");
+  });
+
+  it("rejects turning a leaf a live rule posts to into a placeholder", () => {
+    const { book, rentId } = bookWithRule();
+    expect(
+      unwrapErr(updateAccount(book, { id: rentId, isPlaceholder: true }, NOW)).code,
+    ).toBe("ACCOUNT_HAS_RECURRENCES");
+  });
+
+  it("rejects turning a leaf a live rule posts from into a placeholder", () => {
+    const { book, cashId } = bookWithRule();
+    expect(
+      unwrapErr(updateAccount(book, { id: cashId, isPlaceholder: true }, NOW)).code,
+    ).toBe("ACCOUNT_HAS_RECURRENCES");
+  });
+
+  it("rejects a currency change that would split a live rule across currencies", () => {
+    const { book, rentId } = bookWithRule();
+    expect(
+      unwrapErr(updateAccount(book, { id: rentId, currency: "USD" }, NOW)).code,
+    ).toBe("ACCOUNT_HAS_RECURRENCES");
+  });
+
+  it("allows an edit that leaves every rule referencing the account untouched", () => {
+    const { book, rentId, ruleId } = bookWithRule();
+    const next = unwrap(updateAccount(book, { id: rentId, name: "Rent (new)" }, NOW));
+    expect(next.recurrences.find((r) => r.id === ruleId)).toBeDefined();
+    expect(unwrap(validateBook(next))).toBe(true);
   });
 });
 
@@ -101,5 +170,41 @@ describe("deleteAccount", () => {
   it("rejects unknown id", () => {
     const { book } = bookWithAssets();
     expect(unwrapErr(deleteAccount(book, "nope", NOW)).code).toBe("ACCOUNT_NOT_FOUND");
+  });
+
+  it("takes with it any rule that posts to the deleted account, leaving a book that still validates", () => {
+    const { book, cashId } = bookWithAssets();
+    const withExpense = unwrap(
+      createAccount(
+        book,
+        { parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false },
+        NOW,
+      ),
+    );
+    const rentId = withExpense.accounts[withExpense.accounts.length - 1].id;
+    const withRule = unwrap(
+      createRecurrence(
+        withExpense,
+        {
+          description: "Rent",
+          fromAccountId: cashId,
+          lines: [{ toAccountId: rentId, amount: 300000 }],
+          every: 1,
+          unit: "month",
+          startDate: "2026-01-01",
+          endDate: null,
+        },
+        NOW,
+      ),
+    );
+    const ruleId = withRule.recurrences[0].id;
+
+    const next = unwrap(deleteAccount(withRule, cashId, NOW));
+
+    expect(next.recurrences).toEqual([]);
+    expect(next.tombstones.some((t) => t.kind === "recurrence" && t.key === ruleId)).toBe(true);
+    // The point of the whole fix: a book that used to fail validation (BL-023's sharp
+    // edge — a book that fails to validate falls through to onboarding) now loads clean.
+    expect(unwrap(validateBook(next))).toBe(true);
   });
 });

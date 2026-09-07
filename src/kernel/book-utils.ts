@@ -1,4 +1,4 @@
-import type { Account, Book } from "./types";
+import type { Account, Book, Recurrence } from "./types";
 
 export function cloneBook(book: Book): Book {
   return structuredClone(book);
@@ -20,6 +20,14 @@ export function hasChildren(book: Book, id: string): boolean {
 export function hasPostings(book: Book, accountId: string): boolean {
   return book.journal.some((entry) =>
     entry.postings.some((posting) => posting.accountId === accountId),
+  );
+}
+
+/** Every live (non-deleted) rule that posts from or to `accountId` — a paused rule
+ * still counts, since resuming it later would break the same way. */
+export function recurrencesReferencing(book: Book, accountId: string): Recurrence[] {
+  return book.recurrences.filter(
+    (rule) => rule.fromAccountId === accountId || rule.lines.some((line) => line.toAccountId === accountId),
   );
 }
 

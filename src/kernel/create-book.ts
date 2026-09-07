@@ -19,13 +19,14 @@ export function createBook(
     });
   }
   return ok({
-    schemaVersion: 2,
+    schemaVersion: 3,
     name,
     homeCurrency: input.homeCurrency,
     metaUpdatedAt: now,
     accounts: [],
     journal: [],
     budgets: [],
+    recurrences: [],
     tombstones: [],
   });
 }

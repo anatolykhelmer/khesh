@@ -20,9 +20,9 @@ function baseBook() {
 }
 
 describe("schema v2 stamping", () => {
-  it("createBook stamps schemaVersion 2, metaUpdatedAt and empty tombstones", () => {
+  it("createBook stamps schemaVersion 3, metaUpdatedAt and empty tombstones", () => {
     const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
-    expect(book.schemaVersion).toBe(2);
+    expect(book.schemaVersion).toBe(3);
     expect(book.metaUpdatedAt).toBe(NOW);
     expect(book.tombstones).toEqual([]);
   });
@@ -94,7 +94,7 @@ describe("schema v2 stamping", () => {
   });
 });
 
-describe("v1 -> v2 migration", () => {
+describe("v1/v2 -> v3 migration", () => {
   it("normalizeBook epoch-stamps a v1 book and adds tombstones", () => {
     const v1 = {
       schemaVersion: 1,
@@ -107,24 +107,25 @@ describe("v1 -> v2 migration", () => {
       budgets: [{ accountId: "a1", period: "month", currency: "ILS", limit: 5 }],
     };
     const book = normalizeBook(v1 as any);
-    expect(book.schemaVersion).toBe(2);
+    expect(book.schemaVersion).toBe(3);
     expect(book.metaUpdatedAt).toBe(EPOCH);
     expect(book.accounts[0].updatedAt).toBe(EPOCH);
     expect(book.budgets[0].updatedAt).toBe(EPOCH);
     expect(book.tombstones).toEqual([]);
+    expect(book.recurrences).toEqual([]);
   });
 
-  it("normalizeBook returns an already-v2 book by reference", () => {
+  it("normalizeBook returns an already-v3 book by reference", () => {
     const { book } = baseBook();
     expect(normalizeBook(book)).toBe(book);
   });
 
   it("normalizeBook refuses to downgrade a newer schema, leaving it for validateBook", () => {
     const { book } = baseBook();
-    const future = { ...book, schemaVersion: 3, unknownField: "keep me" };
+    const future = { ...book, schemaVersion: 4, unknownField: "keep me" };
     const normalized = normalizeBook(future as any);
     expect(normalized).toBe(future);
-    expect(normalized.schemaVersion).toBe(3);
+    expect(normalized.schemaVersion).toBe(4);
     const error = unwrapErr(validateBook(normalized));
     const codes = (error.details?.violations as Array<{ code: string }>).map((v) => v.code);
     expect(codes).toContain("BOOK_INVALID_SCHEMA_VERSION");

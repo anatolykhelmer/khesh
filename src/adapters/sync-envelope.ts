@@ -37,6 +37,9 @@ function hasOnlyCanonicalTimestamps(book: Book): boolean {
   for (const budget of book.budgets) {
     if (!isCanonicalTimestamp(budget.updatedAt)) return false;
   }
+  for (const rule of book.recurrences) {
+    if (!isCanonicalTimestamp(rule.updatedAt)) return false;
+  }
   for (const stone of book.tombstones) {
     if (!isCanonicalTimestamp(stone.deletedAt)) return false;
   }
@@ -75,8 +78,8 @@ export function decodeEnvelope(raw: string): Result<Book> {
   }
   const bookRecord = rawBook as Record<string, unknown>;
   const version = bookRecord.schemaVersion;
-  if (version !== 1 && version !== 2) {
-    if (typeof version === "number" && version > 2) {
+  if (version !== 1 && version !== 2 && version !== 3) {
+    if (typeof version === "number" && version > 3) {
       return err("SYNC_FORMAT_UNSUPPORTED", "Book from a newer app version", { schemaVersion: version });
     }
     return err("SYNC_ENVELOPE_INVALID", "Book has no usable schemaVersion");

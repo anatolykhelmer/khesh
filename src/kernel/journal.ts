@@ -3,12 +3,15 @@ import { isCalendarDate } from "./dates";
 import { validatePostings, type PostingInput } from "./entry-validation";
 import { createId } from "./ids";
 import { err, ok, type Result } from "./result";
-import { addTombstone } from "./tombstones";
+import { addTombstone, clearTombstone } from "./tombstones";
 import type { Book, FxSpec } from "./types";
 
 export function postEntry(
   book: Book,
   input: {
+    /** Supplied only by a recurrence, which needs the id to be a function of the
+     * occurrence rather than of the device that happened to confirm it. */
+    id?: string;
     date: string;
     description: string;
     postings: PostingInput[];
@@ -19,12 +22,16 @@ export function postEntry(
   if (!isCalendarDate(input.date)) {
     return err("ENTRY_DATE_INVALID", `Invalid date ${input.date}`, { date: input.date });
   }
+  if (input.id !== undefined && book.journal.some((entry) => entry.id === input.id)) {
+    return err("ENTRY_ID_DUPLICATE", `Duplicate journal id ${input.id}`, { id: input.id });
+  }
   const validated = validatePostings(book, input.postings, "standard", input.fx);
   if (!validated.ok) return validated;
 
+  const id = input.id ?? createId();
   const next = cloneBook(book);
   next.journal.push({
-    id: createId(),
+    id,
     date: input.date,
     description: input.description,
     kind: "standard",
@@ -32,6 +39,10 @@ export function postEntry(
     ...(input.fx ? { fx: { ...input.fx } } : {}),
     updatedAt: now,
   });
+  // A re-created record must not leave its own tombstone behind — that shadowing is
+  // exactly what validateBook rejects. Only reachable for an explicit id; a fresh ulid
+  // has never been deleted.
+  if (input.id !== undefined) clearTombstone(next, "entry", input.id);
   return ok(next);
 }
 

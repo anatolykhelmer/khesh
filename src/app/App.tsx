@@ -14,6 +14,8 @@ import { DashboardScreen } from "./screens/DashboardScreen";
 import { EntryDetailScreen } from "./screens/EntryDetailScreen";
 import { JournalScreen } from "./screens/JournalScreen";
 import { OnboardingScreen } from "./screens/OnboardingScreen";
+import { RecurringFormScreen } from "./screens/RecurringFormScreen";
+import { RecurringScreen } from "./screens/RecurringScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { StatsScreen } from "./screens/StatsScreen";
 import { TransferFormScreen } from "./screens/TransferFormScreen";
@@ -30,6 +32,9 @@ function Shell() {
           <Route path="/budget" element={<BudgetScreen />} />
           <Route path="/budget/new" element={<BudgetFormScreen />} />
           <Route path="/budget/edit" element={<BudgetEditScreen />} />
+          <Route path="/recurring" element={<RecurringScreen />} />
+          <Route path="/recurring/new" element={<RecurringFormScreen key="new" />} />
+          <Route path="/recurring/:ruleId/edit" element={<RecurringFormScreen key="edit" />} />
           <Route path="/settings" element={<SettingsScreen />} />
           <Route path="/accounts" element={<AccountsScreen />} />
           <Route path="/accounts/new" element={<AccountFormScreen />} />
@@ -38,6 +43,7 @@ function Shell() {
           <Route path="/new" element={<TransferFormScreen key="new" />} />
           <Route path="/journal/:entryId" element={<EntryDetailScreen />} />
           <Route path="/journal/:entryId/edit" element={<TransferFormScreen key="edit" />} />
+          <Route path="/recurring/:ruleId/post/:date" element={<TransferFormScreen key="post" />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </div>

@@ -6,18 +6,26 @@ import {
   chart,
   createAccount,
   createBook,
+  createRecurrence,
+  deferOccurrence as kernelDeferOccurrence,
   deleteAccount,
   deleteEntry as kernelDeleteEntry,
+  deleteRecurrence,
   descendants,
+  dueOccurrences,
   journal,
   periodBreakdown,
   periodTotals,
   postEntry,
   recordOpeningBalance,
+  recurrenceEntryId,
   removeBudget,
   setBudget,
+  setRecurrencePaused as kernelSetRecurrencePaused,
+  skipOccurrence as kernelSkipOccurrence,
   updateAccount,
   updateEntry as kernelUpdateEntry,
+  updateRecurrence as kernelUpdateRecurrence,
   type Account,
   type AccountBalance,
   type AccountNode,
@@ -31,6 +39,7 @@ import {
   type MinorUnits,
   type PeriodBreakdown,
   type PeriodTotals,
+  type RecurrenceInput,
 } from "../kernel";
 import type { PostingInput } from "../kernel/entry-validation";
 import { err, ok, type Result } from "../kernel/result";
@@ -60,6 +69,21 @@ export type EntryInput = {
 };
 
 export type AccountOption = { id: string; path: string; depth: number };
+
+/** One queue row, resolved far enough for a screen to render it without touching the
+ * kernel. `preview` is a JournalEntry that does not exist in the book: it is what the
+ * journal shows as pending, and it is built by the same `entryShape` that posts the real
+ * one, so a pending row and its confirmed entry cannot drift apart. */
+export type DueRow = {
+  ruleId: string;
+  date: string;
+  entryId: string;
+  deferred: boolean;
+  description: string;
+  currency: CurrencyCode;
+  total: MinorUnits;
+  preview: JournalEntry;
+};
 
 function isSystemAccountId(id: string): boolean {
   return id.startsWith("sys:");
@@ -450,6 +474,136 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       const deleted = kernelDeleteEntry(book, entryId, nowIso());
       if (!deleted.ok) return deleted;
       return commit(deleted.value);
+    },
+
+    async addRecurrence(book: Book, input: RecurrenceInput): Promise<Result<Book>> {
+      const created = createRecurrence(book, input, nowIso());
+      if (!created.ok) return created;
+      return commit(created.value);
+    },
+
+    async updateRecurrence(
+      book: Book,
+      input: RecurrenceInput & { id: string },
+    ): Promise<Result<Book>> {
+      const updated = kernelUpdateRecurrence(book, input, nowIso());
+      if (!updated.ok) return updated;
+      return commit(updated.value);
+    },
+
+    async removeRecurrence(book: Book, id: string): Promise<Result<Book>> {
+      const removed = deleteRecurrence(book, id, nowIso());
+      if (!removed.ok) return removed;
+      return commit(removed.value);
+    },
+
+    async setRecurrencePaused(book: Book, id: string, paused: boolean): Promise<Result<Book>> {
+      const next = kernelSetRecurrencePaused(book, id, paused, todayCalendarDate(), nowIso());
+      if (!next.ok) return next;
+      return commit(next.value);
+    },
+
+    async skipOccurrence(book: Book, ruleId: string, date: string): Promise<Result<Book>> {
+      const next = kernelSkipOccurrence(book, ruleId, date, todayCalendarDate(), nowIso());
+      if (!next.ok) return next;
+      return commit(next.value);
+    },
+
+    async deferOccurrence(book: Book, ruleId: string, date: string): Promise<Result<Book>> {
+      const next = kernelDeferOccurrence(book, ruleId, date, todayCalendarDate(), nowIso());
+      if (!next.ok) return next;
+      return commit(next.value);
+    },
+
+    /**
+     * Confirm one occurrence. `date` is the occurrence — it is what the id is built from,
+     * and therefore what marks the occurrence handled — while `overrides.date` is the
+     * entry's own date and may differ (a bill due on the 1st, paid on the 3rd).
+     */
+    async postOccurrence(
+      book: Book,
+      ruleId: string,
+      date: string,
+      overrides?: Partial<EntryInput>,
+      today: string = todayCalendarDate(),
+    ): Promise<Result<Book>> {
+      const rule = book.recurrences.find((item) => item.id === ruleId);
+      if (!rule) return err("RECURRENCE_NOT_FOUND", "Recurrence not found", { id: ruleId });
+
+      // The only source of truth for whether an occurrence may still be posted: it covers
+      // tombstoned (posted-then-deleted), skipped, paused, already-posted and out-of-window
+      // dates in one check, rather than re-deriving each rule here. A deferred occurrence is
+      // still offered by dueOccurrences — deferral only hides it from the Dashboard card — so
+      // confirming a deferred row keeps working. `today` defaults to the clock, same seam
+      // as `dueRows`, so tests can pin it instead of drifting with the 12-month window.
+      const offered = dueOccurrences(book, today).some(
+        (occurrence) => occurrence.ruleId === ruleId && occurrence.date === date,
+      );
+      if (!offered) {
+        return err(
+          "RECURRENCE_OCCURRENCE_UNAVAILABLE",
+          "Occurrence is not due (skipped, paused, posted, or deleted)",
+          { ruleId, date },
+        );
+      }
+
+      const input: EntryInput = {
+        date: overrides?.date ?? date,
+        description: overrides?.description ?? rule.description,
+        fromAccountId: overrides?.fromAccountId ?? rule.fromAccountId,
+        fromAmount: overrides?.fromAmount,
+        lines: overrides?.lines ?? rule.lines.map((line) => ({ ...line })),
+      };
+      const invalid = invalidEntryInput(book, input);
+      if (invalid) return invalid;
+      const shape = entryShape(book, input);
+      const posted = postEntry(
+        book,
+        {
+          id: recurrenceEntryId(ruleId, date),
+          date: input.date,
+          description: input.description,
+          postings: shape.postings,
+          fx: shape.fx ?? undefined,
+        },
+        nowIso(),
+      );
+      if (!posted.ok) return posted;
+      return commit(posted.value);
+    },
+
+    dueRows(book: Book, today: string = todayCalendarDate()): DueRow[] {
+      const rules = new Map(book.recurrences.map((rule) => [rule.id, rule]));
+      const rows: DueRow[] = [];
+      for (const occurrence of dueOccurrences(book, today)) {
+        const rule = rules.get(occurrence.ruleId);
+        if (!rule) continue;
+        const input: EntryInput = {
+          date: occurrence.date,
+          description: rule.description,
+          fromAccountId: rule.fromAccountId,
+          lines: rule.lines.map((line) => ({ ...line })),
+        };
+        // A rule that cannot produce a valid entry (e.g. an account it referenced is
+        // gone) has nothing to offer the user — skip the row rather than throw.
+        if (invalidEntryInput(book, input)) continue;
+        const shape = entryShape(book, input);
+        rows.push({
+          ...occurrence,
+          description: rule.description,
+          currency: currencyOf(book, rule.fromAccountId) ?? book.homeCurrency,
+          total: rule.lines.reduce((sum, line) => sum + line.amount, 0),
+          preview: {
+            id: occurrence.entryId,
+            date: occurrence.date,
+            description: rule.description,
+            kind: "standard",
+            postings: shape.postings,
+            updatedAt: rule.updatedAt,
+          },
+        });
+      }
+      return rows;
     },
 
     listJournal(

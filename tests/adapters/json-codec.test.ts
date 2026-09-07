@@ -48,9 +48,9 @@ describe("json codec", () => {
     expect(unwrapErr(jsonToBook(JSON.stringify({ hello: 1 }))).code).toBe("JSON_INVALID_BOOK");
   });
 
-  it("rejects schemaVersion 3", () => {
+  it("rejects schemaVersion 4", () => {
     const raw = JSON.stringify({
-      schemaVersion: 3,
+      schemaVersion: 4,
       name: "Home",
       homeCurrency: "ILS",
       accounts: [],
@@ -98,7 +98,7 @@ describe("json codec", () => {
     expect(unwrapErr(jsonToBook(raw)).code).toBe("JSON_INVALID_BOOK");
   });
 
-  it("accepts a v1 file and migrates it to v2 with EPOCH stamps", () => {
+  it("accepts a v1 file and migrates it to v3 with EPOCH stamps", () => {
     const raw = JSON.stringify({
       schemaVersion: 1,
       name: "Home",
@@ -110,11 +110,12 @@ describe("json codec", () => {
       budgets: [{ accountId: "a1", period: "month", currency: "ILS", limit: 5 }],
     });
     const book = unwrap(jsonToBook(raw));
-    expect(book.schemaVersion).toBe(2);
+    expect(book.schemaVersion).toBe(3);
     expect(book.metaUpdatedAt).toBe(EPOCH);
     expect(book.accounts[0].updatedAt).toBe(EPOCH);
     expect(book.budgets[0].updatedAt).toBe(EPOCH);
     expect(book.tombstones).toEqual([]);
+    expect(book.recurrences).toEqual([]);
   });
 
   it("rejects journal entry without postings", () => {

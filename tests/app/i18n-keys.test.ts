@@ -39,17 +39,26 @@ function stringValues(obj: unknown): string[] {
   return Object.values(obj).flatMap(stringValues);
 }
 
+const LOCALE_RESOURCES: Record<string, unknown> = { en, he };
+
 describe("locale key parity", () => {
   it("en and he define exactly the same base keys", () => {
     expect(baseKeys(he)).toEqual(baseKeys(en));
   });
 
-  it("every plural family carries the universal _other form", () => {
+  /** A hardcoded suffix list (e.g. just `_other`) cannot catch a locale that is missing
+   * one of *its own* CLDR categories — Hebrew has a dual ("two") that English lacks, and
+   * `dueMore_two` was missing for exactly that reason until this test was written to
+   * derive the required categories from `Intl.PluralRules` instead of assuming them. */
+  it("every plural family covers its own locale's CLDR plural categories", () => {
     expect(pluralFamilies(he).length).toBeGreaterThan(0);
-    for (const locale of [en, he]) {
-      const keys = new Set(keyPaths(locale));
-      for (const family of pluralFamilies(locale)) {
-        expect(keys).toContain(`${family}_other`);
+    for (const [locale, resource] of Object.entries(LOCALE_RESOURCES)) {
+      const categories = new Intl.PluralRules(locale).resolvedOptions().pluralCategories;
+      const keys = new Set(keyPaths(resource));
+      for (const family of pluralFamilies(resource)) {
+        for (const category of categories) {
+          expect(keys).toContain(`${family}_${category}`);
+        }
       }
     }
   });

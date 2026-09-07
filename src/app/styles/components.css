@@ -389,6 +389,27 @@ button {
   white-space: nowrap;
 }
 
+/* A pending row is not money yet, so it reads as a quieter, greyed-out version of a
+   confirmed one rather than gaining any attention-grabbing colour of its own. */
+.journal-row.pending .journal-title,
+.journal-row.pending .journal-amount {
+  color: var(--ink-muted);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: var(--s-2);
+  padding: 0 var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  font-size: var(--t-xs);
+  font-weight: 400;
+  vertical-align: middle;
+}
+
 .filter-bar {
   display: flex;
   align-items: center;
@@ -748,6 +769,76 @@ a.row-button {
   margin-top: var(--s-4);
 }
 
+.due-list,
+.rule-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.due-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.due-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--tap);
+  color: inherit;
+  text-decoration: none;
+}
+
+.due-title {
+  font-weight: 600;
+}
+
+.due-amount {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.due-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+/* .primary is width: 100% by default for standalone CTAs; inside a row of three it
+   needs to share space with its siblings instead. */
+.due-actions button {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.rule-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: var(--s-1) var(--s-2);
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+  text-decoration: none;
+}
+
+.rule-row .muted {
+  grid-column: 1 / -1;
+}
+
+.rule-name {
+  font-weight: 600;
+}
+
+.rule-figure {
+  font-size: var(--t-sm);
+}
+
 .icon-button {
   min-height: var(--tap);
   min-width: var(--tap);
@@ -926,12 +1017,23 @@ a.row-button {
   padding: 0;
 }
 
-.group :is(.journal-row, .account-row, .cat-row, .stats-row, .budget-row) {
+.group :is(.journal-row, .account-row, .cat-row, .stats-row, .budget-row, .rule-row) {
   border-bottom: none;
   border-top: 1px solid var(--line);
 }
 
-.group > li:first-child > :is(.journal-row, .account-row, .cat-row, .stats-row, .budget-row) {
+.group > li:first-child > :is(.journal-row, .account-row, .cat-row, .stats-row, .budget-row, .rule-row) {
+  border-top: none;
+}
+
+/* .due-row carries its class on the <li> itself (DueRowItem), not on a nested
+   Link, so it needs its own pair rather than joining the :is() list above. */
+.group > .due-row {
+  border-bottom: none;
+  border-top: 1px solid var(--line);
+}
+
+.group > .due-row:first-child {
   border-top: none;
 }
 
@@ -971,4 +1073,9 @@ a.row-button {
   color: var(--ink-muted);
   margin: 0 0 var(--s-5);
   max-width: 28ch;
+}
+
+/* Sits below .dash-empty's own CTA, which carries no bottom margin of its own. */
+.dash-recurring-empty {
+  margin-block-start: var(--s-5);
 }

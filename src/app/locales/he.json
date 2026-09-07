@@ -335,6 +335,7 @@
     "RECURRENCE_ID_DUPLICATE": "התנועה החוזרת כבר קיימת",
     "RECURRENCE_SCHEDULE_INVALID": "בדקו את מרווח החזרה ואת התאריכים",
     "RECURRENCE_CURRENCY_MISMATCH": "כל החשבונות בתנועה חוזרת חייבים להיות באותו מטבע",
+    "RECURRENCE_OCCURRENCE_UNAVAILABLE": "המופע הזה כבר אינו זמין",
     "unknown": "משהו השתבש"
   },
   "months": {

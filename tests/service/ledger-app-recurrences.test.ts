@@ -128,6 +128,31 @@ describe("recurrences through LedgerApp", () => {
     );
   });
 
+  // Confirm an occurrence, delete the entry, then press browser Back to the same
+  // /recurring/:ruleId/post/:date route and submit again. The tombstone must hold: the
+  // deleted payment must not be resurrectable through the route that originally posted it.
+  it("refuses to re-post an occurrence that was posted and then deleted", async () => {
+    const { app, book, ruleId } = await withRule();
+    const posted = unwrap(await app.postOccurrence(book, ruleId, "2026-05-01"));
+    const deleted = unwrap(await app.deleteEntry(posted, recurrenceEntryId(ruleId, "2026-05-01")));
+
+    const result = await app.postOccurrence(deleted, ruleId, "2026-05-01");
+    expect(unwrapErr(result).code).toBe("RECURRENCE_OCCURRENCE_UNAVAILABLE");
+    expect(deleted.journal.some((e) => e.id === recurrenceEntryId(ruleId, "2026-05-01"))).toBe(
+      false,
+    );
+  });
+
+  // Deferral only hides an occurrence from the Dashboard card; dueOccurrences still offers
+  // it, so confirming a deferred row must keep working under the same gate.
+  it("still posts a deferred occurrence", async () => {
+    const { app, book, ruleId } = await withRule();
+    const deferred = unwrap(await app.deferOccurrence(book, ruleId, "2026-05-01"));
+
+    const next = unwrap(await app.postOccurrence(deferred, ruleId, "2026-05-01"));
+    expect(next.journal.map((e) => e.id)).toContain(recurrenceEntryId(ruleId, "2026-05-01"));
+  });
+
   it("round-trips rules through export and import", async () => {
     const { app, book } = await withRule();
     const restored = unwrap(await app.importJson(app.exportJson(book)));

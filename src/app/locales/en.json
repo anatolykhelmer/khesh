@@ -329,6 +329,7 @@
     "RECURRENCE_ID_DUPLICATE": "That recurring transaction already exists",
     "RECURRENCE_SCHEDULE_INVALID": "Check the repeat interval and dates",
     "RECURRENCE_CURRENCY_MISMATCH": "All accounts in a recurring transaction must use one currency",
+    "RECURRENCE_OCCURRENCE_UNAVAILABLE": "That occurrence is no longer available",
     "unknown": "Something went wrong"
   },
   "months": {

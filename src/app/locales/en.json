@@ -58,10 +58,8 @@
     "emptyAction": "Add an entry",
     "budgetOver_one": "Budget: 1 category over",
     "budgetOver_other": "Budget: {{count}} categories over",
-    "dueNow": "Due now",
-    "dueMore_one": "{{count}} more",
-    "dueMore_other": "{{count}} more",
-    "recurringLink": "Recurring",
+    "dueSummary_one": "{{count}} payment due",
+    "dueSummary_other": "{{count}} payments due",
     "recurringEmpty": "Nothing repeats yet"
   },
   "budget": {

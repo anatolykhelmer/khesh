@@ -13,14 +13,11 @@ import { formatMinor, monthLabel } from "../format";
 import { currencySymbol } from "../currencies";
 import { heroState } from "../dashboard-state";
 import { expenseRootId } from "../stats-state";
-import { DueRowItem } from "../components/DueRowItem";
 import { Ltr } from "../components/Ltr";
 import { ChevronBack, ChevronForward, Gear } from "../components/icons";
 import { useLedger } from "../ledger-context";
-import { useLedgerMutation } from "../use-ledger-mutation";
 
 const TOP_CATEGORIES = 4;
-const DASHBOARD_DUE_ROWS = 3;
 
 export function DashboardScreen() {
   const { t } = useTranslation();
@@ -33,8 +30,6 @@ export function DashboardScreen() {
     () => (book ? app.dueRows(book, today).filter((row) => !row.deferred) : []),
     [book, app, today],
   );
-  const { busy, run } = useLedgerMutation();
-
   if (!book) return null;
 
   const currentBook = book;
@@ -71,31 +66,32 @@ export function DashboardScreen() {
     </div>
   );
 
+  // One currency in the queue gets a total; more than one does not, because the book
+  // holds no rate to fold them with — the same reason the hero keeps a section per
+  // currency. The count stands on its own in that case.
+  const dueCurrency = due.length > 0 ? due[0].currency : null;
+  const dueTotal =
+    dueCurrency !== null && due.every((row) => row.currency === dueCurrency)
+      ? formatMinor(
+          due.reduce((sum, row) => sum + row.total, 0),
+          dueCurrency,
+        )
+      : null;
+
   // Always present, due rows or not — mirrors the budget hero's permanent `setLimit`
   // entry below so a book with no rules yet still has a door to `/recurring`. Shared
   // with the empty-book branch right below so a book whose only activity is recurring
-  // rules is not stranded behind `heroState`'s "empty" case, which used to return
-  // before this card was ever reached.
+  // rules is not stranded behind `heroState`'s "empty" case.
   const recurringSection =
     due.length > 0 ? (
-      <>
-        <h2 className="section-label">{t("dashboard.dueNow")}</h2>
-        <ul className="due-list group">
-          {due.slice(0, DASHBOARD_DUE_ROWS).map((row) => (
-            <DueRowItem
-              key={row.entryId}
-              row={row}
-              busy={busy}
-              onPost={() => run(() => app.postOccurrence(currentBook, row.ruleId, row.date))}
-            />
-          ))}
-        </ul>
-        <Link className="secondary link-button" to="/recurring">
-          {due.length > DASHBOARD_DUE_ROWS
-            ? t("dashboard.dueMore", { count: due.length - DASHBOARD_DUE_ROWS })
-            : t("dashboard.recurringLink")}
-        </Link>
-      </>
+      <Link className="summary-row group" to="/recurring">
+        <span>{t("dashboard.dueSummary", { count: due.length })}</span>
+        {dueTotal !== null ? (
+          <span className="summary-figure">
+            <Ltr>{dueTotal}</Ltr>
+          </span>
+        ) : null}
+      </Link>
     ) : (
       <p className="hero-note dash-recurring-empty">
         <Link to="/recurring">{t("dashboard.recurringEmpty")}</Link>
@@ -180,8 +176,6 @@ export function DashboardScreen() {
         </button>
       </div>
 
-      {recurringSection}
-
       <p className="hero-label">{t("dashboard.spentIn", { month: monthLabel(month) })}</p>
       <Link
         className="hero-amount"
@@ -224,6 +218,8 @@ export function DashboardScreen() {
           </p>
         </>
       )}
+
+      {recurringSection}
 
       <dl className="stat-cards">
         <div className="stat-card">

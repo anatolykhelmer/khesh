@@ -60,11 +60,9 @@
     "budgetOver_two": "תקציב: שתי קטגוריות בחריגה",
     "budgetOver_many": "תקציב: {{count}} קטגוריות בחריגה",
     "budgetOver_other": "תקציב: {{count}} קטגוריות בחריגה",
-    "dueNow": "ממתינות לרישום",
-    "dueMore_one": "עוד {{count}}",
-    "dueMore_two": "עוד {{count}}",
-    "dueMore_other": "עוד {{count}}",
-    "recurringLink": "תנועות חוזרות",
+    "dueSummary_one": "תנועה אחת ממתינה לרישום",
+    "dueSummary_two": "שתי תנועות ממתינות לרישום",
+    "dueSummary_other": "{{count}} תנועות ממתינות לרישום",
     "recurringEmpty": "אין עדיין תנועות חוזרות"
   },
   "budget": {

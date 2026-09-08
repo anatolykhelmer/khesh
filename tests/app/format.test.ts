@@ -6,6 +6,7 @@ import {
   formatRate,
   formatRelativeTime,
   monthLabel,
+  relativeSyncTime,
 } from "../../src/app/format";
 
 describe("formatRate", () => {
@@ -117,6 +118,10 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime(NOW - 86_399_000, NOW, "en")).toBe("23 hours ago");
   });
 
+  it("hands off from minutes to hours exactly at the hour", () => {
+    expect(formatRelativeTime(NOW - 3_600_000, NOW, "en")).toBe("1 hour ago");
+  });
+
   it("counts days above that", () => {
     expect(formatRelativeTime(NOW - 86_400_000, NOW, "en")).toBe("yesterday");
     expect(formatRelativeTime(NOW - 7 * 86_400_000, NOW, "en")).toBe("7 days ago");
@@ -136,5 +141,27 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime(NOW - 5 * 60_000, NOW, "he")).not.toBe(
       formatRelativeTime(NOW - 5 * 60_000, NOW, "en"),
     );
+  });
+});
+
+describe("relativeSyncTime", () => {
+  const NOW = 1_760_000_000_000;
+
+  it("has nothing to show when the book has never synced", () => {
+    expect(relativeSyncTime(null, NOW, "en")).toBeNull();
+  });
+
+  it("formats a stored ISO timestamp as elapsed time", () => {
+    expect(relativeSyncTime(new Date(NOW - 5 * 60_000).toISOString(), NOW, "en")).toBe(
+      "5 minutes ago",
+    );
+  });
+
+  it("has nothing to show for a stored value that is not a date", () => {
+    // The sync meta store spreads a persisted record with no schema check, so this
+    // is reachable from a corrupted or foreign record — and NaN makes
+    // Intl.RelativeTimeFormat throw rather than format.
+    expect(relativeSyncTime("not-a-date", NOW, "en")).toBeNull();
+    expect(relativeSyncTime("", NOW, "en")).toBeNull();
   });
 });

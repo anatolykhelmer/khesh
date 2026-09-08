@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { LedgerErrorCode } from "../../kernel/errors";
 import { errorMessage } from "../../service/error-messages";
-import { formatRelativeTime } from "../format";
+import { relativeSyncTime } from "../format";
 import { useSync } from "../sync/sync-context";
 
 /** Codes whose generic `errors.*` line is too thin for this screen. Settings is where
@@ -20,17 +20,13 @@ export function SyncSection() {
 
   if (!sync.configured) return null;
 
-  const syncedAtMs = sync.state?.lastSyncAt != null ? new Date(sync.state.lastSyncAt).getTime() : null;
-  const when =
-    syncedAtMs !== null && Number.isFinite(syncedAtMs)
-      ? formatRelativeTime(syncedAtMs, Date.now(), i18n.language)
-      : null;
+  const when = relativeSyncTime(sync.state?.lastSyncAt ?? null, Date.now(), i18n.language);
 
   if (sync.pendingInspection !== null) {
     const inspection = sync.pendingInspection;
     return (
       <>
-        <h2 className="section-label">{t("sync.choiceTitle")}</h2>
+        <h2 className="section-label statement">{t("sync.choiceTitle")}</h2>
         <ul className="settings-list group">
           {inspection.kind === "book" ? (
             <>
@@ -122,7 +118,7 @@ export function SyncSection() {
               {t("sync.connect")}
             </button>
             <p className="muted row-hint">{t("sync.connectHint")}</p>
-            {sync.lastError !== null ? <p className="muted row-hint">{sync.lastError}</p> : null}
+            {sync.lastError !== null ? <p className="row-hint alert">{sync.lastError}</p> : null}
           </li>
         </ul>
       </>
@@ -174,7 +170,7 @@ export function SyncSection() {
   const manualResolution =
     sync.state?.kind === "manualResolution" ? (
       <>
-        <h2 className="section-label">{t("sync.conflictTitle")}</h2>
+        <h2 className="section-label statement">{t("sync.conflictTitle")}</h2>
         <ul className="settings-list group">
           <li className="settings-row">
             <button type="button" className="row-button" onClick={sync.resolveUseLocal}>

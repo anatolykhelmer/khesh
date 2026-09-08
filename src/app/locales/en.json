@@ -121,7 +121,7 @@
     "syncing": "Syncing…",
     "disconnect": "Disconnect",
     "disconnectHint": "Keeps the book on this device and the copy in Drive.",
-    "offline": "Offline - will retry when the connection returns.",
+    "offline": "Will retry when the connection returns.",
     "needsAuthAction": "Sign in",
     "statusSynced": "Synced",
     "statusOffline": "Offline",

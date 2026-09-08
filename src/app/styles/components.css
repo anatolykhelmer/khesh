@@ -822,6 +822,7 @@ a.row-button {
 
 .due-main {
   flex: 1;
+  min-width: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1017,6 +1018,17 @@ a.row-button {
   color: var(--ink-muted);
   margin: var(--s-5) 0 var(--s-2);
   font-weight: 600;
+}
+
+/* A sentence is not a category label. These two name a destructive choice, so they
+   keep the heading but take body size and full ink — at --t-xs muted micro-caps a
+   title rendered lighter than the hints beneath it, and `text-transform: uppercase`
+   shouted the Latin brand name inside a Hebrew sentence. */
+.section-label.statement {
+  font-size: var(--t-base);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
 }
 
 .stack-form section {

@@ -91,6 +91,23 @@ export function formatRelativeTime(when: number, now: number, locale: string): s
 }
 
 /**
+ * The sync section's elapsed-time line: `null` when there is nothing truthful to
+ * show. `lastSyncAt` is a persisted string that reaches us from IndexedDB without a
+ * schema check, so an unparseable value yields NaN — which `Intl.RelativeTimeFormat`
+ * throws on rather than formats. Answering `null` lets the caller say "not synced
+ * yet" instead of blanking the screen.
+ */
+export function relativeSyncTime(
+  lastSyncAt: string | null,
+  now: number,
+  locale: string,
+): string | null {
+  if (lastSyncAt === null) return null;
+  const ms = new Date(lastSyncAt).getTime();
+  return Number.isFinite(ms) ? formatRelativeTime(ms, now, locale) : null;
+}
+
+/**
  * A leaf shows its one amount. A group shows every non-zero currency it holds, home
  * currency first and the rest alphabetically, joined with " · ". A group holding
  * nothing still shows a zero rather than an empty string.

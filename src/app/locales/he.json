@@ -124,7 +124,7 @@
     "syncing": "מסנכרן…",
     "disconnect": "ניתוק",
     "disconnectHint": "הספר נשאר במכשיר הזה, והעותק נשאר ב-Drive.",
-    "offline": "אין חיבור - ננסה שוב כשהרשת תחזור.",
+    "offline": "ננסה שוב כשהרשת תחזור.",
     "needsAuthAction": "התחברות",
     "statusSynced": "מסונכרן",
     "statusOffline": "אין חיבור",

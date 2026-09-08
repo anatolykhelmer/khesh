@@ -140,6 +140,42 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     await metaStore.save({ fileId: null });
   }, [metaStore]);
 
+  /** Tear down this tab's connection: dispose the engine, drop the store/auth/file refs,
+   * revoke the token, and persist "disconnected" to the shared sync-meta record. Shared
+   * by `disconnect` (the user's own Settings action) and by the effect below (another
+   * tab reset the book while this tab was still connected). Safe to run concurrently in
+   * several tabs — each tab only touches its own in-memory refs and its own token, and
+   * every tab's final write to the shared record agrees, so whichever write lands last
+   * still leaves it correct. */
+  const teardownConnection = useCallback(async () => {
+    engineRef.current?.dispose();
+    engineRef.current = null;
+    storeRef.current = null;
+    await forgetFile();
+    await authRef.current?.revoke();
+    authRef.current = null;
+    await metaStore.save({ connected: false, accountEmail: null, lastSyncAt: null });
+    setConnected(false);
+    setEmail(null);
+    setState(null);
+    setPendingInspection(null);
+  }, [forgetFile, metaStore]);
+
+  // Another tab's reset nulls the book here via the cross-tab broadcast, but that
+  // broadcast never touches this tab's connection state directly — `connected`, the
+  // engine and the refs are all per-tab. Left alone, this tab's engine stays alive
+  // pointed at the old file: its next cycle fails BOOK_INVALID against the fresh empty
+  // book, and if the user instead finishes onboarding in *this* tab, `afterCommit`
+  // nudges the still-live engine, which merges the new book against the remote and
+  // silently restores the old one. Tearing down here closes that window. Guarded so it
+  // only fires while there is something to tear down: the "resume a stored connection"
+  // effect above only sets `connected` once `book !== null`, so a boot with a stored
+  // connection cannot make this effect fire while the book is still loading.
+  useEffect(() => {
+    if (book !== null || !connected) return;
+    void teardownConnection();
+  }, [book, connected, teardownConnection]);
+
   const connect = async () => {
     if (applyingRef.current) return;
     applyingRef.current = true;
@@ -224,19 +260,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
     cancelConnect: () => setPendingInspection(null),
 
-    disconnect: async () => {
-      engineRef.current?.dispose();
-      engineRef.current = null;
-      storeRef.current = null;
-      await forgetFile();
-      await authRef.current?.revoke();
-      authRef.current = null;
-      await metaStore.save({ connected: false, accountEmail: null, lastSyncAt: null });
-      setConnected(false);
-      setEmail(null);
-      setState(null);
-      setPendingInspection(null);
-    },
+    disconnect: teardownConnection,
 
     syncNow: () => void engineRef.current?.syncNow(),
 

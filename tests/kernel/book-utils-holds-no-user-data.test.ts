@@ -76,6 +76,19 @@ describe("holdsNoUserData", () => {
     expect(holdsNoUserData(book)).toBe(false);
   });
 
+  it("is false when a placeholder account has a parent", () => {
+    let book = seeded();
+    const expensesId = rootId(book, "Expenses");
+    book = unwrap(
+      createAccount(
+        book,
+        { parentId: expensesId, name: "Housing", type: "expense", currency: "ILS", isPlaceholder: true },
+        NOW,
+      ),
+    );
+    expect(holdsNoUserData(book)).toBe(false);
+  });
+
   it("is false once the journal holds an entry", () => {
     const { book, cash, food } = withLeaves(seeded());
     const posted = unwrap(

@@ -87,8 +87,6 @@ export function DashboardScreen() {
               row={row}
               busy={busy}
               onPost={() => run(() => app.postOccurrence(currentBook, row.ruleId, row.date))}
-              onSkip={() => run(() => app.skipOccurrence(currentBook, row.ruleId, row.date))}
-              onDefer={() => run(() => app.deferOccurrence(currentBook, row.ruleId, row.date))}
             />
           ))}
         </ul>

@@ -788,13 +788,14 @@ a.row-button {
 
 .due-row {
   display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
-  padding: var(--s-3) 0;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
   border-bottom: 1px solid var(--line);
 }
 
 .due-main {
+  flex: 1;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -813,17 +814,22 @@ a.row-button {
   white-space: nowrap;
 }
 
-.due-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-2);
+/* A row's own action: text, no fill. The queue is the one list in the app where a
+   control repeats per row, and a solid --accent button nine times over is the wall
+   this pass exists to remove. */
+.row-action {
+  min-height: var(--tap);
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
 }
 
-/* .primary is width: 100% by default for standalone CTAs; inside a row of three it
-   needs to share space with its siblings instead. */
-.due-actions button {
-  flex: 1 1 auto;
-  width: auto;
+.row-action:disabled {
+  color: var(--ink-muted);
 }
 
 .rule-row {

@@ -256,6 +256,7 @@
     "empty": "Nothing repeats yet.",
     "add": "Add a recurring transaction",
     "post": "Post",
+    "postAria": "Post {{description}}, {{date}}",
     "edit": "Edit",
     "skip": "Skip",
     "defer": "Later",

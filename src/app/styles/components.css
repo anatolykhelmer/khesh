@@ -711,6 +711,7 @@ a.row-button {
    alone would render as ordinary ink. It states its own colour rather than reordering
    the file. Solid red stays for the confirm button, which is a standalone `.danger`. */
 .row-button.danger {
+  justify-content: flex-start;
   background: transparent;
   color: var(--danger-ink);
 }

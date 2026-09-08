@@ -55,9 +55,20 @@ describe("LedgerApp resetAll", () => {
     expect(commits).toBe(0);
   });
 
-  it("takes the same lock as every other write", async () => {
-    const repo = createMemoryRepository(null);
+  it("takes the same lock as every other write, with the clear happening inside it", async () => {
     const order: string[] = [];
+    const inner = createMemoryRepository(null);
+    // Wraps the real repository so the clear itself pushes a marker, not just the lock
+    // boundary — bracketing alone ("locked"/"released") would still pass an
+    // implementation that cleared outside the lock and then ran a no-op through it.
+    const repo: LedgerRepository = {
+      load: () => inner.load(),
+      save: (book) => inner.save(book),
+      clear: async () => {
+        order.push("cleared");
+        return inner.clear();
+      },
+    };
     const app = createLedgerApp(repo, {
       runExclusive: async (fn) => {
         order.push("locked");
@@ -69,6 +80,6 @@ describe("LedgerApp resetAll", () => {
     unwrap(await app.createHousehold("USD"));
     order.length = 0;
     unwrap(await app.resetAll());
-    expect(order).toEqual(["locked", "released"]);
+    expect(order).toEqual(["locked", "cleared", "released"]);
   });
 });

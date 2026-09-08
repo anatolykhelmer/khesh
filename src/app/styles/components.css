@@ -819,6 +819,7 @@ a.row-button {
    this pass exists to remove. */
 .row-action {
   min-height: var(--tap);
+  min-width: var(--tap);
   padding: 0;
   border: none;
   background: transparent;

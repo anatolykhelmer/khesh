@@ -171,10 +171,30 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // only fires while there is something to tear down: the "resume a stored connection"
   // effect above only sets `connected` once `book !== null`, so a boot with a stored
   // connection cannot make this effect fire while the book is still loading.
+  //
+  // `connected` alone misses the first-connect choice screen: `connect()` binds
+  // `storeRef`/`authRef`/`fileIdRef` to the remote file the moment it inspects it,
+  // before the user has picked anything — both "book" and "unreadable" park in
+  // `pendingInspection` with `connected` still false. A tab sitting there holds the
+  // same live-refs danger as a connected one: re-rendering that choice screen against
+  // the fresh book instead of tearing down leaves "Replace remote" wired to upload the
+  // freshly-onboarded seed straight over the real file those refs still name. Mirrors
+  // the widened condition `reset-flow.ts` already uses for the tab doing the reset.
   useEffect(() => {
-    if (book !== null || !connected) return;
-    void teardownConnection();
-  }, [book, connected, teardownConnection]);
+    const hasSomethingToTearDown = connected || pendingInspection !== null;
+    if (book !== null || !hasSomethingToTearDown) return;
+    void teardownConnection().catch(() => {
+      // `teardownConnection`'s first statement, `engineRef.current?.dispose()`, is
+      // synchronous — the one danger this effect exists to close (a live engine
+      // merging a fresh book against the old remote) is already shut by the time any
+      // await here could reject. What a rejection (a thrown `revoke()`, say) leaves
+      // behind is this tab's own `connected`/`pendingInspection` state not catching
+      // up with the refs it already cleared — a display inconsistency, not a route
+      // back to the file. This effect runs with no user action to attach a retry or
+      // an error banner to (the book is null, so Settings is not even on screen), so
+      // swallow rather than surface a message the user cannot act on.
+    });
+  }, [book, connected, pendingInspection, teardownConnection]);
 
   const connect = async () => {
     if (applyingRef.current) return;

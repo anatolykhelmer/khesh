@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { LedgerErrorCode } from "../../kernel/errors";
 import { errorMessage } from "../../service/error-messages";
+import { formatRelativeTime } from "../format";
 import { useSync } from "../sync/sync-context";
 
 /** Codes whose generic `errors.*` line is too thin for this screen. Settings is where
@@ -19,80 +20,93 @@ export function SyncSection() {
 
   if (!sync.configured) return null;
 
-  const lastSynced =
+  const when =
     sync.state?.lastSyncAt != null
-      ? t("sync.lastSynced", { when: new Date(sync.state.lastSyncAt).toLocaleString(i18n.language) })
+      ? formatRelativeTime(new Date(sync.state.lastSyncAt).getTime(), Date.now(), i18n.language)
       : t("sync.neverSynced");
 
   if (sync.pendingInspection !== null) {
     const inspection = sync.pendingInspection;
     return (
-      <ul className="settings-list group" aria-label={t("sync.title")}>
-        <li className="settings-row">
-          <p>{t("sync.choiceTitle")}</p>
-          {inspection.kind === "book" ? (
-            <>
-              <p className="muted row-hint">
-                {t("sync.choiceBody", { name: inspection.name, entries: inspection.entryCount })}
-              </p>
-              <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("useRemote")}>
-                {t("sync.choiceUseRemote")}
-              </button>
-              <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("merge")}>
-                {t("sync.choiceMerge")}
-              </button>
-              <p className="muted row-hint">{t("sync.choiceMergeWarning")}</p>
-              <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("replaceRemote")}>
-                {t("sync.choiceReplaceRemote")}
-              </button>
-            </>
-          ) : inspection.kind === "unreadable" && inspection.errorCode === "SYNC_ENVELOPE_INVALID" ? (
-            <>
-              <p className="muted row-hint">{t("sync.choiceUnreadable")}</p>
-              <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("replaceRemote")}>
-                {t("sync.choiceReplaceRemote")}
-              </button>
-            </>
-          ) : (
-            <p className="muted row-hint">{t("sync.errorUpdateApp")}</p>
-          )}
-          <button type="button" className="row-button" onClick={sync.cancelConnect}>
-            {t("common.cancel")}
-          </button>
-          {sync.lastError !== null ? <p className="muted row-hint">{sync.lastError}</p> : null}
-        </li>
-      </ul>
+      <>
+        <h2 className="section-label">{t("sync.title")}</h2>
+        <ul className="settings-list group">
+          <li className="settings-row">
+            <p>{t("sync.choiceTitle")}</p>
+            {inspection.kind === "book" ? (
+              <>
+                <p className="muted row-hint">
+                  {t("sync.choiceBody", { name: inspection.name, entries: inspection.entryCount })}
+                </p>
+                <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("useRemote")}>
+                  {t("sync.choiceUseRemote")}
+                </button>
+                <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("merge")}>
+                  {t("sync.choiceMerge")}
+                </button>
+                <p className="muted row-hint">{t("sync.choiceMergeWarning")}</p>
+                <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("replaceRemote")}>
+                  {t("sync.choiceReplaceRemote")}
+                </button>
+              </>
+            ) : inspection.kind === "unreadable" && inspection.errorCode === "SYNC_ENVELOPE_INVALID" ? (
+              <>
+                <p className="muted row-hint">{t("sync.choiceUnreadable")}</p>
+                <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("replaceRemote")}>
+                  {t("sync.choiceReplaceRemote")}
+                </button>
+              </>
+            ) : (
+              <p className="muted row-hint">{t("sync.errorUpdateApp")}</p>
+            )}
+            <button type="button" className="row-button" onClick={sync.cancelConnect}>
+              {t("common.cancel")}
+            </button>
+            {sync.lastError !== null ? <p className="muted row-hint">{sync.lastError}</p> : null}
+          </li>
+        </ul>
+      </>
     );
   }
 
   if (!sync.connected) {
     return (
-      <ul className="settings-list group" aria-label={t("sync.title")}>
-        <li className="settings-row">
-          <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.connect()}>
-            {t("sync.connect")}
-          </button>
-          <p className="muted row-hint">{t("sync.connectHint")}</p>
-          {sync.lastError !== null ? <p className="muted row-hint">{sync.lastError}</p> : null}
-        </li>
-      </ul>
+      <>
+        <h2 className="section-label">{t("sync.title")}</h2>
+        <ul className="settings-list group">
+          <li className="settings-row">
+            <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.connect()}>
+              {t("sync.connect")}
+            </button>
+            <p className="muted row-hint">{t("sync.connectHint")}</p>
+            {sync.lastError !== null ? <p className="muted row-hint">{sync.lastError}</p> : null}
+          </li>
+        </ul>
+      </>
     );
   }
 
-  const stateLine = (() => {
+  const status = (() => {
     switch (sync.state?.kind) {
       case "syncing":
-        return t("sync.syncing");
+        return { label: t("sync.syncing"), hint: null, alert: false };
       case "offline":
-        return t("sync.offline");
+        // The app is offline-first: a lost connection is a described state, not a
+        // fault, so it says so in words and keeps the neutral colour.
+        return { label: t("sync.statusOffline"), hint: t("sync.offline"), alert: false };
       case "needsAuth":
-        return t("sync.needsAuth");
+        // No explanation line: the "Sign in" row directly below is the explanation.
+        return { label: t("sync.statusNeedsAuth"), hint: null, alert: true };
       case "error": {
         const specific = SPECIFIC_ERROR_KEYS[sync.state.errorCode];
-        return specific !== undefined ? t(specific) : errorMessage(sync.state.errorCode);
+        return {
+          label: t("sync.statusError"),
+          hint: specific !== undefined ? t(specific) : errorMessage(sync.state.errorCode),
+          alert: true,
+        };
       }
       default:
-        return null;
+        return { label: t("sync.statusSynced"), hint: null, alert: false };
     }
   })();
 
@@ -105,14 +119,9 @@ export function SyncSection() {
   const isUnsupportedFormatError = errorCode === "SYNC_FORMAT_UNSUPPORTED";
   const isFileMissingError = errorCode === "SYNC_FILE_MISSING";
 
-  return (
-    <ul className="settings-list group" aria-label={t("sync.title")}>
-      <li className="settings-row">
-        {sync.email !== null ? <p>{t("sync.connectedAs", { email: sync.email })}</p> : null}
-        <p className="muted row-hint">{lastSynced}</p>
-        {stateLine !== null ? <p className="muted row-hint">{stateLine}</p> : null}
-      </li>
-      {sync.state?.kind === "manualResolution" ? (
+  const manualResolution =
+    sync.state?.kind === "manualResolution" ? (
+      <ul className="settings-list group">
         <li className="settings-row">
           <p>{t("sync.conflictTitle")}</p>
           <p className="muted row-hint">{t("sync.conflictBody")}</p>
@@ -123,38 +132,65 @@ export function SyncSection() {
             {t("sync.useRemote")}
           </button>
         </li>
-      ) : null}
-      {isFileMissingError ? (
-        <li className="settings-row">
-          <button
-            type="button"
-            className="row-button"
-            disabled={sync.applying}
-            onClick={() => void sync.reconnect()}
-          >
-            {t("sync.reconnectAction")}
-          </button>
-          <p className="muted row-hint">{t("sync.reconnectHint")}</p>
+      </ul>
+    ) : null;
+
+  return (
+    <>
+      <h2 className="section-label">{t("sync.title")}</h2>
+      <ul className="settings-list group">
+        <li className="settings-row sync-status">
+          <p className="sync-line">
+            <span className={status.alert ? "sync-state alert" : "sync-state"}>
+              {status.label}
+            </span>
+            <span className="sync-when muted">{when}</span>
+          </p>
+          {sync.email !== null ? <p className="muted row-hint">{sync.email}</p> : null}
+          {status.hint !== null ? (
+            <p className={status.alert ? "row-hint alert" : "row-hint muted"}>{status.hint}</p>
+          ) : null}
+          {sync.lastError !== null ? <p className="row-hint alert">{sync.lastError}</p> : null}
         </li>
-      ) : null}
-      {!isUnsupportedFormatError && !isFileMissingError ? (
+        {isFileMissingError ? (
+          <li className="settings-row">
+            <button
+              type="button"
+              className="row-button"
+              disabled={sync.applying}
+              onClick={() => void sync.reconnect()}
+            >
+              {t("sync.reconnectAction")}
+            </button>
+            <p className="muted row-hint">{t("sync.reconnectHint")}</p>
+          </li>
+        ) : null}
+        {!isUnsupportedFormatError && !isFileMissingError ? (
+          <li className="settings-row">
+            <button
+              type="button"
+              className="row-button"
+              disabled={sync.state?.kind === "syncing"}
+              onClick={() => (sync.state?.kind === "needsAuth" ? void sync.reauth() : sync.syncNow())}
+            >
+              {sync.state?.kind === "needsAuth"
+                ? t("sync.needsAuthAction")
+                : sync.state?.kind === "syncing"
+                  ? t("sync.syncing")
+                  : t("sync.syncNow")}
+            </button>
+          </li>
+        ) : null}
+      </ul>
+      {manualResolution}
+      <ul className="settings-list group">
         <li className="settings-row">
-          <button
-            type="button"
-            className="row-button"
-            disabled={sync.state?.kind === "syncing"}
-            onClick={() => (sync.state?.kind === "needsAuth" ? void sync.reauth() : sync.syncNow())}
-          >
-            {sync.state?.kind === "needsAuth" ? t("sync.needsAuthAction") : t("sync.syncNow")}
+          <button type="button" className="row-button" onClick={() => void sync.disconnect()}>
+            {t("sync.disconnect")}
           </button>
+          <p className="muted row-hint">{t("sync.disconnectHint")}</p>
         </li>
-      ) : null}
-      <li className="settings-row">
-        <button type="button" className="row-button" onClick={() => void sync.disconnect()}>
-          {t("sync.disconnect")}
-        </button>
-        <p className="muted row-hint">{t("sync.disconnectHint")}</p>
-      </li>
-    </ul>
+      </ul>
+    </>
   );
 }

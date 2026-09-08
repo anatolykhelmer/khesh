@@ -716,6 +716,31 @@ a.row-button {
   color: var(--danger-ink);
 }
 
+.sync-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  min-height: var(--tap);
+  margin: 0;
+}
+
+.sync-state {
+  font-weight: 600;
+}
+
+.sync-when {
+  font-size: var(--t-sm);
+  white-space: nowrap;
+}
+
+/* Colour carries one meaning in this app: something needs a human, or something
+   cannot be undone. Offline is neither — it is the designed state of an
+   offline-first ledger — so it stays neutral and only says so in words. */
+.alert {
+  color: var(--danger-ink);
+}
+
 .budget-list {
   list-style: none;
   padding: 0;

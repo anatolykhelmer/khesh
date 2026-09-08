@@ -119,7 +119,6 @@
     "title": "Google Drive",
     "connect": "חיבור Google Drive",
     "connectHint": "שומר את הספר אוטומטית ב-Google Drive שלך ומעדכן את שאר המכשירים.",
-    "connectedAs": "מחובר בתור {{email}}",
     "neverSynced": "טרם סונכרן",
     "syncNow": "סנכרון עכשיו",
     "syncing": "מסנכרן…",

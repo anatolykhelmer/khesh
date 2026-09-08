@@ -20,10 +20,11 @@ export function SyncSection() {
 
   if (!sync.configured) return null;
 
+  const syncedAtMs = sync.state?.lastSyncAt != null ? new Date(sync.state.lastSyncAt).getTime() : null;
   const when =
-    sync.state?.lastSyncAt != null
-      ? formatRelativeTime(new Date(sync.state.lastSyncAt).getTime(), Date.now(), i18n.language)
-      : t("sync.neverSynced");
+    syncedAtMs !== null && Number.isFinite(syncedAtMs)
+      ? formatRelativeTime(syncedAtMs, Date.now(), i18n.language)
+      : null;
 
   if (sync.pendingInspection !== null) {
     const inspection = sync.pendingInspection;
@@ -105,8 +106,17 @@ export function SyncSection() {
           alert: true,
         };
       }
+      case "manualResolution":
+        // Syncing is halted until the user picks which book to keep, so "Synced" over
+        // the conflict card below would be the exact lie this pass exists to remove.
+        return { label: t("sync.statusError"), hint: null, alert: true };
       default:
-        return { label: t("sync.statusSynced"), hint: null, alert: false };
+        // Also catches idle with no timestamp yet and the null window between
+        // finalizeConnect's setConnected(true) and the engine's first state event —
+        // neither of those is "Synced" either.
+        return when !== null
+          ? { label: t("sync.statusSynced"), hint: null, alert: false }
+          : { label: t("sync.neverSynced"), hint: null, alert: false };
     }
   })();
 
@@ -139,12 +149,12 @@ export function SyncSection() {
     <>
       <h2 className="section-label">{t("sync.title")}</h2>
       <ul className="settings-list group">
-        <li className="settings-row sync-status">
+        <li className="settings-row">
           <p className="sync-line">
             <span className={status.alert ? "sync-state alert" : "sync-state"}>
               {status.label}
             </span>
-            <span className="sync-when muted">{when}</span>
+            {when !== null ? <span className="sync-when muted">{when}</span> : null}
           </p>
           {sync.email !== null ? <p className="muted row-hint">{sync.email}</p> : null}
           {status.hint !== null ? (

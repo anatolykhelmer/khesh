@@ -116,7 +116,6 @@
     "title": "Google Drive",
     "connect": "Connect Google Drive",
     "connectHint": "Autosaves the book to your own Google Drive and keeps your other devices in step.",
-    "connectedAs": "Connected as {{email}}",
     "neverSynced": "Not synced yet",
     "syncNow": "Sync now",
     "syncing": "Syncing…",

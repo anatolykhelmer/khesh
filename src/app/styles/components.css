@@ -737,7 +737,8 @@ a.row-button {
 /* Colour carries one meaning in this app: something needs a human, or something
    cannot be undone. Offline is neither — it is the designed state of an
    offline-first ledger — so it stays neutral and only says so in words. */
-.alert {
+.row-hint.alert,
+.sync-state.alert {
   color: var(--danger-ink);
 }
 

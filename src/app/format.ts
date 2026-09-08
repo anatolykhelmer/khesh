@@ -68,6 +68,28 @@ export function formatDate(isoDate: string): string {
   return new Intl.DateTimeFormat(i18n.language).format(new Date(`${isoDate}T00:00:00`));
 }
 
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+/**
+ * "5 minutes ago" for a timestamp, in the caller's locale. `numeric: "auto"` is what
+ * turns the edges into words — "now", "yesterday" — instead of "in 0 seconds".
+ *
+ * `now` is a parameter rather than a `Date.now()` call so the tests do not race the
+ * clock, the same seam `postOccurrence`'s defaulted `today` uses. A `when` in the
+ * future clamps to now: two devices syncing to one Drive file disagree about the
+ * clock routinely, and "in 3 minutes" would describe a sync that has not happened.
+ */
+export function formatRelativeTime(when: number, now: number, locale: string): string {
+  const elapsed = Math.max(0, now - when);
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  if (elapsed < 45_000) return rtf.format(0, "second");
+  if (elapsed < HOUR_MS) return rtf.format(-Math.max(1, Math.floor(elapsed / MINUTE_MS)), "minute");
+  if (elapsed < DAY_MS) return rtf.format(-Math.floor(elapsed / HOUR_MS), "hour");
+  return rtf.format(-Math.floor(elapsed / DAY_MS), "day");
+}
+
 /**
  * A leaf shows its one amount. A group shows every non-zero currency it holds, home
  * currency first and the rest alphabetically, joined with " · ". A group holding

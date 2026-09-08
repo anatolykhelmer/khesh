@@ -4,6 +4,7 @@ import {
   formatDate,
   formatMinor,
   formatRate,
+  formatRelativeTime,
   monthLabel,
 } from "../../src/app/format";
 
@@ -91,5 +92,49 @@ describe("formatAccountBalance", () => {
 
   it("shows a zero in the home currency when a group holds nothing", () => {
     expect(formatAccountBalance({ kind: "placeholder", balances: {} }, "ILS")).toBe("0.00 ₪");
+  });
+});
+
+describe("formatRelativeTime", () => {
+  const NOW = 1_760_000_000_000;
+
+  it("calls anything under 45 seconds 'now'", () => {
+    expect(formatRelativeTime(NOW, NOW, "en")).toBe("now");
+    expect(formatRelativeTime(NOW - 44_000, NOW, "en")).toBe("now");
+  });
+
+  it("rounds the first minute up rather than reporting zero minutes", () => {
+    expect(formatRelativeTime(NOW - 50_000, NOW, "en")).toBe("1 minute ago");
+  });
+
+  it("counts whole minutes below an hour", () => {
+    expect(formatRelativeTime(NOW - 5 * 60_000, NOW, "en")).toBe("5 minutes ago");
+    expect(formatRelativeTime(NOW - 3_599_000, NOW, "en")).toBe("59 minutes ago");
+  });
+
+  it("counts whole hours below a day", () => {
+    expect(formatRelativeTime(NOW - 3 * 3_600_000, NOW, "en")).toBe("3 hours ago");
+    expect(formatRelativeTime(NOW - 86_399_000, NOW, "en")).toBe("23 hours ago");
+  });
+
+  it("counts days above that", () => {
+    expect(formatRelativeTime(NOW - 86_400_000, NOW, "en")).toBe("yesterday");
+    expect(formatRelativeTime(NOW - 7 * 86_400_000, NOW, "en")).toBe("7 days ago");
+  });
+
+  it("clamps a future timestamp to now instead of promising a sync ahead of time", () => {
+    // Two devices syncing to the same Drive file disagree about the clock routinely.
+    expect(formatRelativeTime(NOW + 600_000, NOW, "en")).toBe("now");
+  });
+
+  it("delegates to the locale rather than building strings", () => {
+    // Asserted against Intl, not against a literal: the exact Hebrew wording is CLDR
+    // data and changes with the ICU the runtime ships. What this pins is that the
+    // helper passes the locale through and picks the same unit and sign.
+    const expected = new Intl.RelativeTimeFormat("he", { numeric: "auto" }).format(-5, "minute");
+    expect(formatRelativeTime(NOW - 5 * 60_000, NOW, "he")).toBe(expected);
+    expect(formatRelativeTime(NOW - 5 * 60_000, NOW, "he")).not.toBe(
+      formatRelativeTime(NOW - 5 * 60_000, NOW, "en"),
+    );
   });
 });

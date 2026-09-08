@@ -13,6 +13,64 @@ export type RemoteInspection =
   | { kind: "book"; name: string; entryCount: number }
   | { kind: "unreadable"; errorCode: "SYNC_ENVELOPE_INVALID" | "SYNC_FORMAT_UNSUPPORTED" };
 
+/** What the local side has to lose. `none` covers both "storage is empty" and "the
+ * stored book failed to load": neither holds data a remote book could destroy. */
+export type LocalState = "none" | "empty" | "real";
+
+/**
+ * What a first connect should do next, given both sides.
+ *
+ * - `apply` — act now, show no choice screen. The user tapped Connect and there is only
+ *   one sensible outcome.
+ * - `choose` — show these choices, in this order.
+ * - `explain` — there is no action to offer; say why.
+ */
+export type FirstConnectPlan =
+  | { kind: "apply"; choice: FirstConnectChoice }
+  | { kind: "choose"; choices: FirstConnectChoice[] }
+  | { kind: "explain"; reason: "remoteEmpty" | "remoteUnreadable" | "updateApp" };
+
+/**
+ * The whole first-connect decision, as a value.
+ *
+ * Two things live here that used to be spread between `SyncProvider.connect()` and
+ * `SyncSection`'s markup: whether the flow acts immediately or asks, and which choices
+ * are meaningful. Neither could see the local side before, which is why `merge` was
+ * offered to a book with nothing in it — the case that doubles the root accounts,
+ * because root ids are per-device (see BL-048).
+ *
+ * `remote` is the whole inspection, not just its `kind`: `unreadable` splits by
+ * `errorCode`, and a remote written by a *newer* Khesh must never be offered for
+ * overwrite.
+ */
+export function firstConnectOptions(
+  local: LocalState,
+  remote: RemoteInspection,
+): FirstConnectPlan {
+  if (remote.kind === "empty") {
+    // Nothing in Drive to take. With a local book, uploading it is the only outcome and
+    // needs no screen — today's behavior. Without one there is nothing to upload either,
+    // and the honest answer is a sentence, not a failed action.
+    return local === "none"
+      ? { kind: "explain", reason: "remoteEmpty" }
+      : { kind: "apply", choice: "replaceRemote" };
+  }
+
+  if (remote.kind === "unreadable") {
+    if (remote.errorCode === "SYNC_FORMAT_UNSUPPORTED") {
+      return { kind: "explain", reason: "updateApp" };
+    }
+    // Overwriting a corrupt remote works by uploading the local book, so it needs one.
+    return local === "none"
+      ? { kind: "explain", reason: "remoteUnreadable" }
+      : { kind: "choose", choices: ["replaceRemote"] };
+  }
+
+  if (local === "none") return { kind: "choose", choices: ["useRemote"] };
+  if (local === "empty") return { kind: "choose", choices: ["useRemote", "replaceRemote"] };
+  return { kind: "choose", choices: ["useRemote", "merge", "replaceRemote"] };
+}
+
 export async function inspectRemote(store: SyncStorePort): Promise<Result<RemoteInspection>> {
   const readResult = await store.read();
   if (!readResult.ok) return readResult;

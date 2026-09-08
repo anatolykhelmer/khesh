@@ -30,40 +30,82 @@ export function SyncSection() {
     const inspection = sync.pendingInspection;
     return (
       <>
-        <h2 className="section-label">{t("sync.title")}</h2>
+        <h2 className="section-label">{t("sync.choiceTitle")}</h2>
         <ul className="settings-list group">
-          <li className="settings-row">
-            <p>{t("sync.choiceTitle")}</p>
-            {inspection.kind === "book" ? (
-              <>
+          {inspection.kind === "book" ? (
+            <>
+              <li className="settings-row">
                 <p className="muted row-hint">
                   {t("sync.choiceBody", { name: inspection.name, entries: inspection.entryCount })}
                 </p>
-                <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("useRemote")}>
+              </li>
+              <li className="settings-row">
+                <button
+                  type="button"
+                  className="row-button"
+                  disabled={sync.applying}
+                  onClick={() => void sync.applyChoice("useRemote")}
+                >
                   {t("sync.choiceUseRemote")}
                 </button>
-                <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("merge")}>
+                <p className="muted row-hint">{t("sync.choiceUseRemoteHint")}</p>
+              </li>
+              <li className="settings-row">
+                <button
+                  type="button"
+                  className="row-button"
+                  disabled={sync.applying}
+                  onClick={() => void sync.applyChoice("merge")}
+                >
                   {t("sync.choiceMerge")}
                 </button>
                 <p className="muted row-hint">{t("sync.choiceMergeWarning")}</p>
-                <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("replaceRemote")}>
+              </li>
+              <li className="settings-row">
+                <button
+                  type="button"
+                  className="row-button"
+                  disabled={sync.applying}
+                  onClick={() => void sync.applyChoice("replaceRemote")}
+                >
                   {t("sync.choiceReplaceRemote")}
                 </button>
-              </>
-            ) : inspection.kind === "unreadable" && inspection.errorCode === "SYNC_ENVELOPE_INVALID" ? (
-              <>
+                <p className="muted row-hint">{t("sync.choiceReplaceRemoteHint")}</p>
+              </li>
+            </>
+          ) : inspection.kind === "unreadable" && inspection.errorCode === "SYNC_ENVELOPE_INVALID" ? (
+            <>
+              <li className="settings-row">
                 <p className="muted row-hint">{t("sync.choiceUnreadable")}</p>
-                <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.applyChoice("replaceRemote")}>
+              </li>
+              <li className="settings-row">
+                <button
+                  type="button"
+                  className="row-button"
+                  disabled={sync.applying}
+                  onClick={() => void sync.applyChoice("replaceRemote")}
+                >
                   {t("sync.choiceReplaceRemote")}
                 </button>
-              </>
-            ) : (
-              <p className="muted row-hint">{t("sync.errorUpdateApp")}</p>
-            )}
+                <p className="muted row-hint">{t("sync.choiceReplaceRemoteHint")}</p>
+              </li>
+            </>
+          ) : (
+            <li className="settings-row">
+              <p className="row-hint alert">{t("sync.errorUpdateApp")}</p>
+            </li>
+          )}
+          {sync.lastError !== null ? (
+            <li className="settings-row">
+              <p className="row-hint alert">{sync.lastError}</p>
+            </li>
+          ) : null}
+        </ul>
+        <ul className="settings-list group">
+          <li className="settings-row">
             <button type="button" className="row-button" onClick={sync.cancelConnect}>
               {t("common.cancel")}
             </button>
-            {sync.lastError !== null ? <p className="muted row-hint">{sync.lastError}</p> : null}
           </li>
         </ul>
       </>
@@ -131,18 +173,23 @@ export function SyncSection() {
 
   const manualResolution =
     sync.state?.kind === "manualResolution" ? (
-      <ul className="settings-list group">
-        <li className="settings-row">
-          <p>{t("sync.conflictTitle")}</p>
-          <p className="muted row-hint">{t("sync.conflictBody")}</p>
-          <button type="button" className="row-button" onClick={sync.resolveUseLocal}>
-            {t("sync.useLocal")}
-          </button>
-          <button type="button" className="row-button" onClick={sync.resolveUseRemote}>
-            {t("sync.useRemote")}
-          </button>
-        </li>
-      </ul>
+      <>
+        <h2 className="section-label">{t("sync.conflictTitle")}</h2>
+        <ul className="settings-list group">
+          <li className="settings-row">
+            <button type="button" className="row-button" onClick={sync.resolveUseLocal}>
+              {t("sync.useLocal")}
+            </button>
+            <p className="muted row-hint">{t("sync.conflictBody")}</p>
+          </li>
+          <li className="settings-row">
+            <button type="button" className="row-button" onClick={sync.resolveUseRemote}>
+              {t("sync.useRemote")}
+            </button>
+            <p className="muted row-hint">{t("sync.conflictBody")}</p>
+          </li>
+        </ul>
+      </>
     ) : null;
 
   return (

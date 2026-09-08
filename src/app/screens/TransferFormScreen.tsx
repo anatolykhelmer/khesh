@@ -336,6 +336,37 @@ export function TransferFormScreen() {
           {t("transferForm.save")}
         </button>
       </form>
+
+      {ruleId && occurrenceDate ? (
+        <div className="button-row">
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                () => app.deferOccurrence(currentBook, ruleId, occurrenceDate),
+                () => navigate("/recurring"),
+              )
+            }
+          >
+            {t("recurring.defer")}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                () => app.skipOccurrence(currentBook, ruleId, occurrenceDate),
+                () => navigate("/recurring"),
+              )
+            }
+          >
+            {t("recurring.skip")}
+          </button>
+        </div>
+      ) : null}
     </main>
   );
 }

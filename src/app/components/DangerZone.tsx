@@ -1,37 +1,41 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { errorMessage } from "../../service/error-messages";
 import { useLedger } from "../ledger-context";
+import { performReset } from "../reset-flow";
 import { useSync } from "../sync/sync-context";
 
 /** The Settings danger zone: erase the book on this device and disconnect Drive sync,
  * behind a confirmation the screen owns rather than `confirm()`. The browser dialog is
  * suppressed in the preview automation this app is verified in, which is how every other
- * destructive flow here shipped unexercised; real buttons can be driven. */
+ * destructive flow here shipped unexercised; real buttons can be driven.
+ *
+ * This component only renders and owns `confirming`/`busy` — the disconnect → erase →
+ * announce sequence itself lives in `performReset` (`../reset-flow`), which is plain
+ * TypeScript and has its own tests. */
 export function DangerZone() {
   const { t } = useTranslation();
   const { app, announceBookChanged, setError } = useLedger();
   const sync = useSync();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The ref is the guard and `busy` is what the UI reads: a second tap on this, the
+  // app's most destructive button, can arrive before React re-renders with `busy` —
+  // same pattern as SyncProvider's `applyingRef`.
+  const busyRef = useRef(false);
 
   async function onReset() {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
-      // Disconnect first: it shuts the window in which a live engine could see empty
-      // storage. The file in Drive is untouched — reconnecting reaches the usual
-      // use-remote / merge / replace choice.
-      if (sync.connected) await sync.disconnect();
-      const result = await app.resetAll();
-      if (!result.ok) {
-        setError(errorMessage(result.error.code));
-        return;
-      }
-      setError(null);
-      // No book: App renders OnboardingScreen here, and the other tabs follow the
-      // broadcast into the same place.
-      announceBookChanged(null);
+      await performReset({
+        sync,
+        resetAll: () => app.resetAll(),
+        announceBookChanged,
+        setError,
+      });
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }

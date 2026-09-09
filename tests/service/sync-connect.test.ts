@@ -316,4 +316,32 @@ describe("applyFirstConnect with no local book", () => {
     const store = createMemorySyncStore(encodeEnvelope(makeBook("Wallet", LATER)));
     expect(unwrapErr(await applyFirstConnect("merge", { repo, store })).code).toBe("BOOK_INVALID");
   });
+
+  it("useRemote against an empty remote performs exactly one read", async () => {
+    const local = makeBook("Cash", NOW);
+    const repo = createMemoryRepository(local);
+    const inner = createMemorySyncStore();
+    let readCount = 0;
+    const store: SyncStorePort = {
+      probe: () => inner.probe(),
+      async read() {
+        readCount += 1;
+        return inner.read();
+      },
+      write: (payload, ifUnchanged) => inner.write(payload, ifUnchanged),
+    };
+
+    const book = unwrap(await applyFirstConnect("useRemote", { repo, store }));
+    expect(readCount).toBe(1);
+    expect(bookFingerprint(book)).toBe(bookFingerprint(local));
+  });
+
+  it("useRemote against an undecodable remote returns an error and preserves the corrupt payload", async () => {
+    const local = makeBook("Cash", NOW);
+    const repo = createMemoryRepository(local);
+    const store = createMemorySyncStore("junk");
+    const result = await applyFirstConnect("useRemote", { repo, store });
+    expect(unwrapErr(result).code).toBe("SYNC_ENVELOPE_INVALID");
+    expect(store.getPayload()).toBe("junk"); // corrupt remote untouched
+  });
 });

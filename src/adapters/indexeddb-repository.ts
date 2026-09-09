@@ -26,16 +26,30 @@ export function createIndexedDbRepository(dbName = "khesh-ledger"): LedgerReposi
 
   return {
     async load(): Promise<Result<Book | null>> {
+      let value: unknown;
       try {
         const db = await getDb();
-        const value = await db.get(STORE, KEY);
-        if (value === undefined) return ok(null);
+        value = await db.get(STORE, KEY);
+      } catch {
+        return err("STORAGE_UNAVAILABLE", "Failed to read IndexedDB");
+      }
+      if (value === undefined) return ok(null);
+      // Separate try: storage already read fine (the block above would have returned
+      // otherwise), so a throw here means the stored value itself doesn't parse as a
+      // book — normalizeBook is not total over arbitrary input (e.g. no `accounts`
+      // array, or a stored `null`). That is a broken book, not broken storage, and the
+      // recovery screen routes on exactly this distinction: STORAGE_UNAVAILABLE offers
+      // only Retry, which would re-read this identical record and fail identically,
+      // leaving no way out. BOOK_INVALID reaches the branch that actually has one
+      // (import a backup, start over). validateBook's own `!ok` return is unaffected
+      // either way — it never throws, so it keeps propagating its specific code.
+      try {
         const book = normalizeBook(value as StoredBook);
         const validated = validateBook(book);
         if (!validated.ok) return validated;
         return ok(book);
       } catch {
-        return err("STORAGE_UNAVAILABLE", "Failed to read IndexedDB");
+        return err("BOOK_INVALID", "Stored book could not be normalized or validated");
       }
     },
     async save(book: Book): Promise<Result<void>> {

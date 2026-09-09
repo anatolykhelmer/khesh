@@ -67,6 +67,28 @@ describe("IndexedDbRepository", () => {
     expect(unwrapErr(await repo.load()).code).toBe("BOOK_INVALID");
   });
 
+  it("a stored record with no accounts array fails as a broken book, not broken storage", async () => {
+    const repo = createIndexedDbRepository("khesh-test-no-accounts");
+    const noAccounts = {
+      schemaVersion: 1,
+      name: "Home",
+      homeCurrency: "ILS",
+      journal: [],
+    };
+    unwrap(await repo.save(noAccounts as unknown as Book));
+    // normalizeBook throws on this shape (accounts.map with no accounts array). Storage
+    // itself read fine, so this must not come back as STORAGE_UNAVAILABLE — that would
+    // route the recovery screen to the branch whose only action (Retry) re-reads this
+    // same record and fails identically, leaving no way out.
+    expect(unwrapErr(await repo.load()).code).toBe("BOOK_INVALID");
+  });
+
+  it("a stored null fails as a broken book, not broken storage", async () => {
+    const repo = createIndexedDbRepository("khesh-test-stored-null");
+    unwrap(await repo.save(null as unknown as Book));
+    expect(unwrapErr(await repo.load()).code).toBe("BOOK_INVALID");
+  });
+
   it("clear removes the saved book", async () => {
     const repo = createIndexedDbRepository("khesh-test-clear");
     const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));

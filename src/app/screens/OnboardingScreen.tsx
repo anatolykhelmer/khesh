@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { CurrencyCode } from "../../kernel";
 import { CURRENCIES } from "../currencies";
 import { Check } from "../components/icons";
+import { ConnectDrive } from "../components/ConnectDrive";
 import { ImportBookButton } from "../components/ImportBookButton";
 import type { AppLanguage } from "../i18n";
 import { setLanguage } from "../i18n";
@@ -93,6 +94,7 @@ export function OnboardingScreen() {
         disabled={busy}
         onBusyChange={setImporting}
       />
+      <ConnectDrive />
       <a className="onboarding-about" href="/about.html" target="_blank" rel="noopener">
         {t("onboarding.aboutLink")}
       </a>

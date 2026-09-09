@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ConnectDrive } from "../components/ConnectDrive";
 import { ImportBookButton } from "../components/ImportBookButton";
 import { errorMessage } from "../../service/error-messages";
 import { useLedger } from "../ledger-context";
@@ -59,6 +60,8 @@ export function RecoveryScreen() {
         disabled={importing}
         onBusyChange={setImporting}
       />
+
+      <ConnectDrive />
 
       <ul className="settings-list group">
         <li className="settings-row">

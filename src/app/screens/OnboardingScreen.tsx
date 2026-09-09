@@ -8,11 +8,13 @@ import { ImportBookButton } from "../components/ImportBookButton";
 import type { AppLanguage } from "../i18n";
 import { setLanguage } from "../i18n";
 import { useLedger } from "../ledger-context";
+import { useSync } from "../sync/sync-context";
 import { useLedgerMutation } from "../use-ledger-mutation";
 
 export function OnboardingScreen() {
   const { t, i18n } = useTranslation();
   const { app } = useLedger();
+  const sync = useSync();
   const { busy: saving, run } = useLedgerMutation();
   const [language, setLanguageChoice] = useState<AppLanguage>(
     i18n.language === "he" ? "he" : "en",
@@ -21,7 +23,14 @@ export function OnboardingScreen() {
   // The import button drives its own async work, so the screen's disabled state is
   // the union of both: either one running must gate the other.
   const [importing, setImporting] = useState(false);
-  const busy = saving || importing;
+  // Connecting Drive belongs in that union too, and it is the half that costs data.
+  // `createHousehold` and `applyFirstConnect` both take the sync lock, so they cannot
+  // interleave — but they can still run back to back: `useRemote` saves the Drive book,
+  // releases, and Continue writes a seed over the same key, which `finalizeConnect` then
+  // arms an engine to upload over the real file. Unmounting this screen does not cancel
+  // an in-flight `createHousehold` either. A plan merely *on screen* is enough to block:
+  // it is one tap from that write, and `sync.applying` only covers the tap after.
+  const busy = saving || importing || sync.applying || sync.pendingInspection !== null;
 
   function chooseLanguage(next: AppLanguage) {
     setLanguageChoice(next);
@@ -94,7 +103,9 @@ export function OnboardingScreen() {
         disabled={busy}
         onBusyChange={setImporting}
       />
-      <ConnectDrive />
+      {/* Only this screen's own writes: `ConnectDrive` adds `sync.applying` itself, and
+          passing the plan-on-screen half would disable the very choices it renders. */}
+      <ConnectDrive disabled={saving || importing} />
       <a className="onboarding-about" href="/about.html" target="_blank" rel="noopener">
         {t("onboarding.aboutLink")}
       </a>

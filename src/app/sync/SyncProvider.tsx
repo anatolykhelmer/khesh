@@ -13,6 +13,7 @@ import {
   applyFirstConnect,
   firstConnectOptions,
   inspectRemote,
+  isChoiceOffered,
   type FirstConnectChoice,
   type LocalState,
 } from "../../service/sync-connect";
@@ -271,6 +272,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     state,
     pendingInspection: livePending?.inspection ?? null,
     pendingPlan: livePending?.plan ?? null,
+    pendingLocalState: livePending?.plannedFor ?? null,
     lastError,
 
     applying,
@@ -289,6 +291,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     },
 
     applyChoice: async (choice: FirstConnectChoice) => {
+      // Act only on a choice the live plan actually offers. A tap carries a value that
+      // was rendered from some earlier plan, and between the render and the handler the
+      // plan can have been dropped as stale, cancelled, or replaced by a second Connect.
+      // Running it anyway performs the write the current plan withheld — see
+      // `isChoiceOffered`. The screens disable these buttons too; this is the half that
+      // does not depend on every future screen remembering to.
+      if (!isChoiceOffered(livePending?.plan ?? null, choice)) return;
       // The lock below serializes two of these; this turns the second one away entirely,
       // which is what a double-tapped choice button means.
       if (applyingRef.current) return;

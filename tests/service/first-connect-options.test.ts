@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   firstConnectOptions,
+  isChoiceOffered,
+  type FirstConnectChoice,
   type LocalState,
   type RemoteInspection,
 } from "../../src/service/sync-connect";
@@ -11,6 +13,7 @@ const INVALID: RemoteInspection = { kind: "unreadable", errorCode: "SYNC_ENVELOP
 const NEWER: RemoteInspection = { kind: "unreadable", errorCode: "SYNC_FORMAT_UNSUPPORTED" };
 
 const ALL_LOCAL: LocalState[] = ["none", "empty", "real"];
+const ALL_CHOICES: FirstConnectChoice[] = ["useRemote", "replaceRemote", "merge"];
 
 describe("firstConnectOptions — no local book", () => {
   it("explains rather than failing when Drive is empty", () => {
@@ -100,5 +103,37 @@ describe("firstConnectOptions — invariants across the whole table", () => {
         expect(plan.choices).not.toContain("merge");
       }
     }
+  });
+});
+
+describe("isChoiceOffered", () => {
+  it("accepts exactly the choices a choose plan lists", () => {
+    const plan = firstConnectOptions("real", BOOK);
+    expect(isChoiceOffered(plan, "useRemote")).toBe(true);
+    expect(isChoiceOffered(plan, "merge")).toBe(true);
+    expect(isChoiceOffered(plan, "replaceRemote")).toBe(true);
+
+    const seeded = firstConnectOptions("empty", BOOK);
+    expect(isChoiceOffered(seeded, "merge")).toBe(false);
+  });
+
+  it("accepts nothing once the screen is gone", () => {
+    for (const choice of ALL_CHOICES) {
+      expect(isChoiceOffered(null, choice)).toBe(false);
+    }
+  });
+
+  it("accepts nothing from a plan that only explains", () => {
+    const plan = firstConnectOptions("none", EMPTY);
+    for (const choice of ALL_CHOICES) {
+      expect(isChoiceOffered(plan, choice)).toBe(false);
+    }
+  });
+
+  it("accepts an apply plan's own choice and no other", () => {
+    const plan = firstConnectOptions("real", EMPTY);
+    expect(isChoiceOffered(plan, "replaceRemote")).toBe(true);
+    expect(isChoiceOffered(plan, "useRemote")).toBe(false);
+    expect(isChoiceOffered(plan, "merge")).toBe(false);
   });
 });

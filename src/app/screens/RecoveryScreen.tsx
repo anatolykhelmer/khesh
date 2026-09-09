@@ -31,6 +31,13 @@ export function RecoveryScreen() {
   // disconnects Drive — must not fire underneath a book that is about to be restored.
   const [importing, setImporting] = useState(false);
   const [startingOver, setStartingOver] = useState(false);
+  // One flag for the three things this screen can be doing. Start over and a first
+  // connect are the pair that matters: `applyChoice` always ends in `finalizeConnect`,
+  // which writes `connected: true` and starts the engine, so a `useRemote` still in
+  // flight undoes the teardown `performStartOver` just performed — and onboarding's
+  // Continue then mints a seed into a tab whose engine is armed at the real remote.
+  // That doubled-root resume is the failure start-over exists to close.
+  const busy = startingOver || importing || sync.applying;
   // The ref is the guard and `startingOver` is what the UI reads: a second tap can arrive
   // before React re-renders — same pattern as `DangerZone` and `SyncProvider.applyingRef`.
   const busyRef = useRef(false);
@@ -76,11 +83,12 @@ export function RecoveryScreen() {
 
       <ImportBookButton
         label={t("onboarding.restore")}
-        disabled={importing}
+        disabled={busy}
         onBusyChange={setImporting}
       />
 
-      <ConnectDrive />
+      {/* `ConnectDrive` adds `sync.applying` itself. */}
+      <ConnectDrive disabled={startingOver || importing} />
 
       <ul className="settings-list group">
         <li className="settings-row">
@@ -91,7 +99,7 @@ export function RecoveryScreen() {
                 <button
                   type="button"
                   className="danger"
-                  disabled={startingOver || importing}
+                  disabled={busy}
                   onClick={() => void onStartOver()}
                 >
                   {t("recovery.startOverConfirm")}
@@ -99,7 +107,7 @@ export function RecoveryScreen() {
                 <button
                   type="button"
                   className="secondary"
-                  disabled={startingOver}
+                  disabled={busy}
                   onClick={() => setConfirming(false)}
                 >
                   {t("common.cancel")}

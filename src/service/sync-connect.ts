@@ -71,6 +71,30 @@ export function firstConnectOptions(
   return { kind: "choose", choices: ["useRemote", "merge", "replaceRemote"] };
 }
 
+/**
+ * Whether `plan` actually offers `choice` to the user.
+ *
+ * The gate `applyChoice` needs, as a value the screens cannot get wrong. A tap carries a
+ * `FirstConnectChoice` that was rendered from some earlier plan; by the time it arrives
+ * the plan may have been dropped as stale (`isPendingPlanStale`), replaced by a second
+ * Connect, or — with the choice list narrowed by `local` — never have contained that
+ * choice at all. Acting on it anyway runs a load/merge/save/write the current plan
+ * deliberately withheld: `merge` against a seed doubles the roots, `replaceRemote`
+ * uploads over a book.
+ *
+ * A plan offers what it names: `choose` its list, `apply` the single choice it carries,
+ * `explain` nothing. Null — no screen — offers nothing.
+ */
+export function isChoiceOffered(
+  plan: FirstConnectPlan | null,
+  choice: FirstConnectChoice,
+): boolean {
+  if (plan === null) return false;
+  if (plan.kind === "apply") return plan.choice === choice;
+  if (plan.kind === "choose") return plan.choices.includes(choice);
+  return false;
+}
+
 export async function inspectRemote(store: SyncStorePort): Promise<Result<RemoteInspection>> {
   const readResult = await store.read();
   if (!readResult.ok) return readResult;

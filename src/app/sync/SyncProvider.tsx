@@ -190,7 +190,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const previous = previousBookRef.current;
     previousBookRef.current = book;
-    if (!shouldTearDown(previous, book, connected || pendingInspection !== null)) return;
+    if (!shouldTearDown(previous, book, { connected, pendingInspection })) return;
     void teardownConnection().catch(() => {
       // `teardownConnection`'s first statement, `engineRef.current?.dispose()`, is
       // synchronous — the one danger this effect exists to close (a live engine

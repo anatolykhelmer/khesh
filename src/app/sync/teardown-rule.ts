@@ -16,16 +16,31 @@ import type { Book } from "../../kernel";
  * Keying on "the book is null" was only ever an accurate approximation because that
  * could not happen.
  *
- * `previous` is `undefined` on the first render. Nothing needs tearing down there in any
- * case: `SyncProvider`'s resume effect only sets `connected` once the book is non-null,
- * and `pendingInspection` starts null.
+ * `previous` is `undefined` on the first run of this effect — not, under StrictMode,
+ * only the first render. Nothing needs tearing down there in any case: `SyncProvider`'s
+ * resume effect only sets `connected` once the book is non-null, and `pendingInspection`
+ * starts null.
  */
+
+/** What of `useSync()` decides there is anything to tear down. Both fields, not a
+ * pre-computed boolean: with the disjunction at the call site it sits outside this unit,
+ * and narrowing it to `connected` alone re-opens BL-040's hole while every test here
+ * still passes. */
+export type TearDownSyncState = {
+  connected: boolean;
+  /** Non-null means a first-connect choice screen is open. `connect()` binds
+   * `storeRef`/`authRef`/`fileIdRef` to the real Drive file the moment it inspects it,
+   * so this alone is a live connection to the user's file even though `connected` is
+   * still false — the exact state BL-040's review found "Replace remote" armed in. */
+  pendingInspection: unknown;
+};
+
 export function shouldTearDown(
   previous: Book | null | undefined,
   next: Book | null,
-  hasSomethingToTearDown: boolean,
+  sync: TearDownSyncState,
 ): boolean {
-  if (!hasSomethingToTearDown) return false;
+  if (!sync.connected && sync.pendingInspection === null) return false;
   if (previous === undefined || previous === null) return false;
   return next === null;
 }

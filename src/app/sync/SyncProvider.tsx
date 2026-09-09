@@ -14,14 +14,13 @@ import {
   firstConnectOptions,
   inspectRemote,
   type FirstConnectChoice,
-  type FirstConnectPlan,
   type LocalState,
-  type RemoteInspection,
 } from "../../service/sync-connect";
 import { createSyncEngine, type SyncEngine, type SyncState } from "../../service/sync-engine";
 import type { SyncStorePort } from "../../ports/sync-store";
 import type { Book } from "../../kernel";
 import { useLedger } from "../ledger-context";
+import { isPendingPlanStale, type PendingConnect } from "./pending-plan-rule";
 import { SyncContext, type SyncContextValue } from "./sync-context";
 import { runExclusive } from "./sync-lock";
 import { syncSignal } from "./sync-signal";
@@ -42,8 +41,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [state, setState] = useState<SyncState | null>(null);
-  const [pendingInspection, setPendingInspection] = useState<RemoteInspection | null>(null);
-  const [pendingPlan, setPendingPlan] = useState<FirstConnectPlan | null>(null);
+  // Inspection, plan and the local state the plan was decided against, as one value: they
+  // are written and cleared together, and no render may show one without the others.
+  const [pending, setPending] = useState<PendingConnect | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
   // The ref is the guard and the state is what the UI reads: a second tap arrives before
   // React has re-rendered with `applying`, so only a ref can turn it away.
@@ -137,8 +137,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     await metaStore.save({ connected: true, accountEmail });
     setEmail(accountEmail);
     setConnected(true);
-    setPendingInspection(null);
-    setPendingPlan(null);
+    setPending(null);
     void startEngine().syncNow();
   }, [metaStore, startEngine]);
 
@@ -169,8 +168,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setConnected(false);
     setEmail(null);
     setState(null);
-    setPendingInspection(null);
-    setPendingPlan(null);
+    setPending(null);
   }, [forgetFile, metaStore]);
 
   // Another tab's reset nulls the book here via the cross-tab broadcast, but that
@@ -187,10 +185,16 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // The condition is a transition, not a state — see `shouldTearDown`. A connection can
   // now *begin* while the book is null, because the onboarding and recovery screens
   // offer Connect, and tearing that down would destroy the choice as it appeared.
+  //
+  // This effect reads the *raw* `pending`, not the staleness-gated view below it. A plan
+  // that has gone stale is still a store, an auth and a file id bound to the user's real
+  // Drive file, and the transition is exactly the moment to let go of them. Hook order
+  // matters here: this effect is declared before the one that drops a stale plan, so it
+  // sees `pending` on the flush where the book vanished rather than a beat after.
   useEffect(() => {
     const previous = previousBookRef.current;
     previousBookRef.current = book;
-    if (!shouldTearDown(previous, book, { connected, pendingInspection })) return;
+    if (!shouldTearDown(previous, book, { connected, pendingInspection: pending })) return;
     void teardownConnection().catch(() => {
       // `teardownConnection`'s first statement, `engineRef.current?.dispose()`, is
       // synchronous — the one danger this effect exists to close (a live engine
@@ -202,12 +206,25 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       // an error banner to (the book is null, so Settings is not even on screen), so
       // swallow rather than surface a message the user cannot act on.
     });
-  }, [book, connected, pendingInspection, teardownConnection]);
+  }, [book, connected, pending, teardownConnection]);
 
   // What the local side has to lose. A null book covers both "storage is empty" and
   // "the stored book failed to load" — neither holds data a remote book could destroy.
   const localState: LocalState =
     book === null ? "none" : holdsNoUserData(book) ? "empty" : "real";
+
+  // A plan is decided once, from the local state at the moment the remote was inspected —
+  // that is what stops the choices shifting under the user's finger. The book can still
+  // move underneath it, and then the plan describes a local side that no longer exists.
+  // See `isPendingPlanStale` for the three ways that happens and what each one costs.
+  //
+  // Gated in render, not only cleared in the effect: the effect is a passive one, so a
+  // frame carrying the stale choices could otherwise reach the screen before it runs.
+  const planIsStale = isPendingPlanStale(pending, localState);
+  useEffect(() => {
+    if (planIsStale) setPending(null);
+  }, [planIsStale]);
+  const livePending = planIsStale ? null : pending;
 
   const connect = async () => {
     if (applyingRef.current) return;
@@ -237,9 +254,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         await finalizeConnect();
         return;
       }
-      // "choose" and "explain" both need the user to see the screen.
-      setPendingInspection(inspection.value);
-      setPendingPlan(plan);
+      // "choose" and "explain" both need the user to see the screen. `localState` here is
+      // the value captured before the await above; stamping the plan with it is what lets
+      // the gate above notice that the book moved while Drive was being read.
+      setPending({ inspection: inspection.value, plan, plannedFor: localState });
     } finally {
       applyingRef.current = false;
       setApplying(false);
@@ -251,8 +269,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     connected,
     email,
     state,
-    pendingInspection,
-    pendingPlan,
+    pendingInspection: livePending?.inspection ?? null,
+    pendingPlan: livePending?.plan ?? null,
     lastError,
 
     applying,
@@ -295,10 +313,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       }
     },
 
-    cancelConnect: () => {
-      setPendingInspection(null);
-      setPendingPlan(null);
-    },
+    cancelConnect: () => setPending(null),
 
     disconnect: teardownConnection,
 

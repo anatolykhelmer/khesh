@@ -12,7 +12,12 @@ export type SyncContextValue = {
   pendingInspection: RemoteInspection | null;
   /** What to offer for the pending inspection, decided once when the remote was
    * inspected so the choices cannot shift under the user's finger. Null whenever
-   * `pendingInspection` is. */
+   * `pendingInspection` is.
+   *
+   * "Decided once" is enforced, not merely intended: the plan is stamped with the
+   * `LocalState` it was derived from, and both fields read null the moment the book
+   * moves away from it — see `pending-plan-rule.ts`. Deciding once and then rendering
+   * against a book that has since changed is the same bug wearing the opposite hat. */
   pendingPlan: FirstConnectPlan | null;
   /** A connect or first-connect choice is running: its buttons stay disabled, so a
    * second tap cannot start a second load/merge/save/write over the first. */

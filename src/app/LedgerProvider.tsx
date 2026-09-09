@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createIndexedDbRepository } from "../adapters/indexeddb-repository";
-import { errorMessage } from "../service/error-messages";
 import { createLedgerApp } from "../service/ledger-app";
 import type { Book } from "../kernel";
+import type { LedgerErrorCode } from "../kernel/errors";
+import type { Result } from "../kernel/result";
 import { LedgerContext, type LedgerContextValue } from "./ledger-context";
+import { deriveStatus } from "./ledger-status";
 import { runExclusive } from "./sync/sync-lock";
 import { syncSignal } from "./sync/sync-signal";
 
@@ -25,27 +27,43 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       }),
     [repo],
   );
-  const [book, setBook] = useState<Book | null>(null);
+  const [book, setBookState] = useState<Book | null>(null);
+  // Adopting any book clears the reason the previous one failed to load: the recovery
+  // screen must not survive the restore that fixed it.
+  const setBook = useCallback((next: Book | null) => {
+    setBookState(next);
+    if (next !== null) setBootError(null);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bootError, setBootError] = useState<LedgerErrorCode | null>(null);
+
+  /** The one place a boot result becomes state. Shared by the mount effect and
+   * `retryBoot` so the two cannot drift. A failed boot sets `bootError` and NOT the
+   * `error` banner: the recovery screen states the reason itself, and a dismissible
+   * banner that also decided the routing is exactly the hazard BL-023 describes. */
+  const applyBoot = useCallback((result: Result<Book | null>) => {
+    if (!result.ok) {
+      setBootError(result.error.code);
+      setBookState(null);
+    } else {
+      setBootError(null);
+      setBookState(result.value);
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const result = await app.boot();
       if (cancelled) return;
-      if (!result.ok) {
-        setError(errorMessage(result.error.code));
-        setBook(null);
-      } else {
-        setBook(result.value);
-      }
-      setLoading(false);
+      applyBoot(result);
     })();
     return () => {
       cancelled = true;
     };
-  }, [app]);
+  }, [app, applyBoot]);
 
   // Another tab (or this tab's sync engine) changed IndexedDB: reload our state from it.
   useEffect(() => {
@@ -65,10 +83,17 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const value: LedgerContextValue = {
     book,
     loading,
+    status: deriveStatus(loading, book, bootError),
+    bootError,
     error,
     clearError: () => setError(null),
     setError,
     setBook,
+    retryBoot: async () => {
+      setLoading(true);
+      applyBoot(await app.boot());
+    },
+    startOver: () => setBootError(null),
     app,
     repo,
     announceBookChanged: (next: Book | null) => {

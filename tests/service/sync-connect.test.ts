@@ -48,14 +48,24 @@ describe("inspectRemote", () => {
 });
 
 describe("applyFirstConnect", () => {
-  it("uploads local when the remote is empty, for any choice", async () => {
-    const local = makeBook("Cash", NOW);
-    const repo = createMemoryRepository(local);
-    const store = createMemorySyncStore();
-    const book = unwrap(await applyFirstConnect("useRemote", { repo, store }));
-    expect(bookFingerprint(book)).toBe(bookFingerprint(local));
-    expect(bookFingerprint(unwrap(decodeEnvelope(store.getPayload()!)))).toBe(bookFingerprint(local));
-  });
+  // The design cites this test as the evidence that relaxing `useRemote`'s local-book
+  // gate moved nothing else: an empty remote still means "upload the local book",
+  // whatever was chosen. It exercised only `useRemote`, which made the citation vacuous
+  // and left `merge` against an empty remote — the early return at sync-connect.ts:174 —
+  // covered by nothing at all.
+  it.each(["useRemote", "merge", "replaceRemote"] as const)(
+    "uploads local when the remote is empty, for any choice (%s)",
+    async (choice) => {
+      const local = makeBook("Cash", NOW);
+      const repo = createMemoryRepository(local);
+      const store = createMemorySyncStore();
+      const book = unwrap(await applyFirstConnect(choice, { repo, store }));
+      expect(bookFingerprint(book)).toBe(bookFingerprint(local));
+      expect(bookFingerprint(unwrap(decodeEnvelope(store.getPayload()!)))).toBe(
+        bookFingerprint(local),
+      );
+    },
+  );
 
   it("useRemote adopts the Drive book locally", async () => {
     const local = makeBook("Cash", NOW);

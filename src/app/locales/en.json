@@ -39,6 +39,17 @@
     "restore": "Restore from backup",
     "aboutLink": "What is Khesh?"
   },
+  "recovery": {
+    "storageTitle": "Khesh can't reach its storage",
+    "storageBody": "This usually means a private window, blocked site data, or a device that has run out of room. Your book is not lost — it just can't be read here right now.",
+    "retry": "Try again",
+    "brokenTitle": "Your book couldn't be opened",
+    "brokenBody": "The book stored on this device didn't pass its checks. Nothing has been changed or deleted.",
+    "startOver": "Start over",
+    "startOverHint": "Sets up a new empty book. The stored one is replaced only once you finish.",
+    "startOverWarning": "The book on this device will be replaced by a new empty one. If you might want this data back, restore a backup or connect Google Drive first.",
+    "startOverConfirm": "Yes, start over"
+  },
   "dashboard": {
     "title": "Dashboard",
     "couldNotLoadTotals": "Could not load totals.",
@@ -142,9 +153,17 @@
     "choiceUseRemoteHint": "The book on this device is replaced.",
     "choiceReplaceRemote": "Upload this device's book",
     "choiceReplaceRemoteHint": "The copy in Drive is replaced.",
+    "choiceReplaceRemoteHintBook": "\"{{name}}\" and its {{entries}} journal entries are deleted.",
+    "confirmUseRemoteWarning": "The book on this device will be deleted and replaced by the one in Drive. This cannot be undone - export a backup first if you might want it back.",
+    "confirmUseRemoteYes": "Yes, use the Drive book",
+    "confirmReplaceRemoteWarning": "\"{{name}}\" and its {{entries}} journal entries will be deleted from Drive and replaced by the book on this device. This cannot be undone.",
+    "confirmReplaceRemoteYes": "Yes, replace the Drive book",
     "choiceMerge": "Merge the two books",
     "choiceMergeWarning": "Merging two books that were set up separately doubles the root categories.",
     "choiceUnreadable": "The file in Drive could not be read. You can overwrite it with this device's book.",
+    "explainRemoteEmpty": "There is no Khesh book in your Google Drive yet. Start a book here first, then connect.",
+    "explainRemoteUnreadable": "The file in Google Drive could not be read, and there is no book on this device to replace it with.",
+    "connectRestoreHint": "Sign in to bring back the book you already keep in Drive.",
     "bannerNeedsAuth": "Sync is paused - Google sign-in needed.",
     "bannerError": "Sync hit a problem. Open Settings for options.",
     "openSettings": "Open Settings"

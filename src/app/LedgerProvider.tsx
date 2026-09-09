@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createIndexedDbRepository } from "../adapters/indexeddb-repository";
-import { errorMessage } from "../service/error-messages";
 import { createLedgerApp } from "../service/ledger-app";
 import type { Book } from "../kernel";
+import type { LedgerErrorCode } from "../kernel/errors";
+import { err, type Result } from "../kernel/result";
 import { LedgerContext, type LedgerContextValue } from "./ledger-context";
+import { deriveStatus } from "./ledger-status";
 import { runExclusive } from "./sync/sync-lock";
 import { syncSignal } from "./sync/sync-signal";
 
@@ -25,27 +27,54 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       }),
     [repo],
   );
-  const [book, setBook] = useState<Book | null>(null);
+  const [book, setBookState] = useState<Book | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bootError, setBootError] = useState<LedgerErrorCode | null>(null);
+
+  // Any book assignment — including null — reconciles bootError with what storage
+  // actually holds. A non-null book already outranks bootError in deriveStatus, so
+  // clearing it there is belt-and-braces; the null route is the one that matters: it is
+  // reached from the cross-tab BroadcastChannel handler (whose result.ok is true, so we
+  // know storage read fine) and from announceBookChanged(null), which ledger-context.ts
+  // documents as a reset that boots the other tabs into onboarding, same as a fresh
+  // install — not into a stale recovery screen for a book that is no longer there.
+  const setBook = useCallback((next: Book | null) => {
+    setBookState(next);
+    setBootError(null);
+  }, []);
+
+  /** The one place a boot result becomes state. Shared by the mount effect and
+   * `retryBoot` so the two cannot drift. A failed boot sets `bootError` and NOT the
+   * `error` banner: the recovery screen states the reason itself, and a dismissible
+   * banner that also decided the routing is exactly the hazard BL-023 describes. */
+  const applyBoot = useCallback((result: Result<Book | null>) => {
+    if (!result.ok) {
+      setBootError(result.error.code);
+      // `setBookState`, NOT the `setBook` wrapper above: that wrapper clears `bootError`,
+      // which would erase the code set one line up, derive "empty" instead of "failed",
+      // and drop the user on onboarding with a live Continue over the book that just
+      // failed to load — BL-023 exactly, with the whole suite still green. No test in a
+      // node-environment repo can see the difference; this comment is the guard.
+      setBookState(null);
+    } else {
+      setBootError(null);
+      setBookState(result.value);
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const result = await app.boot();
       if (cancelled) return;
-      if (!result.ok) {
-        setError(errorMessage(result.error.code));
-        setBook(null);
-      } else {
-        setBook(result.value);
-      }
-      setLoading(false);
+      applyBoot(result);
     })();
     return () => {
       cancelled = true;
     };
-  }, [app]);
+  }, [app, applyBoot]);
 
   // Another tab (or this tab's sync engine) changed IndexedDB: reload our state from it.
   useEffect(() => {
@@ -64,11 +93,25 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
   const value: LedgerContextValue = {
     book,
-    loading,
+    status: deriveStatus(loading, book, bootError),
+    bootError,
     error,
     clearError: () => setError(null),
     setError,
     setBook,
+    retryBoot: async () => {
+      setLoading(true);
+      // app.boot() should never reject — indexeddb-repository.ts wraps its whole body in
+      // a catch — but that is not a contract this seam states or enforces, and this is
+      // the only caller. A rejection must still resolve to a screen, not strand `loading`
+      // at true forever with deriveStatus pinned to "loading" and no escape.
+      try {
+        applyBoot(await app.boot());
+      } catch {
+        applyBoot(err("STORAGE_UNAVAILABLE", "Failed to read storage"));
+      }
+    },
+    startOver: () => setBootError(null),
     app,
     repo,
     announceBookChanged: (next: Book | null) => {

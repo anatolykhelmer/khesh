@@ -22,6 +22,13 @@ export function DangerZone() {
   // app's most destructive button, can arrive before React re-renders with `busy` —
   // same pattern as SyncProvider's `applyingRef`.
   const busyRef = useRef(false);
+  // Settings renders `SyncSection` — and so `ConnectDrive` — above this row, so a first
+  // connect and the erase are one screen apart and were gated on nothing in common.
+  // Both take the sync lock, which orders them but does not stop `applyFirstConnect`
+  // from saving the Drive book *after* `resetAll` cleared storage, leaving the erase
+  // ending with the remote book back on disk and the app already on onboarding. A plan
+  // on screen counts for the same reason it does in onboarding: one tap from that write.
+  const connecting = sync.applying || sync.pendingInspection !== null;
 
   async function onReset() {
     if (busyRef.current) return;
@@ -50,7 +57,7 @@ export function DangerZone() {
               <button
                 type="button"
                 className="danger"
-                disabled={busy}
+                disabled={busy || connecting}
                 onClick={() => void onReset()}
               >
                 {t("settings.resetConfirm")}
@@ -70,6 +77,7 @@ export function DangerZone() {
             <button
               type="button"
               className="row-button danger"
+              disabled={connecting}
               onClick={() => setConfirming(true)}
             >
               {t("settings.resetButton")}

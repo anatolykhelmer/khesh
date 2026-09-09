@@ -39,6 +39,17 @@
     "restore": "שחזור מגיבוי",
     "aboutLink": "מה זה Khesh?"
   },
+  "recovery": {
+    "storageTitle": "אין ל-Khesh גישה לאחסון",
+    "storageBody": "בדרך כלל הסיבה היא חלון פרטי, חסימת נתוני אתר, או מכשיר שנגמר בו המקום. הספר לא אבד — פשוט אי אפשר לקרוא אותו כאן כרגע.",
+    "retry": "לנסות שוב",
+    "brokenTitle": "לא הצלחנו לפתוח את הספר",
+    "brokenBody": "הספר השמור במכשיר הזה לא עבר את הבדיקות. שום דבר לא שונה ולא נמחק.",
+    "startOver": "להתחיל מחדש",
+    "startOverHint": "יוצר ספר ריק חדש. הספר השמור יוחלף רק בסיום התהליך.",
+    "startOverWarning": "הספר במכשיר הזה יוחלף בספר ריק חדש. אם ייתכן שתרצו את הנתונים בחזרה, שחזרו קודם גיבוי או חברו את Google Drive.",
+    "startOverConfirm": "כן, להתחיל מחדש"
+  },
   "dashboard": {
     "title": "לוח בקרה",
     "couldNotLoadTotals": "לא ניתן היה לטעון את הסיכומים.",
@@ -145,9 +156,17 @@
     "choiceUseRemoteHint": "הספר שבמכשיר הזה יידרס.",
     "choiceReplaceRemote": "להעלות את הספר מהמכשיר",
     "choiceReplaceRemoteHint": "העותק ב-Drive יידרס.",
+    "choiceReplaceRemoteHintBook": "\"{{name}}\" ו-{{entries}} הרשומות ביומן שלו יימחקו.",
+    "confirmUseRemoteWarning": "הספר שבמכשיר הזה יימחק ויוחלף בספר שב-Drive. אי אפשר לבטל את הפעולה - כדאי לייצא גיבוי לפני כן.",
+    "confirmUseRemoteYes": "כן, להשתמש בספר שב-Drive",
+    "confirmReplaceRemoteWarning": "\"{{name}}\" ו-{{entries}} הרשומות ביומן שלו יימחקו מ-Drive ויוחלפו בספר שבמכשיר הזה. אי אפשר לבטל את הפעולה.",
+    "confirmReplaceRemoteYes": "כן, לדרוס את הספר שב-Drive",
     "choiceMerge": "למזג את שני הספרים",
     "choiceMergeWarning": "מיזוג של שני ספרים שהוקמו בנפרד מכפיל את קטגוריות השורש.",
     "choiceUnreadable": "לא ניתן לקרוא את הקובץ ב-Drive. אפשר לדרוס אותו בספר מהמכשיר הזה.",
+    "explainRemoteEmpty": "עדיין אין ספר Khesh ב-Google Drive שלכם. התחילו ספר כאן, ואז חברו.",
+    "explainRemoteUnreadable": "לא הצלחנו לקרוא את הקובץ ב-Google Drive, ואין במכשיר הזה ספר להחליף אותו בו.",
+    "connectRestoreHint": "התחברו כדי להחזיר את הספר ששמור לכם ב-Drive.",
     "bannerNeedsAuth": "הסנכרון מושהה - נדרשת התחברות ל-Google.",
     "bannerError": "הסנכרון נתקל בבעיה. פתחו את ההגדרות לאפשרויות.",
     "openSettings": "פתיחת ההגדרות"

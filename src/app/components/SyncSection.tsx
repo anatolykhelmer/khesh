@@ -3,6 +3,7 @@ import type { LedgerErrorCode } from "../../kernel/errors";
 import { errorMessage } from "../../service/error-messages";
 import { relativeSyncTime } from "../format";
 import { useSync } from "../sync/sync-context";
+import { ConnectDrive } from "./ConnectDrive";
 
 /** Codes whose generic `errors.*` line is too thin for this screen. Settings is where
  * the user can actually act, so these say what to do instead of only what happened. */
@@ -22,105 +23,13 @@ export function SyncSection() {
 
   const when = relativeSyncTime(sync.state?.lastSyncAt ?? null, Date.now(), i18n.language);
 
-  if (sync.pendingInspection !== null) {
-    const inspection = sync.pendingInspection;
+  if (sync.pendingInspection !== null || !sync.connected) {
     return (
       <>
-        <h2 className="section-label statement">{t("sync.choiceTitle")}</h2>
-        <ul className="settings-list group">
-          {inspection.kind === "book" ? (
-            <>
-              <li className="settings-row">
-                <p className="muted row-hint">
-                  {t("sync.choiceBody", { name: inspection.name, entries: inspection.entryCount })}
-                </p>
-              </li>
-              <li className="settings-row">
-                <button
-                  type="button"
-                  className="row-button"
-                  disabled={sync.applying}
-                  onClick={() => void sync.applyChoice("useRemote")}
-                >
-                  {t("sync.choiceUseRemote")}
-                </button>
-                <p className="muted row-hint">{t("sync.choiceUseRemoteHint")}</p>
-              </li>
-              <li className="settings-row">
-                <button
-                  type="button"
-                  className="row-button"
-                  disabled={sync.applying}
-                  onClick={() => void sync.applyChoice("merge")}
-                >
-                  {t("sync.choiceMerge")}
-                </button>
-                <p className="muted row-hint">{t("sync.choiceMergeWarning")}</p>
-              </li>
-              <li className="settings-row">
-                <button
-                  type="button"
-                  className="row-button"
-                  disabled={sync.applying}
-                  onClick={() => void sync.applyChoice("replaceRemote")}
-                >
-                  {t("sync.choiceReplaceRemote")}
-                </button>
-                <p className="muted row-hint">{t("sync.choiceReplaceRemoteHint")}</p>
-              </li>
-            </>
-          ) : inspection.kind === "unreadable" && inspection.errorCode === "SYNC_ENVELOPE_INVALID" ? (
-            <>
-              <li className="settings-row">
-                <p className="muted row-hint">{t("sync.choiceUnreadable")}</p>
-              </li>
-              <li className="settings-row">
-                <button
-                  type="button"
-                  className="row-button"
-                  disabled={sync.applying}
-                  onClick={() => void sync.applyChoice("replaceRemote")}
-                >
-                  {t("sync.choiceReplaceRemote")}
-                </button>
-                <p className="muted row-hint">{t("sync.choiceReplaceRemoteHint")}</p>
-              </li>
-            </>
-          ) : (
-            <li className="settings-row">
-              <p className="row-hint alert">{t("sync.errorUpdateApp")}</p>
-            </li>
-          )}
-          {sync.lastError !== null ? (
-            <li className="settings-row">
-              <p className="row-hint alert">{sync.lastError}</p>
-            </li>
-          ) : null}
-        </ul>
-        <ul className="settings-list group">
-          <li className="settings-row">
-            <button type="button" className="row-button" onClick={sync.cancelConnect}>
-              {t("common.cancel")}
-            </button>
-          </li>
-        </ul>
-      </>
-    );
-  }
-
-  if (!sync.connected) {
-    return (
-      <>
-        <h2 className="section-label">{t("sync.title")}</h2>
-        <ul className="settings-list group">
-          <li className="settings-row">
-            <button type="button" className="row-button" disabled={sync.applying} onClick={() => void sync.connect()}>
-              {t("sync.connect")}
-            </button>
-            <p className="muted row-hint">{t("sync.connectHint")}</p>
-            {sync.lastError !== null ? <p className="row-hint alert">{sync.lastError}</p> : null}
-          </li>
-        </ul>
+        {sync.pendingInspection === null ? (
+          <h2 className="section-label">{t("sync.title")}</h2>
+        ) : null}
+        <ConnectDrive />
       </>
     );
   }

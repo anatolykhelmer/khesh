@@ -6,20 +6,26 @@ import {
   type GoogleAuth,
 } from "../../adapters/google-drive-sync";
 import { createSyncMetaStore } from "../../adapters/sync-meta-store";
+import { holdsNoUserData } from "../../kernel/book-utils";
 import { err } from "../../kernel/result";
 import { errorMessage } from "../../service/error-messages";
 import {
   applyFirstConnect,
+  firstConnectOptions,
   inspectRemote,
+  isChoiceOffered,
   type FirstConnectChoice,
-  type RemoteInspection,
+  type LocalState,
 } from "../../service/sync-connect";
 import { createSyncEngine, type SyncEngine, type SyncState } from "../../service/sync-engine";
 import type { SyncStorePort } from "../../ports/sync-store";
+import type { Book } from "../../kernel";
 import { useLedger } from "../ledger-context";
+import { isPendingPlanStale, type PendingConnect } from "./pending-plan-rule";
 import { SyncContext, type SyncContextValue } from "./sync-context";
 import { runExclusive } from "./sync-lock";
 import { syncSignal } from "./sync-signal";
+import { shouldTearDown } from "./teardown-rule";
 
 const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? "";
 
@@ -30,10 +36,15 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const storeRef = useRef<SyncStorePort | null>(null);
   const engineRef = useRef<SyncEngine | null>(null);
   const fileIdRef = useRef<string | null>(null);
+  // What `book` was on the previous run of the teardown effect below. `undefined` until
+  // that effect has run once.
+  const previousBookRef = useRef<Book | null | undefined>(undefined);
   const [connected, setConnected] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [state, setState] = useState<SyncState | null>(null);
-  const [pendingInspection, setPendingInspection] = useState<RemoteInspection | null>(null);
+  // Inspection, plan and the local state the plan was decided against, as one value: they
+  // are written and cleared together, and no render may show one without the others.
+  const [pending, setPending] = useState<PendingConnect | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
   // The ref is the guard and the state is what the UI reads: a second tap arrives before
   // React has re-rendered with `applying`, so only a ref can turn it away.
@@ -127,7 +138,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     await metaStore.save({ connected: true, accountEmail });
     setEmail(accountEmail);
     setConnected(true);
-    setPendingInspection(null);
+    setPending(null);
     void startEngine().syncNow();
   }, [metaStore, startEngine]);
 
@@ -158,7 +169,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setConnected(false);
     setEmail(null);
     setState(null);
-    setPendingInspection(null);
+    setPending(null);
   }, [forgetFile, metaStore]);
 
   // Another tab's reset nulls the book here via the cross-tab broadcast, but that
@@ -167,22 +178,24 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // pointed at the old file: its next cycle fails BOOK_INVALID against the fresh empty
   // book, and if the user instead finishes onboarding in *this* tab, `afterCommit`
   // nudges the still-live engine, which merges the new book against the remote and
-  // silently restores the old one. Tearing down here closes that window. Guarded so it
-  // only fires while there is something to tear down: the "resume a stored connection"
-  // effect above only sets `connected` once `book !== null`, so a boot with a stored
-  // connection cannot make this effect fire while the book is still loading.
+  // silently restores the old one. `pendingInspection` carries the same danger without
+  // `connected` ever being true: `connect()` binds `storeRef`/`authRef`/`fileIdRef` to
+  // the remote file the moment it inspects it, so a stale choice screen has "Replace
+  // remote" wired to upload a freshly-onboarded seed over the real file.
   //
-  // `connected` alone misses the first-connect choice screen: `connect()` binds
-  // `storeRef`/`authRef`/`fileIdRef` to the remote file the moment it inspects it,
-  // before the user has picked anything — both "book" and "unreadable" park in
-  // `pendingInspection` with `connected` still false. A tab sitting there holds the
-  // same live-refs danger as a connected one: re-rendering that choice screen against
-  // the fresh book instead of tearing down leaves "Replace remote" wired to upload the
-  // freshly-onboarded seed straight over the real file those refs still name. Mirrors
-  // the widened condition `reset-flow.ts` already uses for the tab doing the reset.
+  // The condition is a transition, not a state — see `shouldTearDown`. A connection can
+  // now *begin* while the book is null, because the onboarding and recovery screens
+  // offer Connect, and tearing that down would destroy the choice as it appeared.
+  //
+  // This effect reads the *raw* `pending`, not the staleness-gated view below it. A plan
+  // that has gone stale is still a store, an auth and a file id bound to the user's real
+  // Drive file, and the transition is exactly the moment to let go of them. Hook order
+  // matters here: this effect is declared before the one that drops a stale plan, so it
+  // sees `pending` on the flush where the book vanished rather than a beat after.
   useEffect(() => {
-    const hasSomethingToTearDown = connected || pendingInspection !== null;
-    if (book !== null || !hasSomethingToTearDown) return;
+    const previous = previousBookRef.current;
+    previousBookRef.current = book;
+    if (!shouldTearDown(previous, book, { connected, pendingInspection: pending })) return;
     void teardownConnection().catch(() => {
       // `teardownConnection`'s first statement, `engineRef.current?.dispose()`, is
       // synchronous — the one danger this effect exists to close (a live engine
@@ -194,7 +207,25 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       // an error banner to (the book is null, so Settings is not even on screen), so
       // swallow rather than surface a message the user cannot act on.
     });
-  }, [book, connected, pendingInspection, teardownConnection]);
+  }, [book, connected, pending, teardownConnection]);
+
+  // What the local side has to lose. A null book covers both "storage is empty" and
+  // "the stored book failed to load" — neither holds data a remote book could destroy.
+  const localState: LocalState =
+    book === null ? "none" : holdsNoUserData(book) ? "empty" : "real";
+
+  // A plan is decided once, from the local state at the moment the remote was inspected —
+  // that is what stops the choices shifting under the user's finger. The book can still
+  // move underneath it, and then the plan describes a local side that no longer exists.
+  // See `isPendingPlanStale` for the three ways that happens and what each one costs.
+  //
+  // Gated in render, not only cleared in the effect: the effect is a passive one, so a
+  // frame carrying the stale choices could otherwise reach the screen before it runs.
+  const planIsStale = isPendingPlanStale(pending, localState);
+  useEffect(() => {
+    if (planIsStale) setPending(null);
+  }, [planIsStale]);
+  const livePending = planIsStale ? null : pending;
 
   const connect = async () => {
     if (applyingRef.current) return;
@@ -214,8 +245,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         setLastError(errorMessage(inspection.error.code));
         return;
       }
-      if (inspection.value.kind === "empty") {
-        const applied = await applyFirstConnect("replaceRemote", { repo, store, runExclusive });
+      const plan = firstConnectOptions(localState, inspection.value);
+      if (plan.kind === "apply") {
+        const applied = await applyFirstConnect(plan.choice, { repo, store, runExclusive });
         if (!applied.ok) {
           setLastError(errorMessage(applied.error.code));
           return;
@@ -223,7 +255,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         await finalizeConnect();
         return;
       }
-      setPendingInspection(inspection.value); // "book" and "unreadable" both need the user
+      // "choose" and "explain" both need the user to see the screen. `localState` here is
+      // the value captured before the await above; stamping the plan with it is what lets
+      // the gate above notice that the book moved while Drive was being read.
+      setPending({ inspection: inspection.value, plan, plannedFor: localState });
     } finally {
       applyingRef.current = false;
       setApplying(false);
@@ -235,7 +270,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     connected,
     email,
     state,
-    pendingInspection,
+    pendingInspection: livePending?.inspection ?? null,
+    pendingPlan: livePending?.plan ?? null,
+    pendingLocalState: livePending?.plannedFor ?? null,
     lastError,
 
     applying,
@@ -254,6 +291,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     },
 
     applyChoice: async (choice: FirstConnectChoice) => {
+      // Act only on a choice the live plan actually offers. A tap carries a value that
+      // was rendered from some earlier plan, and between the render and the handler the
+      // plan can have been dropped as stale, cancelled, or replaced by a second Connect.
+      // Running it anyway performs the write the current plan withheld — see
+      // `isChoiceOffered`. The screens disable these buttons too; this is the half that
+      // does not depend on every future screen remembering to.
+      if (!isChoiceOffered(livePending?.plan ?? null, choice)) return;
       // The lock below serializes two of these; this turns the second one away entirely,
       // which is what a double-tapped choice button means.
       if (applyingRef.current) return;
@@ -278,7 +322,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       }
     },
 
-    cancelConnect: () => setPendingInspection(null),
+    cancelConnect: () => setPending(null),
 
     disconnect: teardownConnection,
 

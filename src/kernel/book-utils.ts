@@ -94,3 +94,26 @@ export function wouldCreateCycle(book: Book, accountId: string, newParentId: str
   }
   return false;
 }
+
+/**
+ * True when adopting a different book here destroys nothing: no journal entries, no
+ * budgets, no recurrence rules, no tombstones, and every account is an untouched
+ * top-level group.
+ *
+ * The predicate deliberately does NOT compare against `ROOT_SEEDS`. Root names are read
+ * from `i18n.t(...)` when the book is created (`src/service/ledger-app.ts`), so the
+ * stored names are in whatever language was active then; comparing them with the current
+ * translation would start lying the moment the user switches language. Names, types and
+ * the number of roots are not inspected at all.
+ *
+ * Its meaning is "taking the remote book here loses nothing", not "this looks like a
+ * seed" — which is why a lone tombstone or a single hand-made subcategory is enough to
+ * make it false, even with an empty journal.
+ */
+export function holdsNoUserData(book: Book): boolean {
+  if (book.journal.length > 0) return false;
+  if (book.budgets.length > 0) return false;
+  if (book.recurrences.length > 0) return false;
+  if (book.tombstones.length > 0) return false;
+  return book.accounts.every((account) => account.parentId === null && account.isPlaceholder);
+}

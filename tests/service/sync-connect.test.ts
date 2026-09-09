@@ -6,6 +6,8 @@ import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { bookFingerprint } from "../../src/kernel/merge";
 import type { Book } from "../../src/kernel/types";
+import { err, ok, type Result } from "../../src/kernel/result";
+import type { LedgerRepository } from "../../src/ports/ledger-repository";
 import type { SyncStorePort } from "../../src/ports/sync-store";
 import { applyFirstConnect, inspectRemote } from "../../src/service/sync-connect";
 import { NOW, LATER, unwrap, unwrapErr } from "../helpers";
@@ -24,6 +26,32 @@ function makeBook(name: string, at: string): Book {
   let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, at));
   book = unwrap(createAccount(book, { parentId: null, name, type: "asset", currency: "ILS", isPlaceholder: false }, at));
   return book;
+}
+
+/**
+ * Storage that cannot be read but can be written — what BL-023 looks like on disk, and
+ * the only state from which recovery's Connect is reachable at all.
+ *
+ * `createMemoryRepository(null)` is a different case wearing the same error code: empty
+ * storage, which `loadLocal` maps onto `BOOK_INVALID` for want of a book. A guard that
+ * refused to save before a successful load would break recovery and leave that one green.
+ */
+function brokenLoadRepository(): LedgerRepository & { saved: () => Book | null } {
+  let current: Book | null = null;
+  return {
+    async load(): Promise<Result<Book | null>> {
+      return err("BOOK_INVALID", "the stored book failed to validate");
+    },
+    async save(book: Book): Promise<Result<void>> {
+      current = book;
+      return ok(undefined);
+    },
+    async clear(): Promise<Result<void>> {
+      current = null;
+      return ok(undefined);
+    },
+    saved: () => current,
+  };
 }
 
 describe("inspectRemote", () => {
@@ -48,14 +76,24 @@ describe("inspectRemote", () => {
 });
 
 describe("applyFirstConnect", () => {
-  it("uploads local when the remote is empty, for any choice", async () => {
-    const local = makeBook("Cash", NOW);
-    const repo = createMemoryRepository(local);
-    const store = createMemorySyncStore();
-    const book = unwrap(await applyFirstConnect("useRemote", { repo, store }));
-    expect(bookFingerprint(book)).toBe(bookFingerprint(local));
-    expect(bookFingerprint(unwrap(decodeEnvelope(store.getPayload()!)))).toBe(bookFingerprint(local));
-  });
+  // The design cites this test as the evidence that relaxing `useRemote`'s local-book
+  // gate moved nothing else: an empty remote still means "upload the local book",
+  // whatever was chosen. It exercised only `useRemote`, which made the citation vacuous
+  // and left `merge` against an empty remote — the early return at sync-connect.ts:174 —
+  // covered by nothing at all.
+  it.each(["useRemote", "merge", "replaceRemote"] as const)(
+    "uploads local when the remote is empty, for any choice (%s)",
+    async (choice) => {
+      const local = makeBook("Cash", NOW);
+      const repo = createMemoryRepository(local);
+      const store = createMemorySyncStore();
+      const book = unwrap(await applyFirstConnect(choice, { repo, store }));
+      expect(bookFingerprint(book)).toBe(bookFingerprint(local));
+      expect(bookFingerprint(unwrap(decodeEnvelope(store.getPayload()!)))).toBe(
+        bookFingerprint(local),
+      );
+    },
+  );
 
   it("useRemote adopts the Drive book locally", async () => {
     const local = makeBook("Cash", NOW);
@@ -271,5 +309,87 @@ describe("applyFirstConnect", () => {
     const result = await applyFirstConnect("replaceRemote", { repo, store });
     expect(unwrapErr(result).code).toBe("SYNC_FILE_MISSING");
     expect(store.getPayload()).toBe(encodeEnvelope(remote)); // write never landed
+  });
+});
+
+describe("applyFirstConnect with no local book", () => {
+  it("useRemote adopts the Drive book into empty storage", async () => {
+    const remote = makeBook("Wallet", LATER);
+    const repo = createMemoryRepository(null);
+    const store = createMemorySyncStore(encodeEnvelope(remote));
+    const book = unwrap(await applyFirstConnect("useRemote", { repo, store }));
+    expect(bookFingerprint(book)).toBe(bookFingerprint(remote));
+    expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(remote));
+    expect(store.getPayload()).toBe(encodeEnvelope(remote)); // remote untouched
+  });
+
+  it("useRemote adopts the Drive book over storage that cannot be read", async () => {
+    const remote = makeBook("Wallet", LATER);
+    const repo = brokenLoadRepository();
+    const store = createMemorySyncStore(encodeEnvelope(remote));
+    const book = unwrap(await applyFirstConnect("useRemote", { repo, store }));
+    expect(bookFingerprint(book)).toBe(bookFingerprint(remote));
+    expect(bookFingerprint(repo.saved()!)).toBe(bookFingerprint(remote));
+    expect(store.getPayload()).toBe(encodeEnvelope(remote)); // remote untouched
+  });
+
+  it("useRemote still reports a read failure rather than inventing a book", async () => {
+    const repo = createMemoryRepository(null);
+    const store = createMemorySyncStore(encodeEnvelope(makeBook("Wallet", LATER)));
+    store.failNext("SYNC_AUTH_REQUIRED");
+    expect(unwrapErr(await applyFirstConnect("useRemote", { repo, store })).code).toBe(
+      "SYNC_AUTH_REQUIRED",
+    );
+    expect(unwrap(await repo.load())).toBeNull();
+  });
+
+  it("useRemote against an empty remote still needs a local book", async () => {
+    const repo = createMemoryRepository(null);
+    const store = createMemorySyncStore();
+    expect(unwrapErr(await applyFirstConnect("useRemote", { repo, store })).code).toBe("BOOK_INVALID");
+  });
+
+  // The narrowness of the relaxation is the point: these two upload the local book, so
+  // they cannot run without one, and the UI never offers them in this state (Task 2).
+  it("replaceRemote still refuses without a local book", async () => {
+    const repo = createMemoryRepository(null);
+    const store = createMemorySyncStore(encodeEnvelope(makeBook("Wallet", LATER)));
+    expect(unwrapErr(await applyFirstConnect("replaceRemote", { repo, store })).code).toBe(
+      "BOOK_INVALID",
+    );
+  });
+
+  it("merge still refuses without a local book", async () => {
+    const repo = createMemoryRepository(null);
+    const store = createMemorySyncStore(encodeEnvelope(makeBook("Wallet", LATER)));
+    expect(unwrapErr(await applyFirstConnect("merge", { repo, store })).code).toBe("BOOK_INVALID");
+  });
+
+  it("useRemote against an empty remote performs exactly one read", async () => {
+    const local = makeBook("Cash", NOW);
+    const repo = createMemoryRepository(local);
+    const inner = createMemorySyncStore();
+    let readCount = 0;
+    const store: SyncStorePort = {
+      probe: () => inner.probe(),
+      async read() {
+        readCount += 1;
+        return inner.read();
+      },
+      write: (payload, ifUnchanged) => inner.write(payload, ifUnchanged),
+    };
+
+    const book = unwrap(await applyFirstConnect("useRemote", { repo, store }));
+    expect(readCount).toBe(1);
+    expect(bookFingerprint(book)).toBe(bookFingerprint(local));
+  });
+
+  it("useRemote against an undecodable remote returns an error and preserves the corrupt payload", async () => {
+    const local = makeBook("Cash", NOW);
+    const repo = createMemoryRepository(local);
+    const store = createMemorySyncStore("junk");
+    const result = await applyFirstConnect("useRemote", { repo, store });
+    expect(unwrapErr(result).code).toBe("SYNC_ENVELOPE_INVALID");
+    expect(store.getPayload()).toBe("junk"); // corrupt remote untouched
   });
 });

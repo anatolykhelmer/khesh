@@ -1,5 +1,10 @@
 import { createContext, useContext } from "react";
-import type { FirstConnectChoice, RemoteInspection } from "../../service/sync-connect";
+import type {
+  FirstConnectChoice,
+  FirstConnectPlan,
+  LocalState,
+  RemoteInspection,
+} from "../../service/sync-connect";
 import type { SyncState } from "../../service/sync-engine";
 
 export type SyncContextValue = {
@@ -10,6 +15,22 @@ export type SyncContextValue = {
   state: SyncState | null;
   /** Non-null means the first-connect choice UI is open. */
   pendingInspection: RemoteInspection | null;
+  /** What to offer for the pending inspection, decided once when the remote was
+   * inspected so the choices cannot shift under the user's finger. Null whenever
+   * `pendingInspection` is.
+   *
+   * "Decided once" is enforced, not merely intended: the plan is stamped with the
+   * `LocalState` it was derived from, and both fields read null the moment the book
+   * moves away from it — see `pending-plan-rule.ts`. Deciding once and then rendering
+   * against a book that has since changed is the same bug wearing the opposite hat. */
+  pendingPlan: FirstConnectPlan | null;
+  /** What the local side held when `pendingPlan` was decided. Null whenever the plan is.
+   *
+   * Exposed rather than re-derived from `book`: the screen must judge what a choice
+   * destroys against the same local state that produced the choices, and the staleness
+   * gate already guarantees the two agree for as long as the plan is live. Re-deriving
+   * would be a second source of truth that can only ever drift. */
+  pendingLocalState: LocalState | null;
   /** A connect or first-connect choice is running: its buttons stay disabled, so a
    * second tap cannot start a second load/merge/save/write over the first. */
   applying: boolean;

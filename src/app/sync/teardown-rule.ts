@@ -1,0 +1,46 @@
+import type { Book } from "../../kernel";
+
+/**
+ * Whether `SyncProvider` must tear this tab's Drive connection down.
+ *
+ * The state that is dangerous is a connection that was live *before* the book vanished.
+ * Another tab's reset nulls the book here without touching this tab's engine or refs, so
+ * they stay pointed at the old Drive file: the engine's next cycle can merge a freshly
+ * onboarded book against the remote and silently restore the old one, and a first-connect
+ * choice screen left standing has "Replace remote" wired to upload the new seed over the
+ * real file. Both were found by BL-040's whole-branch review.
+ *
+ * That is a *transition*, and it has to be written as one now that a connection can also
+ * *begin* while the book is null — the no-book screens (BL-043) offer Connect, and their
+ * `pendingInspection` would otherwise be destroyed a moment after the user opened it.
+ * Keying on "the book is null" was only ever an accurate approximation because that
+ * could not happen.
+ *
+ * `previous` is `undefined` on the first run of this effect — not, under StrictMode,
+ * only the first render. Nothing needs tearing down there in any case: `SyncProvider`'s
+ * resume effect only sets `connected` once the book is non-null, and `pendingInspection`
+ * starts null.
+ */
+
+/** What of `useSync()` decides there is anything to tear down. Both fields, not a
+ * pre-computed boolean: with the disjunction at the call site it sits outside this unit,
+ * and narrowing it to `connected` alone re-opens BL-040's hole while every test here
+ * still passes. */
+export type TearDownSyncState = {
+  connected: boolean;
+  /** Non-null means a first-connect choice screen is open. `connect()` binds
+   * `storeRef`/`authRef`/`fileIdRef` to the real Drive file the moment it inspects it,
+   * so this alone is a live connection to the user's file even though `connected` is
+   * still false — the exact state BL-040's review found "Replace remote" armed in. */
+  pendingInspection: unknown;
+};
+
+export function shouldTearDown(
+  previous: Book | null | undefined,
+  next: Book | null,
+  sync: TearDownSyncState,
+): boolean {
+  if (!sync.connected && sync.pendingInspection === null) return false;
+  if (previous === undefined || previous === null) return false;
+  return next === null;
+}

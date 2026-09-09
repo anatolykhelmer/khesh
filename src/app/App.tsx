@@ -14,6 +14,7 @@ import { DashboardScreen } from "./screens/DashboardScreen";
 import { EntryDetailScreen } from "./screens/EntryDetailScreen";
 import { JournalScreen } from "./screens/JournalScreen";
 import { OnboardingScreen } from "./screens/OnboardingScreen";
+import { RecoveryScreen } from "./screens/RecoveryScreen";
 import { RecurringFormScreen } from "./screens/RecurringFormScreen";
 import { RecurringScreen } from "./screens/RecurringScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
@@ -54,7 +55,7 @@ function Shell() {
 
 export function App() {
   const { t } = useTranslation();
-  const { book, loading, error, clearError } = useLedger();
+  const { status, error, clearError } = useLedger();
   const { needRefresh, reload, dismiss } = useAppUpdate();
   const sync = useSync();
   const navigate = useNavigate();
@@ -67,7 +68,7 @@ export function App() {
   const showSyncError =
     (syncKind === "error" || syncKind === "manualResolution") && dismissedSyncKind !== syncKind;
 
-  if (loading) {
+  if (status === "loading") {
     return (
       <main className="screen">
         <p>{t("app.loading")}</p>
@@ -104,7 +105,17 @@ export function App() {
           onDismiss={() => setDismissedSyncKind(syncKind)}
         />
       ) : null}
-      {book ? <Shell /> : <OnboardingScreen />}
+      {/* One branch per status, each named. `loading` already returned above, but the
+          ladder does not rely on that: naming "ready" keeps `Shell` — the only branch
+          that assumes a book exists — off every other state, including any status added
+          later. A silent trailing `else` would hand those to it instead. */}
+      {status === "failed" ? (
+        <RecoveryScreen />
+      ) : status === "empty" ? (
+        <OnboardingScreen />
+      ) : status === "ready" ? (
+        <Shell />
+      ) : null}
     </>
   );
 }

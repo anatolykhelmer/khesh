@@ -139,13 +139,35 @@ async function firstConnect(
   choice: FirstConnectChoice,
   deps: FirstConnectDeps,
 ): Promise<Result<Book>> {
+  // `useRemote` is the one choice that never reads the local book — it adopts the remote
+  // wholesale. Reading Drive first is what lets it run with empty storage, which is how
+  // a second device, and a device that has just been reset, get their book back without
+  // first inventing one to throw away. `decodeEnvelope` runs `validateBook` itself, so
+  // what is saved below is already known good.
+  if (choice === "useRemote") {
+    const readResult = await deps.store.read();
+    if (!readResult.ok) return readResult;
+    if (readResult.value !== null) {
+      const remote = decodeEnvelope(readResult.value.payload);
+      if (!remote.ok) return remote;
+      const saved = await deps.repo.save(remote.value);
+      if (!saved.ok) return saved;
+      return ok(remote.value);
+    }
+    // An empty remote falls through: there is nothing to take, and uploading the local
+    // book is what every choice has always done in that case.
+  }
+
   const local = await loadLocal(deps.repo);
   if (!local.ok) return local;
 
   // replaceRemote is the recovery action offered for a remote the UI could not read
   // (corrupt payload, e.g.), so it must not itself depend on reading or decoding
-  // whatever is actually there — it overwrites unconditionally.
-  if (choice === "replaceRemote") return uploadLocal(deps.store, local.value);
+  // whatever is actually there — it overwrites unconditionally. `useRemote` only reaches
+  // here with an empty remote, where the outcome is the same upload.
+  if (choice === "replaceRemote" || choice === "useRemote") {
+    return uploadLocal(deps.store, local.value);
+  }
 
   const readResult = await deps.store.read();
   if (!readResult.ok) return readResult;
@@ -153,12 +175,6 @@ async function firstConnect(
 
   const remote = decodeEnvelope(readResult.value.payload);
   if (!remote.ok) return remote;
-
-  if (choice === "useRemote") {
-    const saved = await deps.repo.save(remote.value);
-    if (!saved.ok) return saved;
-    return ok(remote.value);
-  }
 
   const merged = mergeValidated(local.value, remote.value);
   if (!merged.ok) return merged;

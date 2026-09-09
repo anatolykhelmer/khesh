@@ -273,3 +273,47 @@ describe("applyFirstConnect", () => {
     expect(store.getPayload()).toBe(encodeEnvelope(remote)); // write never landed
   });
 });
+
+describe("applyFirstConnect with no local book", () => {
+  it("useRemote adopts the Drive book into empty storage", async () => {
+    const remote = makeBook("Wallet", LATER);
+    const repo = createMemoryRepository(null);
+    const store = createMemorySyncStore(encodeEnvelope(remote));
+    const book = unwrap(await applyFirstConnect("useRemote", { repo, store }));
+    expect(bookFingerprint(book)).toBe(bookFingerprint(remote));
+    expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(remote));
+    expect(store.getPayload()).toBe(encodeEnvelope(remote)); // remote untouched
+  });
+
+  it("useRemote still reports a read failure rather than inventing a book", async () => {
+    const repo = createMemoryRepository(null);
+    const store = createMemorySyncStore(encodeEnvelope(makeBook("Wallet", LATER)));
+    store.failNext("SYNC_AUTH_REQUIRED");
+    expect(unwrapErr(await applyFirstConnect("useRemote", { repo, store })).code).toBe(
+      "SYNC_AUTH_REQUIRED",
+    );
+    expect(unwrap(await repo.load())).toBeNull();
+  });
+
+  it("useRemote against an empty remote still needs a local book", async () => {
+    const repo = createMemoryRepository(null);
+    const store = createMemorySyncStore();
+    expect(unwrapErr(await applyFirstConnect("useRemote", { repo, store })).code).toBe("BOOK_INVALID");
+  });
+
+  // The narrowness of the relaxation is the point: these two upload the local book, so
+  // they cannot run without one, and the UI never offers them in this state (Task 2).
+  it("replaceRemote still refuses without a local book", async () => {
+    const repo = createMemoryRepository(null);
+    const store = createMemorySyncStore(encodeEnvelope(makeBook("Wallet", LATER)));
+    expect(unwrapErr(await applyFirstConnect("replaceRemote", { repo, store })).code).toBe(
+      "BOOK_INVALID",
+    );
+  });
+
+  it("merge still refuses without a local book", async () => {
+    const repo = createMemoryRepository(null);
+    const store = createMemorySyncStore(encodeEnvelope(makeBook("Wallet", LATER)));
+    expect(unwrapErr(await applyFirstConnect("merge", { repo, store })).code).toBe("BOOK_INVALID");
+  });
+});

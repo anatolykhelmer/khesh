@@ -55,3 +55,58 @@ export async function performReset(deps: ResetDeps): Promise<void> {
   // broadcast into the same place.
   deps.announceBookChanged(null);
 }
+
+export type StartOverDeps = {
+  /** Only `disconnect` — deliberately not `connected` or `pendingInspection`. See below:
+   * on the recovery screen those are both always idle, and a flow that consulted them
+   * would do nothing at all. */
+  sync: { disconnect: () => Promise<void> };
+  /** `LedgerProvider.startOver`: clears `bootError`, writes nothing. */
+  startOver: () => void;
+  setError: (message: string | null) => void;
+};
+
+/**
+ * Leaving the recovery screen for onboarding: disconnect Drive sync, then clear the boot
+ * error. Same ordering discipline as `performReset` and the same reason to be a plain
+ * function — this repo's Vitest runs in `environment: "node"` with no component-testing
+ * library, so a sequence living in a component has no tests.
+ *
+ * **Why disconnect at all.** Sync meta lives in its own IndexedDB database
+ * (`sync-meta-store.ts`), so it survives whatever corrupted the ledger and put the user
+ * here. `startOver()` alone left it live: Continue then mints a seed, `book` goes
+ * non-null, `SyncProvider`'s resume effect fires because the stored `connected` is still
+ * true, and the engine's first cycle takes the union branch — the user's real book comes
+ * back plus four duplicated root accounts, root ids being per-device. No choice screen,
+ * no warning, and the spec's "merge is never offered when the local side holds no data"
+ * bypassed on the very path this screen was added for. The start-over warning even says
+ * "connect Google Drive first", promising Drive is inert until you do.
+ *
+ * **Why unconditionally**, where `performReset` asks whether there is anything to
+ * disconnect. That question is about `useSync()`'s in-memory state, and on the recovery
+ * screen it is always no: the resume effect is gated on `book !== null`, so `connected`
+ * never becomes true while a book has failed to load, and a first-connect that reached
+ * `pendingInspection` and was applied would have produced a book and left this screen.
+ * Copying the gate would read as caution and disconnect nothing. `teardownConnection` is
+ * idempotent and null-safe on every ref it touches, so running it against an idle tab
+ * costs one best-effort write to the meta database.
+ *
+ * **It erases nothing.** No repository, no `resetAll` — the type above carries no way to
+ * reach storage, and that is the point. The stored book stays until onboarding's Continue
+ * overwrites it, so closing the tab in between brings the recovery screen back with the
+ * book still there. That property is what makes "start over" safe to offer at all.
+ */
+export async function performStartOver(deps: StartOverDeps): Promise<void> {
+  try {
+    await deps.sync.disconnect();
+  } catch {
+    // Same reasoning as `performReset`: disconnect cannot reject today, but leaving the
+    // recovery screen with a Drive connection still live is the whole failure this flow
+    // exists to prevent. Surface it and stay put rather than proceed on a guess.
+    deps.setError(errorMessage("SYNC_STORE_FAILED"));
+    return;
+  }
+
+  deps.setError(null);
+  deps.startOver();
+}

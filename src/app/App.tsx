@@ -105,13 +105,17 @@ export function App() {
           onDismiss={() => setDismissedSyncKind(syncKind)}
         />
       ) : null}
+      {/* One branch per status, each named. `loading` already returned above, but the
+          ladder does not rely on that: naming "ready" keeps `Shell` — the only branch
+          that assumes a book exists — off every other state, including any status added
+          later. A silent trailing `else` would hand those to it instead. */}
       {status === "failed" ? (
         <RecoveryScreen />
       ) : status === "empty" ? (
         <OnboardingScreen />
-      ) : (
+      ) : status === "ready" ? (
         <Shell />
-      )}
+      ) : null}
     </>
   );
 }

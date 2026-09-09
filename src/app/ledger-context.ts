@@ -9,8 +9,12 @@ export type LedgerAppInstance = ReturnType<typeof createLedgerApp>;
 
 export type LedgerContextValue = {
   book: Book | null;
-  loading: boolean;
-  /** Which of the four top-level states the app is in. Derived — see `ledger-status.ts`. */
+  /** Which of the four top-level states the app is in. Derived — see `ledger-status.ts`.
+   * The raw `loading` flag is deliberately NOT on the context: it stays inside
+   * `LedgerProvider` as one input to this derivation. Exposing it again would let a
+   * screen ask "is it loading?" separately from "which screen is this?" and re-open the
+   * ambiguity between an empty book, a broken one and a boot still in flight that this
+   * status exists to remove. */
   status: LedgerStatus;
   /** Why the last boot failed, or null. Distinct from `error`, which is the transient
    * banner: an error the user can dismiss must never be what decides whether the app

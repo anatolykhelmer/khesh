@@ -28,6 +28,10 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     [repo],
   );
   const [book, setBookState] = useState<Book | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [bootError, setBootError] = useState<LedgerErrorCode | null>(null);
+
   // Any book assignment — including null — reconciles bootError with what storage
   // actually holds. A non-null book already outranks bootError in deriveStatus, so
   // clearing it there is belt-and-braces; the null route is the one that matters: it is
@@ -39,9 +43,6 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     setBookState(next);
     setBootError(null);
   }, []);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [bootError, setBootError] = useState<LedgerErrorCode | null>(null);
 
   /** The one place a boot result becomes state. Shared by the mount effect and
    * `retryBoot` so the two cannot drift. A failed boot sets `bootError` and NOT the
@@ -50,6 +51,11 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const applyBoot = useCallback((result: Result<Book | null>) => {
     if (!result.ok) {
       setBootError(result.error.code);
+      // `setBookState`, NOT the `setBook` wrapper above: that wrapper clears `bootError`,
+      // which would erase the code set one line up, derive "empty" instead of "failed",
+      // and drop the user on onboarding with a live Continue over the book that just
+      // failed to load — BL-023 exactly, with the whole suite still green. No test in a
+      // node-environment repo can see the difference; this comment is the guard.
       setBookState(null);
     } else {
       setBootError(null);
@@ -87,7 +93,6 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
   const value: LedgerContextValue = {
     book,
-    loading,
     status: deriveStatus(loading, book, bootError),
     bootError,
     error,

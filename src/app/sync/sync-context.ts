@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { FirstConnectChoice, RemoteInspection } from "../../service/sync-connect";
+import type { FirstConnectChoice, FirstConnectPlan, RemoteInspection } from "../../service/sync-connect";
 import type { SyncState } from "../../service/sync-engine";
 
 export type SyncContextValue = {
@@ -10,6 +10,10 @@ export type SyncContextValue = {
   state: SyncState | null;
   /** Non-null means the first-connect choice UI is open. */
   pendingInspection: RemoteInspection | null;
+  /** What to offer for the pending inspection, decided once when the remote was
+   * inspected so the choices cannot shift under the user's finger. Null whenever
+   * `pendingInspection` is. */
+  pendingPlan: FirstConnectPlan | null;
   /** A connect or first-connect choice is running: its buttons stay disabled, so a
    * second tap cannot start a second load/merge/save/write over the first. */
   applying: boolean;

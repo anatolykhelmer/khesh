@@ -6,12 +6,16 @@ import {
   type GoogleAuth,
 } from "../../adapters/google-drive-sync";
 import { createSyncMetaStore } from "../../adapters/sync-meta-store";
+import { holdsNoUserData } from "../../kernel/book-utils";
 import { err } from "../../kernel/result";
 import { errorMessage } from "../../service/error-messages";
 import {
   applyFirstConnect,
+  firstConnectOptions,
   inspectRemote,
   type FirstConnectChoice,
+  type FirstConnectPlan,
+  type LocalState,
   type RemoteInspection,
 } from "../../service/sync-connect";
 import { createSyncEngine, type SyncEngine, type SyncState } from "../../service/sync-engine";
@@ -39,6 +43,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
   const [state, setState] = useState<SyncState | null>(null);
   const [pendingInspection, setPendingInspection] = useState<RemoteInspection | null>(null);
+  const [pendingPlan, setPendingPlan] = useState<FirstConnectPlan | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
   // The ref is the guard and the state is what the UI reads: a second tap arrives before
   // React has re-rendered with `applying`, so only a ref can turn it away.
@@ -133,6 +138,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setEmail(accountEmail);
     setConnected(true);
     setPendingInspection(null);
+    setPendingPlan(null);
     void startEngine().syncNow();
   }, [metaStore, startEngine]);
 
@@ -164,6 +170,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setEmail(null);
     setState(null);
     setPendingInspection(null);
+    setPendingPlan(null);
   }, [forgetFile, metaStore]);
 
   // Another tab's reset nulls the book here via the cross-tab broadcast, but that
@@ -197,6 +204,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     });
   }, [book, connected, pendingInspection, teardownConnection]);
 
+  // What the local side has to lose. A null book covers both "storage is empty" and
+  // "the stored book failed to load" — neither holds data a remote book could destroy.
+  const localState: LocalState =
+    book === null ? "none" : holdsNoUserData(book) ? "empty" : "real";
+
   const connect = async () => {
     if (applyingRef.current) return;
     applyingRef.current = true;
@@ -215,8 +227,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         setLastError(errorMessage(inspection.error.code));
         return;
       }
-      if (inspection.value.kind === "empty") {
-        const applied = await applyFirstConnect("replaceRemote", { repo, store, runExclusive });
+      const plan = firstConnectOptions(localState, inspection.value);
+      if (plan.kind === "apply") {
+        const applied = await applyFirstConnect(plan.choice, { repo, store, runExclusive });
         if (!applied.ok) {
           setLastError(errorMessage(applied.error.code));
           return;
@@ -224,7 +237,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         await finalizeConnect();
         return;
       }
-      setPendingInspection(inspection.value); // "book" and "unreadable" both need the user
+      // "choose" and "explain" both need the user to see the screen.
+      setPendingInspection(inspection.value);
+      setPendingPlan(plan);
     } finally {
       applyingRef.current = false;
       setApplying(false);
@@ -237,6 +252,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     email,
     state,
     pendingInspection,
+    pendingPlan,
     lastError,
 
     applying,
@@ -279,7 +295,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       }
     },
 
-    cancelConnect: () => setPendingInspection(null),
+    cancelConnect: () => {
+      setPendingInspection(null);
+      setPendingPlan(null);
+    },
 
     disconnect: teardownConnection,
 

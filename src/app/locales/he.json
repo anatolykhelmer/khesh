@@ -159,6 +159,9 @@
     "choiceMerge": "למזג את שני הספרים",
     "choiceMergeWarning": "מיזוג של שני ספרים שהוקמו בנפרד מכפיל את קטגוריות השורש.",
     "choiceUnreadable": "לא ניתן לקרוא את הקובץ ב-Drive. אפשר לדרוס אותו בספר מהמכשיר הזה.",
+    "explainRemoteEmpty": "עדיין אין ספר Khesh ב-Google Drive שלכם. התחילו ספר כאן, ואז חברו.",
+    "explainRemoteUnreadable": "לא הצלחנו לקרוא את הקובץ ב-Google Drive, ואין במכשיר הזה ספר להחליף אותו בו.",
+    "connectRestoreHint": "התחברו כדי להחזיר את הספר ששמור לכם ב-Drive.",
     "bannerNeedsAuth": "הסנכרון מושהה - נדרשת התחברות ל-Google.",
     "bannerError": "הסנכרון נתקל בבעיה. פתחו את ההגדרות לאפשרויות.",
     "openSettings": "פתיחת ההגדרות"

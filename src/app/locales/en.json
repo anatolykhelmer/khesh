@@ -39,6 +39,17 @@
     "restore": "Restore from backup",
     "aboutLink": "What is Khesh?"
   },
+  "recovery": {
+    "storageTitle": "Khesh can't reach its storage",
+    "storageBody": "This usually means a private window, blocked site data, or a device that has run out of room. Your book is not lost — it just can't be read here right now.",
+    "retry": "Try again",
+    "brokenTitle": "Your book couldn't be opened",
+    "brokenBody": "The book stored on this device didn't pass its checks. Nothing has been changed or deleted.",
+    "startOver": "Start over",
+    "startOverHint": "Sets up a new empty book. The stored one is replaced only once you finish.",
+    "startOverWarning": "The book on this device will be replaced by a new empty one. If you might want this data back, restore a backup or connect Google Drive first.",
+    "startOverConfirm": "Yes, start over"
+  },
   "dashboard": {
     "title": "Dashboard",
     "couldNotLoadTotals": "Could not load totals.",

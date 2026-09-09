@@ -3,7 +3,7 @@ import { createIndexedDbRepository } from "../adapters/indexeddb-repository";
 import { createLedgerApp } from "../service/ledger-app";
 import type { Book } from "../kernel";
 import type { LedgerErrorCode } from "../kernel/errors";
-import type { Result } from "../kernel/result";
+import { err, type Result } from "../kernel/result";
 import { LedgerContext, type LedgerContextValue } from "./ledger-context";
 import { deriveStatus } from "./ledger-status";
 import { runExclusive } from "./sync/sync-lock";
@@ -28,11 +28,16 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     [repo],
   );
   const [book, setBookState] = useState<Book | null>(null);
-  // Adopting any book clears the reason the previous one failed to load: the recovery
-  // screen must not survive the restore that fixed it.
+  // Any book assignment — including null — reconciles bootError with what storage
+  // actually holds. A non-null book already outranks bootError in deriveStatus, so
+  // clearing it there is belt-and-braces; the null route is the one that matters: it is
+  // reached from the cross-tab BroadcastChannel handler (whose result.ok is true, so we
+  // know storage read fine) and from announceBookChanged(null), which ledger-context.ts
+  // documents as a reset that boots the other tabs into onboarding, same as a fresh
+  // install — not into a stale recovery screen for a book that is no longer there.
   const setBook = useCallback((next: Book | null) => {
     setBookState(next);
-    if (next !== null) setBootError(null);
+    setBootError(null);
   }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +96,15 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     setBook,
     retryBoot: async () => {
       setLoading(true);
-      applyBoot(await app.boot());
+      // app.boot() should never reject — indexeddb-repository.ts wraps its whole body in
+      // a catch — but that is not a contract this seam states or enforces, and this is
+      // the only caller. A rejection must still resolve to a screen, not strand `loading`
+      // at true forever with deriveStatus pinned to "loading" and no escape.
+      try {
+        applyBoot(await app.boot());
+      } catch {
+        applyBoot(err("STORAGE_UNAVAILABLE", "Failed to read storage"));
+      }
     },
     startOver: () => setBootError(null),
     app,

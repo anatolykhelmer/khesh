@@ -58,8 +58,8 @@ export async function performReset(deps: ResetDeps): Promise<void> {
 
 export type StartOverDeps = {
   /** Only `disconnect` — deliberately not `connected` or `pendingInspection`. See below:
-   * on the recovery screen those are both always idle, and a flow that consulted them
-   * would do nothing at all. */
+   * the connection this flow has to end is the one in the sync-meta database, which
+   * neither field reports. Carrying them would only invite the gate that skips it. */
   sync: { disconnect: () => Promise<void> };
   /** `LedgerProvider.startOver`: clears `bootError`, writes nothing. */
   startOver: () => void;
@@ -83,13 +83,25 @@ export type StartOverDeps = {
  * "connect Google Drive first", promising Drive is inert until you do.
  *
  * **Why unconditionally**, where `performReset` asks whether there is anything to
- * disconnect. That question is about `useSync()`'s in-memory state, and on the recovery
- * screen it is always no: the resume effect is gated on `book !== null`, so `connected`
- * never becomes true while a book has failed to load, and a first-connect that reached
- * `pendingInspection` and was applied would have produced a book and left this screen.
- * Copying the gate would read as caution and disconnect nothing. `teardownConnection` is
- * idempotent and null-safe on every ref it touches, so running it against an idle tab
- * costs one best-effort write to the meta database.
+ * disconnect. That question reads `useSync()`, and here `useSync()` cannot see the thing
+ * that does the damage. `connected` is false: the resume effect is gated on
+ * `book !== null`, so it never runs while a book has failed to load — which is exactly
+ * why the *stored* `meta.connected` can still be true, sitting in its own database,
+ * untouched by whatever corrupted the ledger. That stored record is what Continue would
+ * resume from. A `performReset`-style gate would find both fields quiet in precisely the
+ * common case and skip the one write that makes Continue safe.
+ *
+ * Note what is *not* the reason: `pendingInspection` is not always idle here. This screen
+ * renders `ConnectDrive` (BL-043), so an unapplied choice is a live connection —
+ * `storeRef`, `authRef` and `fileIdRef` are bound to the user's Drive file from the
+ * moment `connect()` inspects it. It is a second thing worth tearing down, not an
+ * argument that there is nothing to tear down.
+ *
+ * The same gate is correct where `performReset` uses it: Settings is reachable only with
+ * a book, so the resume effect has run and `connected` does reflect the stored record.
+ *
+ * `teardownConnection` is idempotent and null-safe on every ref it touches, so running it
+ * against a genuinely idle tab costs one best-effort write to the meta database.
  *
  * **It erases nothing.** No repository, no `resetAll` — the type above carries no way to
  * reach storage, and that is the point. The stored book stays until onboarding's Continue

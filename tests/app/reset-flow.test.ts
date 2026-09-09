@@ -117,13 +117,15 @@ describe("performStartOver", () => {
     expect(calls).toEqual(["disconnect", "startOver"]);
   });
 
-  it("disconnects unconditionally, because the recovery screen is never `connected`", async () => {
-    // SyncProvider's resume effect is gated on `book !== null`, so while a book has
-    // failed to load `connected` is false and `pendingInspection` is null no matter what
-    // the *stored* sync meta says — and the stored record is what brings the old book
-    // back with doubled roots. A `performReset`-style "is there anything to disconnect?"
-    // gate would therefore disconnect nothing at all. `StartOverDeps` carries no such
-    // fields; this test is what fails if they are ever consulted.
+  it("disconnects unconditionally, because the connection that matters is the stored one", async () => {
+    // The flag that brings the old book back with doubled roots is `meta.connected` in
+    // the sync-meta database, and `useSync()` does not report it here: the resume effect
+    // is gated on `book !== null`, so it never runs while a book has failed to load and
+    // `connected` stays false however the stored record reads. A `performReset`-style
+    // "is there anything to disconnect?" gate would find it quiet and skip the write.
+    // (`pendingInspection` is a separate matter — this screen renders `ConnectDrive`, so
+    // it can be non-null. That is one more thing to tear down, not a reason to gate.)
+    // `StartOverDeps` carries neither field; this test is what fails if they are consulted.
     const { deps, calls } = trackedStartOver();
     await performStartOver(deps);
     expect(calls).toContain("disconnect");

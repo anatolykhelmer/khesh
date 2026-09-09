@@ -16,10 +16,12 @@ import {
 } from "../../service/sync-connect";
 import { createSyncEngine, type SyncEngine, type SyncState } from "../../service/sync-engine";
 import type { SyncStorePort } from "../../ports/sync-store";
+import type { Book } from "../../kernel";
 import { useLedger } from "../ledger-context";
 import { SyncContext, type SyncContextValue } from "./sync-context";
 import { runExclusive } from "./sync-lock";
 import { syncSignal } from "./sync-signal";
+import { shouldTearDown } from "./teardown-rule";
 
 const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? "";
 
@@ -30,6 +32,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const storeRef = useRef<SyncStorePort | null>(null);
   const engineRef = useRef<SyncEngine | null>(null);
   const fileIdRef = useRef<string | null>(null);
+  // What `book` was on the previous run of the teardown effect below. `undefined` until
+  // that effect has run once.
+  const previousBookRef = useRef<Book | null | undefined>(undefined);
   const [connected, setConnected] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [state, setState] = useState<SyncState | null>(null);
@@ -167,22 +172,18 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // pointed at the old file: its next cycle fails BOOK_INVALID against the fresh empty
   // book, and if the user instead finishes onboarding in *this* tab, `afterCommit`
   // nudges the still-live engine, which merges the new book against the remote and
-  // silently restores the old one. Tearing down here closes that window. Guarded so it
-  // only fires while there is something to tear down: the "resume a stored connection"
-  // effect above only sets `connected` once `book !== null`, so a boot with a stored
-  // connection cannot make this effect fire while the book is still loading.
+  // silently restores the old one. `pendingInspection` carries the same danger without
+  // `connected` ever being true: `connect()` binds `storeRef`/`authRef`/`fileIdRef` to
+  // the remote file the moment it inspects it, so a stale choice screen has "Replace
+  // remote" wired to upload a freshly-onboarded seed over the real file.
   //
-  // `connected` alone misses the first-connect choice screen: `connect()` binds
-  // `storeRef`/`authRef`/`fileIdRef` to the remote file the moment it inspects it,
-  // before the user has picked anything — both "book" and "unreadable" park in
-  // `pendingInspection` with `connected` still false. A tab sitting there holds the
-  // same live-refs danger as a connected one: re-rendering that choice screen against
-  // the fresh book instead of tearing down leaves "Replace remote" wired to upload the
-  // freshly-onboarded seed straight over the real file those refs still name. Mirrors
-  // the widened condition `reset-flow.ts` already uses for the tab doing the reset.
+  // The condition is a transition, not a state — see `shouldTearDown`. A connection can
+  // now *begin* while the book is null, because the onboarding and recovery screens
+  // offer Connect, and tearing that down would destroy the choice as it appeared.
   useEffect(() => {
-    const hasSomethingToTearDown = connected || pendingInspection !== null;
-    if (book !== null || !hasSomethingToTearDown) return;
+    const previous = previousBookRef.current;
+    previousBookRef.current = book;
+    if (!shouldTearDown(previous, book, connected || pendingInspection !== null)) return;
     void teardownConnection().catch(() => {
       // `teardownConnection`'s first statement, `engineRef.current?.dispose()`, is
       // synchronous — the one danger this effect exists to close (a live engine

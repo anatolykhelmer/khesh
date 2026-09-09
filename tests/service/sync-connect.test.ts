@@ -6,6 +6,8 @@ import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { bookFingerprint } from "../../src/kernel/merge";
 import type { Book } from "../../src/kernel/types";
+import { err, ok, type Result } from "../../src/kernel/result";
+import type { LedgerRepository } from "../../src/ports/ledger-repository";
 import type { SyncStorePort } from "../../src/ports/sync-store";
 import { applyFirstConnect, inspectRemote } from "../../src/service/sync-connect";
 import { NOW, LATER, unwrap, unwrapErr } from "../helpers";
@@ -24,6 +26,32 @@ function makeBook(name: string, at: string): Book {
   let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, at));
   book = unwrap(createAccount(book, { parentId: null, name, type: "asset", currency: "ILS", isPlaceholder: false }, at));
   return book;
+}
+
+/**
+ * Storage that cannot be read but can be written — what BL-023 looks like on disk, and
+ * the only state from which recovery's Connect is reachable at all.
+ *
+ * `createMemoryRepository(null)` is a different case wearing the same error code: empty
+ * storage, which `loadLocal` maps onto `BOOK_INVALID` for want of a book. A guard that
+ * refused to save before a successful load would break recovery and leave that one green.
+ */
+function brokenLoadRepository(): LedgerRepository & { saved: () => Book | null } {
+  let current: Book | null = null;
+  return {
+    async load(): Promise<Result<Book | null>> {
+      return err("BOOK_INVALID", "the stored book failed to validate");
+    },
+    async save(book: Book): Promise<Result<void>> {
+      current = book;
+      return ok(undefined);
+    },
+    async clear(): Promise<Result<void>> {
+      current = null;
+      return ok(undefined);
+    },
+    saved: () => current,
+  };
 }
 
 describe("inspectRemote", () => {
@@ -292,6 +320,16 @@ describe("applyFirstConnect with no local book", () => {
     const book = unwrap(await applyFirstConnect("useRemote", { repo, store }));
     expect(bookFingerprint(book)).toBe(bookFingerprint(remote));
     expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(remote));
+    expect(store.getPayload()).toBe(encodeEnvelope(remote)); // remote untouched
+  });
+
+  it("useRemote adopts the Drive book over storage that cannot be read", async () => {
+    const remote = makeBook("Wallet", LATER);
+    const repo = brokenLoadRepository();
+    const store = createMemorySyncStore(encodeEnvelope(remote));
+    const book = unwrap(await applyFirstConnect("useRemote", { repo, store }));
+    expect(bookFingerprint(book)).toBe(bookFingerprint(remote));
+    expect(bookFingerprint(repo.saved()!)).toBe(bookFingerprint(remote));
     expect(store.getPayload()).toBe(encodeEnvelope(remote)); // remote untouched
   });
 

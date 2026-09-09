@@ -10,6 +10,9 @@ describe("deriveStatus", () => {
     expect(deriveStatus(true, null, null)).toBe("loading");
     expect(deriveStatus(true, BOOK, null)).toBe("loading");
     expect(deriveStatus(true, null, "STORAGE_UNAVAILABLE")).toBe("loading");
+    // Both a book and a boot error present at once, still loading: the two
+    // single-field cases above don't by themselves pin down this combination.
+    expect(deriveStatus(true, BOOK, "STORAGE_UNAVAILABLE")).toBe("loading");
   });
 
   it("is ready as soon as there is a book", () => {

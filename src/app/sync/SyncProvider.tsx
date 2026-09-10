@@ -57,6 +57,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // React has re-rendered with `applying`, so only a ref can turn it away.
   const applyingRef = useRef(false);
   const [applying, setApplying] = useState(false);
+  // Bumped by `teardownConnection` before it touches anything, so an async operation that
+  // started against the old connection can tell that the store, the auth and the file id
+  // it captured have since been pulled out from under it. A ref, not state: it has to be
+  // readable synchronously from inside a callback that is mid-await, and nothing renders
+  // from it. Deliberately invisible to `pending-plan-rule`'s tables — those describe the
+  // stage, and this is a fact about the provider's timeline that no stage can express.
+  const teardownGenerationRef = useRef(0);
 
   const buildStore = useCallback((): SyncStorePort => {
     if (!authRef.current) authRef.current = createGoogleAuth(CLIENT_ID);
@@ -177,6 +184,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
    * when the book was pulled out from under it and another when the user ended the flow —
    * and on the first of those, *which* plan matters too. See `afterTeardown`. */
   const teardownConnection = useCallback(async (intent: TeardownIntent) => {
+    // Before the first await, so anything already in flight sees the bump the moment this
+    // begins rather than three awaits later.
+    teardownGenerationRef.current += 1;
     engineRef.current?.dispose();
     engineRef.current = null;
     storeRef.current = null;
@@ -192,6 +202,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     // while the plan it is entitled to drop is the one named in `intent`, captured when
     // it started. See `afterTeardown`.
     setStage((s) => afterTeardown(s, intent));
+    // Part of the same invariant as the clear beside the drop commit below: the notice
+    // and a red error must never share the collapsed Connect row. Unconditional because
+    // every arm of `afterTeardown` leaves a stage on which an error raised against *this*
+    // connection means nothing — the connection is gone. On the `dropped` arm that is
+    // what keeps colour off a screen where nothing broke; on `idle` it keeps a stale sync
+    // error off the fresh Connect row the erase is about to open.
+    setLastError(null);
   }, [forgetFile, metaStore]);
 
   // Another tab's reset nulls the book here via the cross-tab broadcast, but that
@@ -235,8 +252,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const pendingInspection = stage.kind === "choosing" ? stage.inspection : null;
     if (!shouldTearDown(previous, book, { connected, pendingInspection })) return;
     void teardownConnection({ cause: "bookVanished", startedFrom: stage }).catch(() => {
-      // `teardownConnection`'s first statement, `engineRef.current?.dispose()`, is
-      // synchronous — the one danger this effect exists to close (a live engine
+      // `teardownConnection`'s `engineRef.current?.dispose()` runs synchronously, ahead
+      // of every await — the one danger this effect exists to close (a live engine
       // merging a fresh book against the old remote) is already shut by the time any
       // await here could reject. What a rejection (a thrown `revoke()`, say) leaves
       // behind is this tab's own `connected`/`pendingInspection` state not catching
@@ -279,6 +296,15 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     // while the stage is still the one this render derived from leaves a newer write
     // alone; the render it schedules re-derives the gate from it anyway.
     setStage((s) => (s === stage ? liveStage : s));
+    // The notice and a red error may not share the collapsed Connect row. `components.css`
+    // reserves colour for what needs a person or cannot be undone, and a dropped plan needs
+    // one tap on Connect — the neutral sentence is the whole explanation. The error that
+    // would sit under it is a failed apply from the plan being dropped, which is now moot.
+    // Cleared here, and again in `teardownConnection`, so the rule holds wherever the drop
+    // is committed rather than by an argument about which of the two writers got there
+    // first. Not folded into `afterLocalStateChange`: that table is pure and `lastError` is
+    // not part of `ConnectStage`.
+    if (liveStage.kind === "dropped") setLastError(null);
   }, [liveStage, stage]);
   const choosing = liveStage.kind === "choosing" ? liveStage : null;
 
@@ -369,6 +395,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       // first await, so it batches with `setApplying(true)` and no frame sees one
       // without the other.
       onStarted?.();
+      // Which connection this apply is running on. Read before the first await, and
+      // compared in the failure arm below.
+      const generation = teardownGenerationRef.current;
       try {
         setLastError(null);
         const applied = await applyFirstConnect(choice, {
@@ -377,6 +406,22 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           runExclusive,
         });
         if (!applied.ok) {
+          // A doomed apply says nothing. When the book vanishes mid-apply the teardown
+          // fires on that flush and this apply cannot survive it: `buildStore`'s
+          // `getToken` answers SYNC_AUTH_REQUIRED the moment `authRef` is nulled, so the
+          // red line under the choices would read "Sync is not connected" — an artifact
+          // of the teardown, needing nobody, contradicting the neutral drop notice that
+          // `afterTeardown` is writing for this very event. Two Drive round trips lose to
+          // one revoke POST and two IndexedDB writes, so that error would land *after*
+          // the drop commits and win the row; clearing `lastError` at the commit is not
+          // enough on its own, which is why both halves exist.
+          //
+          // A generation counter and not the stage: this is a fact about the provider's
+          // timeline, invisible to `pending-plan-rule`'s tables and to the whole test
+          // suite with it. Scoped to this arm deliberately — `connect()`'s failure arm
+          // recreates the auth and the store it needs, so a concurrent teardown does not
+          // doom it, and silencing it there would hide real sign-in failures.
+          if (teardownGenerationRef.current !== generation) return;
           setLastError(errorMessage(applied.error.code));
           return;
         }

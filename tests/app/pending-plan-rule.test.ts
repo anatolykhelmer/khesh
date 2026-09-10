@@ -4,6 +4,7 @@ import {
   afterTeardown,
   DROPPED,
   IDLE,
+  visibleError,
   type ConnectStage,
 } from "../../src/app/sync/pending-plan-rule";
 import type { LocalState } from "../../src/service/sync-connect";
@@ -198,5 +199,58 @@ describe("afterTeardown", () => {
         expect(afterTeardown(current, vanished(startedFrom))).toBe(dropped ? DROPPED : current);
       }
     }
+  });
+});
+
+describe("visibleError", () => {
+  // Whatever `errorMessage(code)` would have produced. The rule never reads the string.
+  const RED = "Sync is not connected";
+
+  it("shows a failed apply beside the choices it belongs to", () => {
+    // The choice screen is still live and the user can retry — this is the one place a
+    // red line under the choices is the right answer.
+    for (const local of ALL) {
+      expect(visibleError(choosing(local), RED)).toBe(RED);
+    }
+  });
+
+  it("shows a failed sign-in on the plain Connect row", () => {
+    // `idle` is the collapsed row with no notice on it. A dismissed or blocked Google
+    // popup leaves this error as the only thing the user has to go on; suppressing it
+    // here would be "Connect looks like it did nothing", which is BL-050's own complaint.
+    expect(visibleError(IDLE, RED)).toBe(RED);
+  });
+
+  it("keeps colour off the row the drop notice is on", () => {
+    // components.css:737 — colour means something needs a human or cannot be undone. A
+    // dropped plan needs one tap on Connect, and the notice says so. The error that would
+    // land under it is the moot failure of the plan being dropped, or the teardown's own.
+    expect(visibleError(DROPPED, RED)).toBe(null);
+  });
+
+  it("never lets the notice and a red line render together, for any stage or error", () => {
+    // The invariant stated directly, since `lastError` is not part of `ConnectStage` and
+    // the type cannot state it. The suppression is what closes the *frame*: `planWasDropped`
+    // is derived and true immediately, while the provider's `setLastError(null)` is a state
+    // write that lands a render later, and a paint fits in between — a `merge` fails with a
+    // network error, then another tab erases the book.
+    const stages: ConnectStage[] = [IDLE, DROPPED, ...ALL.map(choosing)];
+    for (const stage of stages) {
+      for (const error of [null, RED, ""]) {
+        const planWasDropped = stage.kind === "dropped";
+        const shown = visibleError(stage, error);
+        expect(planWasDropped && shown !== null).toBe(false);
+        // And nothing else is touched: every stage that is not `dropped` passes it through.
+        if (!planWasDropped) expect(shown).toBe(error);
+      }
+    }
+  });
+
+  it("has nothing to suppress when there is no error", () => {
+    // Pins the null case separately, so a mutant returning some sentinel instead of the
+    // input cannot hide behind the table above.
+    expect(visibleError(DROPPED, null)).toBe(null);
+    expect(visibleError(IDLE, null)).toBe(null);
+    expect(visibleError(choosing("real"), null)).toBe(null);
   });
 });

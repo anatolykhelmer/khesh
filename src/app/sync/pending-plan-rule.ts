@@ -150,3 +150,31 @@ export function afterTeardown(stage: ConnectStage, intent: TeardownIntent): Conn
   if (stage.kind === "choosing" && stage === intent.startedFrom) return DROPPED;
   return stage;
 }
+
+/**
+ * Which error the Connect row may still show in red, once the stage has had its say.
+ *
+ * `lastError` is not part of `ConnectStage`. It is `errorMessage(code)` from a real
+ * failure, written and cleared on its own schedule by `connect()` and `applyChoice`, so
+ * nothing in the type stops a red line rendering beside the neutral drop notice — and one
+ * path reached exactly that. `components.css:737` states the rule the two would break
+ * together: colour means *something needs a human, or something cannot be undone*. A
+ * dropped plan needs one tap on Connect, and the notice is the whole explanation; an
+ * error under it is either the failed apply of the plan being dropped, now moot, or the
+ * teardown's own doing.
+ *
+ * A function here rather than a `setLastError(null)` alone, because the two are not the
+ * same kind of guarantee and the provider needs both. `planWasDropped` is *derived* — true
+ * on the very frame the drop becomes derivable — while a clear is a state write that lands
+ * a render later, so one painted frame fits in between (a `merge` fails with a network
+ * error, then another tab erases the book). This closes that frame. The clear is what
+ * stops a merely hidden error resurfacing when something else moves the stage off
+ * `dropped` without touching `lastError`, which the resume effect does.
+ *
+ * Only `dropped` suppresses. A `choosing` screen shows its apply failures — the choices
+ * are still live and the user can retry one — and `idle` is the plain Connect row, where a
+ * failed sign-in is the only thing the user has to go on.
+ */
+export function visibleError(stage: ConnectStage, lastError: string | null): string | null {
+  return stage.kind === "dropped" ? null : lastError;
+}

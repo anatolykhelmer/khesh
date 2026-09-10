@@ -54,6 +54,12 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
   const sync = useSync();
   const [confirming, setConfirming] = useState<FirstConnectChoice | null>(null);
 
+  // Which choice the user dispatched, so only that button says it is working. Paired
+  // with `sync.applying` at every read, never trusted alone: a failed apply leaves the
+  // stage `choosing` and the inspection unchanged, so the reset effect below never fires
+  // and a label keyed on this alone would sit at "Working…" over a re-enabled button.
+  const [running, setRunning] = useState<FirstConnectChoice | null>(null);
+
   // A pending confirmation belongs to the plan it was opened against. `pendingInspection`
   // is a fresh object per connect and null between them, so this clears the expanded row
   // when the plan is cancelled, applied or replaced — otherwise the next Connect would
@@ -61,6 +67,7 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
   const inspection = sync.pendingInspection;
   useEffect(() => {
     setConfirming(null);
+    setRunning(null);
   }, [inspection]);
 
   if (!sync.configured) return null;
@@ -79,7 +86,7 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
             disabled={blocked}
             onClick={() => void sync.connect()}
           >
-            {t("sync.connect")}
+            {t(sync.applying ? "sync.connecting" : "sync.connect")}
           </button>
           <p className="muted row-hint">
             {t(book === null ? "sync.connectRestoreHint" : "sync.connectHint")}
@@ -154,9 +161,16 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
                         type="button"
                         className="danger"
                         disabled={blocked}
-                        onClick={() => void sync.applyChoice(choice)}
+                        onClick={() => {
+                          setRunning(choice);
+                          void sync.applyChoice(choice);
+                        }}
                       >
-                        {t(confirmKeys.confirm)}
+                        {t(
+                          running === choice && sync.applying
+                            ? "sync.applyingChoice"
+                            : confirmKeys.confirm,
+                        )}
                       </button>
                       <button
                         type="button"
@@ -182,10 +196,15 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
                         setConfirming(choice);
                         return;
                       }
+                      setRunning(choice);
                       void sync.applyChoice(choice);
                     }}
                   >
-                    {t(CHOICE_KEYS[choice].label)}
+                    {t(
+                      running === choice && sync.applying
+                        ? "sync.applyingChoice"
+                        : CHOICE_KEYS[choice].label,
+                    )}
                   </button>
                   <p className="muted row-hint">{hint}</p>
                 </li>

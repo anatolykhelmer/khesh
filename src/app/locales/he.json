@@ -129,6 +129,7 @@
   "sync": {
     "title": "Google Drive",
     "connect": "חיבור Google Drive",
+    "connecting": "מתחברים…",
     "connectHint": "שומר את הספר אוטומטית ב-Google Drive שלך ומעדכן את שאר המכשירים.",
     "neverSynced": "טרם סונכרן",
     "syncNow": "סנכרון עכשיו",
@@ -163,6 +164,7 @@
     "confirmReplaceRemoteYes": "כן, לדרוס את הספר שב-Drive",
     "choiceMerge": "למזג את שני הספרים",
     "choiceMergeWarning": "מיזוג של שני ספרים שהוקמו בנפרד מכפיל את קטגוריות השורש.",
+    "applyingChoice": "עובדים על זה…",
     "choiceUnreadable": "לא ניתן לקרוא את הקובץ ב-Drive. אפשר לדרוס אותו בספר מהמכשיר הזה.",
     "explainRemoteEmpty": "עדיין אין ספר Khesh ב-Google Drive שלכם. התחילו ספר כאן, ואז חברו.",
     "explainRemoteUnreadable": "לא הצלחנו לקרוא את הקובץ ב-Google Drive, ואין במכשיר הזה ספר להחליף אותו בו.",

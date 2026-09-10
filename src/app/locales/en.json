@@ -126,6 +126,7 @@
   "sync": {
     "title": "Google Drive",
     "connect": "Connect Google Drive",
+    "connecting": "Connecting…",
     "connectHint": "Autosaves the book to your own Google Drive and keeps your other devices in step.",
     "neverSynced": "Not synced yet",
     "syncNow": "Sync now",
@@ -160,6 +161,7 @@
     "confirmReplaceRemoteYes": "Yes, replace the Drive book",
     "choiceMerge": "Merge the two books",
     "choiceMergeWarning": "Merging two books that were set up separately doubles the root categories.",
+    "applyingChoice": "Working…",
     "choiceUnreadable": "The file in Drive could not be read. You can overwrite it with this device's book.",
     "explainRemoteEmpty": "There is no Khesh book in your Google Drive yet. Start a book here first, then connect.",
     "explainRemoteUnreadable": "The file in Google Drive could not be read, and there is no book on this device to replace it with.",

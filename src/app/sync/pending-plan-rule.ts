@@ -120,7 +120,8 @@ export type TeardownIntent =
  *   arm is about the two erase flows.)
  *
  * **Why `bookVanished` needs `startedFrom`, and this is the ordering assumption that
- * really is gone.** The three awaits are still there, and nothing bounds them:
+ * really is gone.** The awaits in front of that write are still there, and nothing bounds
+ * them:
  * `revoke()` is a network round trip with no timeout of its own, so this last line can
  * land arbitrarily late. `connect()` is not blocked in the meantime — it recreates the
  * auth and the store the teardown nulled — so by the time this runs the user may be
@@ -139,11 +140,19 @@ export type TeardownIntent =
  * the next `connect()`, adopting a connection another tab made, or a deliberate end to
  * the flow clears it.
  *
- * `userAction` needs no such care. Its two flows disable the Connect button for the
- * length of the teardown (`RecoveryScreen`'s `startingOver`) or end by calling
- * `cancelConnect()` themselves after the erase (`performReset`), so no plan started
- * mid-teardown survives to be wrongly cleared — and clearing is this arm's answer for
- * every stage anyway.
+ * `userAction` needs no such care, and the reason recorded here used to be false. It said
+ * the two erase flows cannot strand a plan started mid-teardown because `performReset`
+ * "ends by calling `cancelConnect()` itself". `cancelConnect` is `setStage(IDLE)` and
+ * nothing more: it ends the flow *on screen* and cannot see, let alone cancel, a
+ * `connect()` that is in flight — which is the whole of the window this arm was claimed to
+ * be free of. What is actually true is narrower and enough: a connect running under a
+ * `userAction` teardown never reaches a plan. `connectStillApplies` turns it away after
+ * the Drive read, so it writes no book, persists nothing and starts no engine — and never
+ * calls the `setStage({ kind: "choosing" })` that would put a plan here to be wrongly
+ * cleared. (What it does leave behind is a store and an auth bound to the Drive file, with
+ * no engine and no plan; see `teardownVerdict`.) Clearing is this arm's answer for every
+ * stage in any case, so even a plan that did somehow survive would be cleared rather than
+ * kept.
  */
 export function afterTeardown(stage: ConnectStage, intent: TeardownIntent): ConnectStage {
   if (intent.cause === "userAction") return IDLE;
@@ -152,39 +161,96 @@ export function afterTeardown(stage: ConnectStage, intent: TeardownIntent): Conn
 }
 
 /**
- * Whether a teardown's tail still speaks for this tab's connection — that is, whether it
- * may still write "disconnected" into this tab's state and the shared meta record.
+ * What is left for a teardown's tail to do, once the awaits in front of it have landed.
  *
- * `teardownConnection` clears the refs synchronously and then runs a tail behind three
- * awaits, none of them bounded (`revoke()` is a network round trip with no timeout of its
- * own). A `connect()` can complete inside that window — after a vanished book the drop
- * notice asks the user for exactly that — and `finalizeConnect` will have written the
- * opposite of everything the tail is about to write. `connectionsAtStart` is the count of
- * connections this tab had established when the teardown began; `connectionsNow` is the
- * count when the tail landed.
- *
+ * `teardownConnection` lets go of the refs synchronously and then runs a tail behind two
+ * unbounded awaits (`revoke()` is a network round trip with no timeout of its own). A
+ * `connect()` can complete inside that window — after a vanished book the drop notice asks
+ * the user for exactly that — and `finalizeConnect` will have written the opposite of
+ * everything the tail is about to write, *and* armed a fresh engine, store and auth on the
+ * refs the teardown had just vacated. `connectionsAtStart` is the count of connections this
+ * tab had established when the teardown began; `connectionsNow` is the count when the tail
+ * landed.
+ */
+export type TeardownVerdict =
+  /** Nothing landed underneath: record the disconnection and stop. */
+  | "proceed"
+  /** A connect finalized inside the window and outranks this teardown: write nothing at
+   * all. `setStage` included — `finalizeConnect` has already written `IDLE`, so there is no
+   * stale plan left to drop. */
+  | "superseded"
+  /** A connect finalized inside the window and this teardown outranks it: let go of the
+   * engine, store and auth *that connect* armed, and only then record the disconnection.
+   * Recording alone would leave a live engine pointed at the user's real Drive file under
+   * an app — and a persisted record — that says it is disconnected. */
+  | "override";
+
+/**
  * **The two causes want opposite answers, and that asymmetry is the whole of this
  * function.** A vanished book is the app's own judgement, and a connect the user made
- * afterwards is newer information about a local state the erase left behind, so it wins.
- * A `userAction` teardown is not a judgement to be overruled: the user asked to
- * disconnect, reset or start over, and those flows *continue* — `performReset` erases the
- * book next, `performStartOver` opens onboarding. Letting a connect win there leaves
- * `connected: true` persisted with a live engine pointed at the real Drive file while the
- * book is null and onboarding is on screen, whose Continue then merges a fresh seed
- * against the real remote. That is BL-040, the failure these flows exist to prevent.
+ * afterwards is newer information about the local state the erase left behind, so it wins.
+ * A `userAction` teardown is not a judgement to be overruled: the user asked to disconnect,
+ * reset or start over, and those flows *continue* — `performReset` erases the book next,
+ * `performStartOver` opens onboarding. Letting a connect win there leaves `connected: true`
+ * persisted with a live engine pointed at the real Drive file while the book is null and
+ * onboarding is on screen, whose Continue then merges a fresh seed against the real remote.
+ * That is BL-040, the failure these flows exist to prevent.
  *
  * The teardown effect cannot be relied on to clean that up afterwards: it writes
  * `previousBookRef.current = book` on every run, so a run that sees the book go null while
  * `connected` is still false consumes the transition, and `shouldTearDown` — which needs
  * `previous` to be non-null — can never fire for it again.
+ *
+ * **Three outcomes rather than a boolean**, because "may this tail still write?" was only
+ * half the question and answering the other half inline was how the last two rounds of
+ * this file each shipped a defect. Overruling a connect is not the same act as never having
+ * been overruled: the first has an engine, a store and an auth to let go of that this
+ * teardown never armed. A named third case makes flattening the two a test failure rather
+ * than a code-review question.
+ *
+ * Note what `override` is *not*: a `userAction` teardown that was never superseded returns
+ * `proceed` and re-releases nothing. A connect that is merely in flight — inspected, refs
+ * armed, not yet finalized — has not bumped the counter, so it does not produce `override`.
+ * That connect is doomed anyway (`connectStillApplies`), and what it leaves on the refs is
+ * a store and an auth with no engine and no plan, which nothing in the provider can act on.
  */
-export function teardownStillApplies(
+export function teardownVerdict(
   intent: TeardownIntent,
   connectionsAtStart: number,
   connectionsNow: number,
+): TeardownVerdict {
+  if (connectionsAtStart === connectionsNow) return "proceed";
+  return intent.cause === "userAction" ? "override" : "superseded";
+}
+
+/**
+ * The same question from the connect's side: may an operation that began when this tab had
+ * seen `userTeardownsAtStart` user-action teardowns still finalize?
+ *
+ * `teardownVerdict` says a `userAction` teardown outranks a connect that landed inside its
+ * window. That is only half a rule while the connect keeps arming things regardless: the
+ * tail's `override` reaches a connect that finalized *before* the tail, and nothing reaches
+ * one that finalizes after it. So the connect asks too, at every point where it is about to
+ * do something the erase would have to undo — write the local book (`connect()`'s auto-apply
+ * path), persist `connected: true`, or start an engine.
+ *
+ * **Only user-action teardowns count, and that filter lives at the bump in `SyncProvider`,
+ * not here.** A `bookVanished` teardown must never veto a connect: the drop notice asks the
+ * user to tap Connect precisely while one may still be running, and vetoing it would print
+ * "connect again" beside a Connect that then did nothing — BL-050 restored by its own fix.
+ * The counter this compares is incremented only on the `userAction` arm; no test in this
+ * repo can see that, so it is named in the parameters and stated here.
+ *
+ * The comparison is difference, not ordering, for the same reason as `teardownVerdict`'s:
+ * the counter only ever increments today, so `>=` would agree on every input the provider
+ * can produce — and would silently answer "still applies" for an aborted connect the day
+ * anything resets it.
+ */
+export function connectStillApplies(
+  userTeardownsAtStart: number,
+  userTeardownsNow: number,
 ): boolean {
-  if (intent.cause === "userAction") return true;
-  return connectionsAtStart === connectionsNow;
+  return userTeardownsAtStart === userTeardownsNow;
 }
 
 /**

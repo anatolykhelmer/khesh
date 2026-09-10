@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   afterLocalStateChange,
   afterTeardown,
+  connectStillApplies,
   DROPPED,
   IDLE,
-  teardownStillApplies,
+  teardownVerdict,
   visibleError,
   type ConnectStage,
 } from "../../src/app/sync/pending-plan-rule";
@@ -256,23 +257,23 @@ describe("visibleError", () => {
   });
 });
 
-describe("teardownStillApplies", () => {
-  const ERASE = { cause: "userAction" } as const;
-  const VANISHED = { cause: "bookVanished", startedFrom: choosing("real") } as const;
+const ERASE = { cause: "userAction" } as const;
+const VANISHED = { cause: "bookVanished", startedFrom: choosing("real") } as const;
 
+describe("teardownVerdict", () => {
   it("lets a connect made after a vanished book overrule the teardown", () => {
     // The drop notice asks the user to tap Connect, and `revoke()` is a network round trip
     // with no timeout of its own, so that tap can land inside the teardown's own window. A
     // connect that reached `finalizeConnect` has written `connected: true`; the tail's
     // "disconnected" would leave a live engine and live refs under an app that says it is
     // disconnected — persisted, so the next boot resumes nothing.
-    expect(teardownStillApplies(VANISHED, 3, 4)).toBe(false);
+    expect(teardownVerdict(VANISHED, 3, 4)).toBe("superseded");
   });
 
   it("keeps a vanished-book teardown when nothing connected underneath it", () => {
     // The ordinary case, and the one that must not be broken by the clause above.
-    expect(teardownStillApplies(VANISHED, 0, 0)).toBe(true);
-    expect(teardownStillApplies(VANISHED, 7, 7)).toBe(true);
+    expect(teardownVerdict(VANISHED, 0, 0)).toBe("proceed");
+    expect(teardownVerdict(VANISHED, 7, 7)).toBe("proceed");
   });
 
   it("never lets a connect overrule an erase the user asked for", () => {
@@ -281,8 +282,21 @@ describe("teardownStillApplies", () => {
     // true` persisted with a live engine on the real Drive file while the book is null —
     // and onboarding's Continue then merges a fresh seed against the real remote. BL-040,
     // the failure these two flows exist to prevent.
-    expect(teardownStillApplies(ERASE, 3, 4)).toBe(true);
-    expect(teardownStillApplies(ERASE, 0, 9)).toBe(true);
+    expect(teardownVerdict(ERASE, 3, 4)).not.toBe("superseded");
+    expect(teardownVerdict(ERASE, 0, 9)).not.toBe("superseded");
+  });
+
+  it("tells overruling a connection apart from never having been overruled", () => {
+    // The third outcome, and the whole of what it buys. Both of these let the tail write
+    // "disconnected"; only one of them has an engine, a store and an auth to let go of
+    // first — the ones `finalizeConnect` armed on the refs this teardown had already
+    // vacated. Answering `proceed` for the left-hand case is the defect: a persisted
+    // "disconnected" over a live engine still pointed at the user's real Drive file.
+    expect(teardownVerdict(ERASE, 3, 4)).toBe("override");
+    // And answering `override` for the right-hand one is the opposite mistake — a second
+    // revoke and a second meta write on every ordinary Disconnect, reset and start over.
+    expect(teardownVerdict(ERASE, 4, 4)).toBe("proceed");
+    expect(teardownVerdict(ERASE, 0, 0)).toBe("proceed");
   });
 
   it("does not fall back on the teardown effect to undo a skipped erase", () => {
@@ -290,10 +304,10 @@ describe("teardownStillApplies", () => {
     // `previousBookRef.current = book` on every run, so a run that sees the book go null
     // while `connected` is still false consumes the transition — and `shouldTearDown`
     // needs `previous` to be non-null, so it can never fire for that erase again. Pinned
-    // as a truth about the pair: the answer for `userAction` does not depend on the counts
-    // at all, which is what makes it independent of that timing.
+    // as a truth about the pair: whatever the counts, a `userAction` teardown always ends
+    // up recording the disconnection, which is what makes it independent of that timing.
     for (const [start, now] of [[0, 0], [1, 2], [5, 5], [2, 99]] as const) {
-      expect(teardownStillApplies(ERASE, start, now)).toBe(true);
+      expect(teardownVerdict(ERASE, start, now)).not.toBe("superseded");
     }
   });
 
@@ -301,17 +315,77 @@ describe("teardownStillApplies", () => {
     // `connectionGenerationRef` only ever increments, so `>=` and `===` agree on every
     // input the provider can produce and this case is unreachable today — which is exactly
     // why it is worth pinning. A future edit that resets the ref (on unmount, on a
-    // disconnect) would make `>=` answer "still applies" for a teardown that a live
-    // connection had superseded, and nothing else in this file would notice.
-    expect(teardownStillApplies(VANISHED, 5, 3)).toBe(false);
+    // disconnect) would make `>=` answer `proceed` for a teardown that a live connection
+    // had superseded, and nothing else in this file would notice.
+    expect(teardownVerdict(VANISHED, 5, 3)).toBe("superseded");
+    expect(teardownVerdict(ERASE, 5, 3)).toBe("override");
   });
 
   it("is exactly the cause crossed with whether a connection landed", () => {
     // The table. A mutant that drops the cause check fails the `userAction` row; one that
-    // swaps the causes fails both; one that answers a constant fails one row entirely.
+    // swaps the causes fails both; one that answers a constant fails at least one row
+    // entirely; one that inverts the comparison fails every row.
     for (const [start, now] of [[0, 0], [4, 4], [0, 1], [4, 9], [9, 4]] as const) {
-      expect(teardownStillApplies(ERASE, start, now)).toBe(true);
-      expect(teardownStillApplies(VANISHED, start, now)).toBe(start === now);
+      const landed = start !== now;
+      expect(teardownVerdict(ERASE, start, now)).toBe(landed ? "override" : "proceed");
+      expect(teardownVerdict(VANISHED, start, now)).toBe(landed ? "superseded" : "proceed");
+    }
+  });
+});
+
+describe("connectStillApplies", () => {
+  it("lets a connect no erase began under it finish", () => {
+    // The ordinary first connect, and every connect the drop notice asks for: a
+    // `bookVanished` teardown does not touch this counter, so the tap the notice invites
+    // is never turned away by it. Vetoing there would be BL-050 restored by its own fix —
+    // "connect again to see the current ones", beside a Connect that then did nothing.
+    expect(connectStillApplies(0, 0)).toBe(true);
+    expect(connectStillApplies(5, 5)).toBe(true);
+  });
+
+  it("aborts a connect the user's own erase began under", () => {
+    // Settings' erase and the recovery screen's start over both run on past the
+    // `disconnect()` they open with — `performReset` erases the book next. A connect that
+    // finalizes anywhere in there persists `connected: true` and arms an engine at the real
+    // Drive file while the local book is being destroyed under it.
+    expect(connectStillApplies(0, 1)).toBe(false);
+    expect(connectStillApplies(4, 7)).toBe(false);
+  });
+
+  it("asks whether the count differs, not which way", () => {
+    // Same unreachable-direction pin as `teardownVerdict`'s, and for the same reason:
+    // `userTeardownsRef` only ever increments, so `>=` and `<=` both agree with `===` on
+    // every input the provider can produce today and would survive a table without this.
+    expect(connectStillApplies(5, 3)).toBe(false);
+    expect(connectStillApplies(3, 5)).toBe(false);
+  });
+
+  it("is exactly equality, over a table a constant cannot hide in", () => {
+    for (const start of [0, 1, 4]) {
+      for (const now of [0, 1, 4]) {
+        expect(connectStillApplies(start, now)).toBe(start === now);
+      }
+    }
+  });
+
+  it("agrees with teardownVerdict about the same overlap, from the other side", () => {
+    // One interleaving, asked twice: a connect begins, a teardown begins underneath it, the
+    // connect reaches `finalizeConnect` inside the teardown's window, and the tail lands
+    // last. The two rules must not disagree — a connect that is allowed to finalize while
+    // the tail is told to overrule it is the live-engine-under-`connected: false` state,
+    // and a connect that is aborted while the tail defers to it leaves nobody writing
+    // anything at all.
+    //
+    // The counters move differently by cause, and that is wiring `SyncProvider` owns: only
+    // a `userAction` teardown bumps the one the connect watches, while any finalize bumps
+    // the one the teardown watches. This models that and pins the pair's agreement.
+    for (const intent of [ERASE, VANISHED] as const) {
+      const userTeardownsNow = intent.cause === "userAction" ? 1 : 0;
+      const connectMayFinalize = connectStillApplies(0, userTeardownsNow);
+      const verdict = teardownVerdict(intent, 1, 2);
+
+      expect(connectMayFinalize).toBe(intent.cause !== "userAction");
+      expect(verdict).toBe(intent.cause === "userAction" ? "override" : "superseded");
     }
   });
 });

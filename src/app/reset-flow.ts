@@ -11,11 +11,18 @@ export type ResetSyncDeps = {
    * trigger teardown — otherwise the choice UI survives the reset armed at the old file. */
   pendingInspection: unknown;
   disconnect: () => Promise<void>;
-  /** Ends the first-connect flow outright — `SyncProvider`'s `setStage(IDLE)`. Needed
-   * beyond `disconnect` because a *dropped* plan holds neither a connection nor an
-   * inspection: both fields above read quiet, the gate below skips the teardown that
-   * would have cleared it, and the notice explaining a book move that happened before
-   * the erase rides through onto the fresh onboarding screen. */
+  /** Clears whatever the first-connect flow has on screen — `SyncProvider`'s
+   * `setStage(IDLE)`, and nothing else. Needed beyond `disconnect` because a *dropped*
+   * plan holds neither a connection nor an inspection: both fields above read quiet, the
+   * gate below skips the teardown that would have cleared it, and the notice explaining a
+   * book move that happened before the erase rides through onto the fresh onboarding
+   * screen.
+   *
+   * **It is not cancellation**, and comments elsewhere used to lean on it as though it
+   * were. It cannot see a `connect()` that is in flight, let alone stop one: an inspection
+   * already under way still returns, still holds the store and auth it bound to the user's
+   * real Drive file, and still finalizes. What stops that is `connectStillApplies` in the
+   * provider and the erase flag `DangerZone` now publishes to `SyncSection`. */
   cancelConnect: () => void;
 };
 
@@ -32,6 +39,19 @@ export type ResetDeps = {
  * erase the local book, and only then announce the null book. Announcing before the erase
  * lands would race the onboarding screen against a book that still exists; disconnecting
  * after it would leave a window where a live engine can see the newly-empty storage.
+ *
+ * **This sequence leaves a window it cannot close itself.** `disconnect()` ends with
+ * `connected: false`, so from the moment it resolves until `announceBookChanged(null)`
+ * unmounts the screen, Settings renders its disconnected view — an enabled Connect row —
+ * for the whole of `resetAll()`. A connect finalizing in there arms an engine at the user's
+ * real Drive file while the local book is being erased, and the teardown effect cannot
+ * recover: it consumes the book's null transition on a render where `connected` is still
+ * false, and `shouldTearDown` needs a non-null `previous` to fire again. Nothing available
+ * here fixes that — `cancelConnect()` clears the screen, not an in-flight `connect()`, and
+ * `useSync()` cannot tell the provider that the erase is still running. It is closed by the
+ * caller instead: `DangerZone` holds `busy` for the whole of this function and publishes it
+ * to `SyncSection`, which disables Connect and Reconnect. That indirection is the guard —
+ * it is not decoration, and removing it reopens BL-040.
  *
  * Extracted out of the DangerZone component so this ordering has a test: this repo's
  * Vitest runs in `environment: "node"` with no component-testing library, so a React
@@ -61,6 +81,10 @@ export async function performReset(deps: ResetDeps): Promise<void> {
   // was about the book that no longer exists, and the screen this is one line from
   // opening is onboarding's. Not earlier — an erase that fails leaves the book, and with
   // it every reason the notice was put up.
+  //
+  // Clearing the screen only. This line has been cited more than once as though it made
+  // the erase safe against a connect started underneath it; it does not, and cannot —
+  // see `ResetSyncDeps.cancelConnect`.
   deps.sync.cancelConnect();
   // No book: App renders OnboardingScreen here, and the other tabs follow the
   // broadcast into the same place.

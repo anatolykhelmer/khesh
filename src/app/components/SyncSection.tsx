@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { LedgerErrorCode } from "../../kernel/errors";
 import { errorMessage } from "../../service/error-messages";
@@ -13,13 +14,52 @@ const SPECIFIC_ERROR_KEYS: Partial<Record<LedgerErrorCode, string>> = {
   SYNC_FILE_AMBIGUOUS: "sync.errorFileAmbiguous",
 };
 
-/** The Settings "Sync" block: connect button, first-connect choice, status,
- * manual-resolution actions. Renders nothing when no OAuth client id is built in. */
-export function SyncSection() {
+/**
+ * The Settings "Sync" block: connect button, first-connect choice, status,
+ * manual-resolution actions. Renders nothing when no OAuth client id is built in.
+ *
+ * `disabled` is the screen's own erase — `DangerZone`'s `busy`, lifted through
+ * `SettingsScreen`. Settings is the screen that renders a first connect and the erase as
+ * siblings, and until now only one of them knew about the other: `DangerZone` gates its
+ * button on `sync.applying` and a plan being on screen, while every Connect here stayed
+ * live for the whole of `performReset`. That gap is not theoretical. `performReset` awaits
+ * `disconnect()` first, and the tail of that writes `connected: false` — so for the whole
+ * of `resetAll()` this block renders its `!connected` branch with an enabled Connect row,
+ * and a connect finalizing into that window arms an engine at the user's real Drive file
+ * while the book is being erased out from under it (BL-040). `RecoveryScreen` and
+ * `OnboardingScreen` have passed this union into `ConnectDrive` since BL-049; Settings is
+ * the screen that never got it. Nothing in the provider can substitute: the erase runs on
+ * past the teardown, and `useSync()` has no way to know it is still running.
+ */
+export function SyncSection({ disabled = false }: { disabled?: boolean }) {
   const { t, i18n } = useTranslation();
   const sync = useSync();
+  // The other half of the same window, and this one is this component's own: `disconnect`
+  // is awaited here with nothing gating the rows underneath it. On a `SYNC_FILE_MISSING`
+  // state the connected view stays up for the whole teardown — `connected` goes false only
+  // at its tail — and the Reconnect row below is disabled by `sync.applying` alone, so a
+  // tap runs a fresh `connect()` against a connection this tab is in the middle of
+  // dropping. Ref plus state for the reason the rest of the app uses it: a second tap
+  // arrives before React has re-rendered.
+  const [disconnecting, setDisconnecting] = useState(false);
+  const disconnectingRef = useRef(false);
+
+  async function onDisconnect() {
+    if (disconnectingRef.current) return;
+    disconnectingRef.current = true;
+    setDisconnecting(true);
+    try {
+      await sync.disconnect();
+    } finally {
+      disconnectingRef.current = false;
+      setDisconnecting(false);
+    }
+  }
 
   if (!sync.configured) return null;
+
+  // Everything in this block that starts or re-starts a connection is blocked by both.
+  const blocked = disabled || disconnecting;
 
   const when = relativeSyncTime(sync.state?.lastSyncAt ?? null, Date.now(), i18n.language);
 
@@ -29,7 +69,8 @@ export function SyncSection() {
         {sync.pendingInspection === null ? (
           <h2 className="section-label">{t("sync.title")}</h2>
         ) : null}
-        <ConnectDrive />
+        {/* `ConnectDrive` adds `sync.applying` itself. */}
+        <ConnectDrive disabled={blocked} />
       </>
     );
   }
@@ -119,7 +160,7 @@ export function SyncSection() {
             <button
               type="button"
               className="row-button"
-              disabled={sync.applying}
+              disabled={sync.applying || blocked}
               onClick={() => void sync.reconnect()}
             >
               {t("sync.reconnectAction")}
@@ -147,7 +188,12 @@ export function SyncSection() {
       {manualResolution}
       <ul className="settings-list group">
         <li className="settings-row">
-          <button type="button" className="row-button" onClick={() => void sync.disconnect()}>
+          <button
+            type="button"
+            className="row-button"
+            disabled={blocked}
+            onClick={() => void onDisconnect()}
+          >
             {t("sync.disconnect")}
           </button>
           <p className="muted row-hint">{t("sync.disconnectHint")}</p>

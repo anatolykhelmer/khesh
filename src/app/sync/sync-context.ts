@@ -51,10 +51,15 @@ export type SyncContextValue = {
    * invisible from outside, so a refused tap would otherwise re-label the wrong button
    * while a different choice runs. */
   applyChoice: (choice: FirstConnectChoice, onStarted?: () => void) => Promise<void>;
-  /** Ends the first-connect flow: no plan, no inspection, no dropped-plan notice. The
-   * Cancel button, and `performReset` once the erase has landed — an erase leaves nothing
-   * for either to be about, and a dropped plan is invisible to the "is anything
-   * connected?" gate that decides whether that flow disconnects at all. */
+  /** Ends the first-connect flow *as the screen shows it*: no plan, no inspection, no
+   * dropped-plan notice. The Cancel button, and `performReset` once the erase has landed —
+   * an erase leaves nothing for either to be about, and a dropped plan is invisible to the
+   * "is anything connected?" gate that decides whether that flow disconnects at all.
+   *
+   * Not a cancellation, despite the name: it is one `setState`. A `connect()` already in
+   * flight keeps running, and the store, auth and file id it bound to the user's real
+   * Drive file stay bound — `disconnect` is what lets go of those. Do not reach for this
+   * to make something else safe. */
   cancelConnect: () => void;
   disconnect: () => Promise<void>;
   syncNow: () => void;

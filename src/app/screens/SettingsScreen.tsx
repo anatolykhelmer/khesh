@@ -18,6 +18,10 @@ export function SettingsScreen() {
   // that can tell one about the other. `performReset` runs on for the whole of `resetAll()`
   // after the `disconnect()` it starts with, and `SyncSection` renders an enabled Connect
   // row for all of it unless it is told. See `SyncSection`'s doc comment for the failure.
+  //
+  // Both props below are required rather than optional, so that dropping either end of
+  // this — the only guard on that window — is a `tsc` error here. It was neither a test
+  // failure nor a lint error before: deleting both left 724/724 green.
   const [erasing, setErasing] = useState(false);
 
   if (!book) return null;

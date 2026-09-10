@@ -15,8 +15,16 @@ import { useSync } from "../sync/sync-context";
  *
  * `onBusyChange` lifts that `busy` to `SettingsScreen`, which hands it down to
  * `SyncSection` — `ImportBookButton`'s pattern, for the reason given below: the erase and
- * the Connect row are siblings on one screen and each has to know the other is running. */
-export function DangerZone({ onBusyChange }: { onBusyChange?: (busy: boolean) => void }) {
+ * the Connect row are siblings on one screen and each has to know the other is running.
+ *
+ * **Required, where `ImportBookButton`'s is optional.** That is not an inconsistency: the
+ * import button has a real call site with nothing to tell (`SettingsScreen`'s own), while
+ * this prop is the first hop of the only guard on `performReset`'s post-teardown window —
+ * `performReset`'s doc calls it "not decoration", and dropping it reopens BL-040 with the
+ * whole suite green, since no test in this repo can mount a component. This component has
+ * exactly one call site, so requiring it costs nothing and buys the one check that does
+ * run over this file: `tsc`. */
+export function DangerZone({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
   const { t } = useTranslation();
   const { app, announceBookChanged, setError } = useLedger();
   const sync = useSync();
@@ -44,7 +52,7 @@ export function DangerZone({ onBusyChange }: { onBusyChange?: (busy: boolean) =>
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
-    onBusyChange?.(true);
+    onBusyChange(true);
     try {
       await performReset({
         sync,
@@ -55,7 +63,7 @@ export function DangerZone({ onBusyChange }: { onBusyChange?: (busy: boolean) =>
     } finally {
       busyRef.current = false;
       setBusy(false);
-      onBusyChange?.(false);
+      onBusyChange(false);
     }
   }
 

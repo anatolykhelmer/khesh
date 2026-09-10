@@ -456,17 +456,41 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   }, [liveStage, stage]);
   const choosing = liveStage.kind === "choosing" ? liveStage : null;
 
-  const connect = async () => {
+  /**
+   * The first-connect flow: sign in, read Drive, then either apply the one obvious answer
+   * or put the choices on screen.
+   *
+   * **`userTeardownsAtStart` is a parameter and not a read at the top of this function**,
+   * because the top of this function is not always the start of the operation the user
+   * asked for. Every `connectStillApplies` below is only as good as the moment its first
+   * argument was read: it asks "did the user's own erase begin under me?", and an erase
+   * that began *before* the capture reads equal on both sides and is waved through.
+   *
+   * `reconnect` is the caller that makes this concrete. It awaits `forgetFile()` — an
+   * IndexedDB read-modify-write — before it gets here, and nothing is holding the erase
+   * off during it: `applying` is still false, so `DangerZone`'s already-open confirmation
+   * is live, and a tap there runs `performReset`, whose `disconnect()` bumps
+   * `userTeardownsRef` synchronously. Reading the counter here would capture the bumped
+   * value, every comparison below would compare 1 with 1, and the connect would run to
+   * `finalizeConnect` — persisting `connected: true` and arming an engine at the user's
+   * real Drive file while `resetAll()` erases the book. BL-040, by the exact route this
+   * counter exists to block.
+   *
+   * The two reasons recorded here before were both false for that interleaving, and are
+   * worth naming: "that tap is disabled while a teardown runs (`SyncSection`)" describes a
+   * Reconnect tap made *during* a teardown, where here the tap precedes it; and "the
+   * teardown's own `override` catches the finalize on the other side" holds only for a
+   * finalize that bumps inside the teardown's remaining `revoke()`, where this window
+   * spans an interactive token, a Drive read, an apply and an email fetch.
+   *
+   * What is left is narrower and stated rather than closed: an erase that begins during
+   * `forgetFile()` is now seen, but only at the first guard below — the OAuth popup has
+   * opened by then. A doomed connect costs the user one popup it then says nothing about.
+   */
+  const connect = async (userTeardownsAtStart: number) => {
     if (applyingRef.current) return;
     applyingRef.current = true;
     setApplying(true);
-    // Which erase generation this connect belongs to, read before the first await:
-    // everything below is a Drive round trip, and the user's own erase can begin under any
-    // of them. See `connectStillApplies`. `reconnect` awaits `forgetFile()` ahead of this,
-    // so an erase beginning inside that one IndexedDB write is not seen here — that tap is
-    // disabled while a teardown runs (`SyncSection`), and the teardown's own `override`
-    // catches the finalize on the other side.
-    const userTeardowns = userTeardownsRef.current;
     try {
       setLastError(null);
       // The user did the thing the dropped-plan notice asks for, so the notice goes now
@@ -500,7 +524,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       // not gated on `sync.applying`, because a reconnect that will not finish is exactly
       // when disconnecting must stay possible.) The `finally` still clears `applying`, so
       // no button is left reading "Connecting…".
-      if (!connectStillApplies(userTeardowns, userTeardownsRef.current)) return;
+      if (!connectStillApplies(userTeardownsAtStart, userTeardownsRef.current)) return;
       const plan = firstConnectOptions(localState, inspection.value);
       if (plan.kind === "apply") {
         const applied = await applyFirstConnect(plan.choice, { repo, store, runExclusive });
@@ -508,7 +532,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           setLastError(errorMessage(applied.error.code));
           return;
         }
-        await finalizeConnect(userTeardowns);
+        await finalizeConnect(userTeardownsAtStart);
         return;
       }
       // "choose" and "explain" both need the user to see the screen. `localState` here is
@@ -540,7 +564,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
     applying,
 
-    connect,
+    // Wrapped for `disconnect`'s reason — a bare reference would let an
+    // `onClick={sync.connect}` hand the erase counter a click event — and for one more:
+    // this is where the counter is read, at the tap, because for a plain Connect the tap
+    // *is* the whole operation. No await stands between this read and the guards inside.
+    connect: () => connect(userTeardownsRef.current),
 
     // What "the sync file is missing — reconnect to create it again" has always
     // promised, in one tap: drop the dead id, then run the connect flow. Never a blind
@@ -549,8 +577,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     // of being overwritten.
     reconnect: async () => {
       if (applyingRef.current) return;
+      // **Before `forgetFile()`, not inside `connect()`.** This tap is the start of the
+      // operation, and everything after it is a window an erase can begin in — starting
+      // with the IndexedDB write on the next line, during which nothing disables the
+      // Settings erase confirmation that renders beside this row. See `connect`'s doc.
+      const userTeardownsAtStart = userTeardownsRef.current;
       await forgetFile();
-      await connect();
+      await connect(userTeardownsAtStart);
     },
 
     applyChoice: async (choice: FirstConnectChoice, onStarted?: () => void) => {
@@ -580,17 +613,14 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       // separate counter because the two questions differ: the one above asks "was I torn
       // down?" and any cause answers it, this one asks "did the user start erasing under
       // me?" and only `userAction` does.
+      //
+      // Read at the start of the operation and not merely before some await — the
+      // distinction `connect()`'s doc is about. Here the two coincide: the tap reaches
+      // this line through nothing but synchronous guards, so no caller can widen the gap
+      // the way `reconnect` widens `connect`'s, and there is nothing to thread in.
       const userTeardowns = userTeardownsRef.current;
       try {
         setLastError(null);
-        // Same guard `connect()` puts in front of its auto-apply, and for the same reason:
-        // `applyFirstConnect` writes the local book, and an erase that has begun will
-        // either throw that work away or have it land after `resetAll()` and put the Drive
-        // book back on disk. No screen can produce this today — `DangerZone` gates the
-        // reset tap on `sync.applying` and on a plan being on screen, so an erase cannot
-        // begin between the tap and here — but that is a fact about another component, and
-        // this branch has twice had to retract a claim resting on one.
-        if (!connectStillApplies(userTeardowns, userTeardownsRef.current)) return;
         const applied = await applyFirstConnect(choice, {
           repo,
           store: buildStore(),
@@ -623,6 +653,33 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           setLastError(errorMessage(applied.error.code));
           return;
         }
+        // The erase guard belongs **behind** the apply, and used to sit in front of it
+        // where it could not fire at all: the capture above and the check were separated
+        // by `setLastError(null)` and a comment — no await, no async boundary — so the two
+        // reads were one read and `connectStillApplies` was equality on a value with
+        // itself. Its comment blamed `DangerZone`'s gate for that, which invited the next
+        // reader to think relaxing the gate would wake the check up. Nothing would have.
+        //
+        // Here it is capable of firing, and there is something left for it to stop.
+        // `applyFirstConnect` is Drive I/O plus a `repo.save`, so an erase can begin
+        // inside it, and the two lines below are what an erase would then have to undo:
+        // `announceBookChanged` puts the book being erased back into the app — moments
+        // later `performReset` announces null, and whichever lands last decides whether
+        // the user ends on onboarding or on the ledger they just erased — and
+        // `finalizeConnect` persists `connected: true` over an engine aimed at the real
+        // Drive file. What it cannot do is unwrite the `repo.save` the apply already made;
+        // that residual is `connect()`'s comment's and the spec's, not this line's.
+        //
+        // Still not reachable today, and the honest reason is a fact about three other
+        // components: `DangerZone` and `RecoveryScreen` both gate their erase on
+        // `sync.applying`, true for the whole of this function, and `SyncSection`'s
+        // Disconnect is not rendered at all while a plan is on screen. That is exactly the
+        // kind of claim this branch has repeatedly had to retract, so the guard is placed
+        // where it can act if one of the three changes — not deleted on their word.
+        //
+        // Not a substitute for `finalizeConnect`'s own checks, which cover its awaits from
+        // the inside. This is the only one that reaches `announceBookChanged`.
+        if (!connectStillApplies(userTeardowns, userTeardownsRef.current)) return;
         announceBookChanged(applied.value);
         await finalizeConnect(userTeardowns);
       } finally {

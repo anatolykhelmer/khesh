@@ -30,8 +30,14 @@ const SPECIFIC_ERROR_KEYS: Partial<Record<LedgerErrorCode, string>> = {
  * `OnboardingScreen` have passed this union into `ConnectDrive` since BL-049; Settings is
  * the screen that never got it. Nothing in the provider can substitute: the erase runs on
  * past the teardown, and `useSync()` has no way to know it is still running.
+ *
+ * **Required, with no default.** A `disabled = false` default reads as a courtesy and is
+ * not one: this component has exactly one call site, and the only thing an omission could
+ * mean there is that the second hop of that guard has been dropped — silently, because
+ * `performReset`'s window is unreachable from a repo whose Vitest cannot mount a
+ * component. Required, and `tsc` says so instead of nobody saying so.
  */
-export function SyncSection({ disabled = false }: { disabled?: boolean }) {
+export function SyncSection({ disabled }: { disabled: boolean }) {
   const { t, i18n } = useTranslation();
   const sync = useSync();
   // The other half of the same window, and this one is this component's own: `disconnect`

@@ -73,7 +73,7 @@ describe("performReset", () => {
     // A dropped-plan notice is neither `connected` nor a `pendingInspection`, so the gate
     // above skips the teardown that would otherwise have cleared it — and `dropped` is
     // terminal, so nothing else recomputes it. Without this call the sentence "the book on
-    // this device changed while Google Drive was being read" rides the erase onto the
+    // this device changed, so those options no longer apply" rides the erase onto the
     // onboarding screen the next line opens, describing a book that no longer exists.
     const { deps, calls } = tracked({ connected: false, pendingInspection: null });
     await performReset(deps);

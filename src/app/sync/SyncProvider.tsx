@@ -341,7 +341,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       }
       // "choose" and "explain" both need the user to see the screen. `localState` here is
       // the value captured before the await above; stamping the plan with it is what lets
-      // the gate above notice that the book moved while Drive was being read.
+      // the gate above notice the book moving out from under these choices — during the
+      // Drive read, and, far more often, at any point while they sit on screen.
       setStage({ kind: "choosing", inspection: inspection.value, plan, plannedFor: localState });
     } finally {
       applyingRef.current = false;

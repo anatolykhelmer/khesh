@@ -166,7 +166,7 @@
     "explainRemoteEmpty": "There is no Khesh book in your Google Drive yet. Start a book here first, then connect.",
     "explainRemoteUnreadable": "The file in Google Drive could not be read, and there is no book on this device to replace it with.",
     "connectRestoreHint": "Sign in to bring back the book you already keep in Drive.",
-    "planDropped": "The book on this device changed while Google Drive was being read, so those options no longer apply. Connect again to see the current ones.",
+    "planDropped": "The book on this device changed, so those options no longer apply. Connect again to see the current ones.",
     "bannerNeedsAuth": "Sync is paused - Google sign-in needed.",
     "bannerError": "Sync hit a problem. Open Settings for options.",
     "openSettings": "Open Settings"

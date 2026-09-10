@@ -169,9 +169,19 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /** Claim the connection: persist it, show it, and start the engine. `userTeardownsAtStart`
-   * is `userTeardownsRef` as it stood when the *operation* began — at the top of `connect()`
-   * or `applyChoice`, not here, because the erase can begin during the Drive round trips in
-   * between and this function is only ever reached after them. */
+   * is `userTeardownsRef` as it stood when the *operation* began, not as it stands here: the
+   * erase can begin during the Drive round trips in between, and this function is only ever
+   * reached after them.
+   *
+   * **Where that read happens is the caller's, and for neither caller is it the top of
+   * `connect()`.** The context wrapper reads it a frame above, at the tap
+   * (`connect: () => connect(userTeardownsRef.current)`), and `reconnect` reads it before
+   * `connect()` is entered at all, because `forgetFile()`'s IndexedDB write stands in
+   * between. `applyChoice` reads its own, in place, having crossed nothing but synchronous
+   * guards. This comment used to say "at the top of `connect()` or `applyChoice`", which is
+   * now the one arrangement that is wrong: moving either read into `connect()` for
+   * consistency restores the erase-counter race with `tsc` green and the suite passing. See
+   * `connect`'s doc for that interleaving. */
   const finalizeConnect = useCallback(async (userTeardownsAtStart: number) => {
     // Asked before the bump, so an operation the user's own erase has already overtaken
     // does not first claim a connection the tail would then have to override.
@@ -194,10 +204,27 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     // And again, because the email fetch above is a network round trip and an erase can
     // begin inside it. Everything below this line is what a teardown would have to undo:
     // the persisted record, the connected view, and an engine armed at the user's real
-    // Drive file. The residual is the `metaStore.save` await itself — a teardown that
-    // begins inside it still reaches `setConnected(true)` and `startEngine()`, and is
-    // caught on the other side by the tail's `override` (see `teardownVerdict`) only when
-    // that tail has not already run.
+    // Drive file.
+    //
+    // **The residual is the `metaStore.save` await itself, and nothing catches it.** A
+    // teardown beginning inside that save captures `connectionGenerationRef` *after* the
+    // bump above, so its `teardownVerdict` answers `proceed`, the `override` re-release is
+    // skipped, and this function resumes into `setConnected(true)` and `startEngine()`
+    // under a record the tail is writing as `connected: false`. The claim that stood here —
+    // that the tail's `override` catches it "when that tail has not already run" — was
+    // false whichever way the two land: `override` needs a bump the teardown did not see,
+    // and this bump always precedes the capture. `override` is in fact produced by no path
+    // at all; see `teardownVerdict`.
+    //
+    // What the residual leaves: `startEngine()` re-arms `engineRef`, `storeRef` and
+    // `authRef` on the refs the teardown released and — having answered `proceed` — will
+    // not revisit, so this tab's view and the persisted record disagree in whichever
+    // direction the two tails settle, and the next boot believes the record. The engine is
+    // dormant rather than disarmed: `buildStore` made a fresh `GoogleAuth` holding no
+    // token and `forgetFile` nulled `fileIdRef`, so its first cycle is a silent
+    // `getToken(false)` after `releaseConnection` revoked the token that auth's
+    // predecessor held, and normally ends in `needsAuth` — whose banner offers the
+    // interactive sign-in that would make it live again (BL-054).
     if (!connectStillApplies(userTeardownsAtStart, userTeardownsRef.current)) return;
     await metaStore.save({ connected: true, accountEmail });
     setEmail(accountEmail);
@@ -332,13 +359,20 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       // synchronous gap between this and the write below is therefore still unordered
       // against it.
       if (verdict === "superseded") return;
-      // A connect finalized inside the window above and this teardown outranks it, so the
-      // refs released at the top are live again — a fresh engine pointed at the user's real
-      // Drive file, and a fresh store and auth behind it. Recording "disconnected" without
-      // this is the exact end state BL-040 names: an app and a persisted record that say
-      // disconnected, over an engine still syncing. The release runs *before* the record so
-      // the engine is gone from the first synchronous line, rather than for two more awaits
-      // after the app has already claimed to be disconnected.
+      // **No path in this provider produces `override` today**, so read this line as what
+      // the outcome would mean rather than as something that happens: a connect finalized
+      // inside the window above with this teardown outranking it, the refs released at the
+      // top live again — a fresh engine pointed at the user's real Drive file, and a fresh
+      // store and auth behind it. Recording "disconnected" over that is the exact end state
+      // BL-040 names. The release would run *before* the record so the engine is gone from
+      // the first synchronous line, rather than for two more awaits after the app has
+      // already claimed to be disconnected.
+      //
+      // `teardownVerdict`'s doc carries the proof of unreachability and the reason the
+      // outcome is kept rather than flattened into `proceed`. The short of it: the bump
+      // this asks about can only land after the capture two lines up if the connect read
+      // its erase count after the increment one line above that — a tap made during this
+      // very teardown, on a control the same click handler disabled.
       if (verdict === "override") await releaseConnection();
       await recordDisconnection(intent);
     },
@@ -479,9 +513,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
    * The two reasons recorded here before were both false for that interleaving, and are
    * worth naming: "that tap is disabled while a teardown runs (`SyncSection`)" describes a
    * Reconnect tap made *during* a teardown, where here the tap precedes it; and "the
-   * teardown's own `override` catches the finalize on the other side" holds only for a
+   * teardown's own `override` catches the finalize on the other side" holds at best for a
    * finalize that bumps inside the teardown's remaining `revoke()`, where this window
-   * spans an interactive token, a Drive read, an apply and an email fetch.
+   * spans an interactive token, a Drive read, an apply and an email fetch — and, since no
+   * path produces `override` at all (see `teardownVerdict`), for nothing.
    *
    * What is left is narrower and stated rather than closed: an erase that begins during
    * `forgetFile()` is now seen, but only at the first guard below — the OAuth popup has

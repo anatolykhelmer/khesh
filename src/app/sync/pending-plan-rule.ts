@@ -182,7 +182,10 @@ export type TeardownVerdict =
   /** A connect finalized inside the window and this teardown outranks it: let go of the
    * engine, store and auth *that connect* armed, and only then record the disconnection.
    * Recording alone would leave a live engine pointed at the user's real Drive file under
-   * an app — and a persisted record — that says it is disconnected. */
+   * an app — and a persisted record — that says it is disconnected.
+   *
+   * **No path in `SyncProvider` produces this today.** That is what the outcome would mean,
+   * not an event to expect; the proof, and why it is kept anyway, are below. */
   | "override";
 
 /**
@@ -213,6 +216,36 @@ export type TeardownVerdict =
  * armed, not yet finalized — has not bumped the counter, so it does not produce `override`.
  * That connect is doomed anyway (`connectStillApplies`), and what it leaves on the refs is
  * a store and an auth with no engine and no plan, which nothing in the provider can act on.
+ *
+ * **No path produces `override` today**, and the paragraphs above describe what the outcome
+ * *means* rather than something that happens. Two synchronous blocks settle it, and they
+ * cannot interleave: `teardownConnection` increments `userTeardownsRef` and captures
+ * `connectionsAtStart` with no await between them, and `finalizeConnect` asks
+ * `connectStillApplies` and bumps `connectionGenerationRef` with no await between those.
+ * `override` needs a bump inside the window, so `finalizeConnect`'s block must run after the
+ * teardown's — which means its guard compared against an already-incremented
+ * `userTeardownsRef` and still passed. The counter is increment-only and written in exactly
+ * one place, so equality survives that only if the connect captured its own count at or
+ * after the increment. Every capture is a user tap (`connect`, `reconnect` and `applyChoice`
+ * on the context value are the only readers), and every control that produces one is
+ * disabled by a flag its own click handler sets synchronously before it starts the teardown:
+ * `DangerZone`'s `busy` → `SettingsScreen.erasing` → `SyncSection`'s `blocked` →
+ * `ConnectDrive`; `SyncSection`'s `disconnecting`; `RecoveryScreen`'s `startingOver`. Each
+ * is held for the whole of `disconnect()`, which outlasts the window — the verdict is read
+ * before that promise resolves — and React flushes a discrete update before dispatching the
+ * next input event, so the second tap has nothing enabled to land on.
+ *
+ * **Kept rather than flattened into `proceed`, for two reasons.** A named outcome makes
+ * collapsing the two acts a test failure instead of a code-review question: overruling a
+ * connection and never having been overruled differ by an engine, a store and an auth, and
+ * the tests pin both directions. And the argument above ends in screen wiring that no test
+ * in this repo can reach, with one gap in it already visible — a cross-tab erase landing
+ * inside a `userAction` teardown nulls `book`, which swaps Settings for `OnboardingScreen`,
+ * whose `ConnectDrive` is gated on that screen's own writes and not on the erase, so a tap
+ * there captures the bumped count and is waved through. What stands between that tap and
+ * `override` is timing alone: an interactive OAuth popup, a Drive inspect and an apply would
+ * all have to finish inside one `revoke()`. Timing is not a guard, and this outcome is what
+ * the tail already does about it if the wiring moves.
  */
 export function teardownVerdict(
   intent: TeardownIntent,
@@ -228,11 +261,13 @@ export function teardownVerdict(
  * seen `userTeardownsAtStart` user-action teardowns still finalize?
  *
  * `teardownVerdict` says a `userAction` teardown outranks a connect that landed inside its
- * window. That is only half a rule while the connect keeps arming things regardless: the
- * tail's `override` reaches a connect that finalized *before* the tail, and nothing reaches
- * one that finalizes after it. So the connect asks too, at every point where it is about to
- * do something the erase would have to undo — write the local book (`connect()`'s auto-apply
- * path), persist `connected: true`, or start an engine.
+ * window. That is only half a rule while the connect keeps arming things regardless — and on
+ * the provider's paths it is less than half: the tail's `override`, the half that was to
+ * have reached a connect finalizing *before* the tail, is produced by no path today (see
+ * `teardownVerdict`), and nothing ever reached one that finalizes after it. So the connect
+ * asks too, at every point where it is about to do something the erase would have to undo —
+ * write the local book (`connect()`'s auto-apply path), persist `connected: true`, or start
+ * an engine. This side is the one that fires.
  *
  * **Only user-action teardowns count, and that filter lives at the bump in `SyncProvider`,
  * not here.** A `bookVanished` teardown must never veto a connect: the drop notice asks the

@@ -76,7 +76,7 @@ export function firstConnectOptions(
  *
  * The gate `applyChoice` needs, as a value the screens cannot get wrong. A tap carries a
  * `FirstConnectChoice` that was rendered from some earlier plan; by the time it arrives
- * the plan may have been dropped as stale (`isPendingPlanStale`), replaced by a second
+ * the plan may have been dropped (`afterLocalStateChange`), replaced by a second
  * Connect, or — with the choice list narrowed by `local` — never have contained that
  * choice at all. Acting on it anyway runs a load/merge/save/write the current plan
  * deliberately withheld: `merge` against a seed doubles the roots, `replaceRemote`

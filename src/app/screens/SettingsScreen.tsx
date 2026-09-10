@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { todayCalendarDate } from "../../service/dates";
@@ -11,6 +12,17 @@ export function SettingsScreen() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { book, app } = useLedger();
+  // The danger zone's erase, lifted so the sync block above it can gate on the same flag —
+  // `ImportBookButton`'s `onBusyChange` idiom, and the same reason: this screen owns the
+  // layout that puts a first connect and an erase side by side, so it is the only place
+  // that can tell one about the other. `performReset` runs on for the whole of `resetAll()`
+  // after the `disconnect()` it starts with, and `SyncSection` renders an enabled Connect
+  // row for all of it unless it is told. See `SyncSection`'s doc comment for the failure.
+  //
+  // Both props below are required rather than optional, so that dropping either end of
+  // this — the only guard on that window — is a `tsc` error here. It was neither a test
+  // failure nor a lint error before: deleting both left 724/724 green.
+  const [erasing, setErasing] = useState(false);
 
   if (!book) return null;
 
@@ -54,7 +66,7 @@ export function SettingsScreen() {
         </li>
       </ul>
 
-      <SyncSection />
+      <SyncSection disabled={erasing} />
 
       <ul className="settings-list group">
         <li className="settings-row">
@@ -69,7 +81,7 @@ export function SettingsScreen() {
         </li>
       </ul>
 
-      <DangerZone />
+      <DangerZone onBusyChange={setErasing} />
     </main>
   );
 }

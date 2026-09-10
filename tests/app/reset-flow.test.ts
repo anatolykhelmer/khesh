@@ -28,6 +28,9 @@ function tracked(overrides?: {
         (async () => {
           calls.push("disconnect");
         }),
+      cancelConnect: () => {
+        calls.push("cancelConnect");
+      },
     },
     resetAll:
       overrides?.resetAll ??
@@ -51,19 +54,45 @@ describe("performReset", () => {
   it("disconnects before erasing, and erases before announcing", async () => {
     const { deps, calls } = tracked({ connected: true });
     await performReset(deps);
-    expect(calls).toEqual(["disconnect", "erase", "announce"]);
+    expect(calls).toEqual(["disconnect", "erase", "cancelConnect", "announce"]);
   });
 
   it("tears down a pending first-connect choice even though connected is false", async () => {
     const { deps, calls } = tracked({ connected: false, pendingInspection: { kind: "book" } });
     await performReset(deps);
-    expect(calls).toEqual(["disconnect", "erase", "announce"]);
+    expect(calls).toEqual(["disconnect", "erase", "cancelConnect", "announce"]);
   });
 
   it("skips disconnect entirely when sync is idle", async () => {
     const { deps, calls } = tracked({ connected: false, pendingInspection: null });
     await performReset(deps);
-    expect(calls).toEqual(["erase", "announce"]);
+    expect(calls).toEqual(["erase", "cancelConnect", "announce"]);
+  });
+
+  it("ends the first-connect flow even where there is no connection to tear down", async () => {
+    // A dropped-plan notice is neither `connected` nor a `pendingInspection`, so the gate
+    // above skips the teardown that would otherwise have cleared it — and `dropped` is
+    // terminal, so nothing else recomputes it. Without this call the sentence "the book on
+    // this device changed, so those options no longer apply" rides the erase onto the
+    // onboarding screen the next line opens, describing a book that no longer exists.
+    const { deps, calls } = tracked({ connected: false, pendingInspection: null });
+    await performReset(deps);
+    expect(calls).toContain("cancelConnect");
+    expect(calls.indexOf("cancelConnect")).toBeLessThan(calls.indexOf("announce"));
+  });
+
+  it("leaves the first-connect flow alone when the erase failed", async () => {
+    // Nothing was erased, so every reason the notice went up still holds.
+    const { deps, calls } = tracked({
+      connected: false,
+      pendingInspection: null,
+      resetAll: async () => {
+        calls.push("erase");
+        return err("STORAGE_WRITE_FAILED", "disk full");
+      },
+    });
+    await performReset(deps);
+    expect(calls).not.toContain("cancelConnect");
   });
 
   it("surfaces the error and does not announce when resetAll fails", async () => {

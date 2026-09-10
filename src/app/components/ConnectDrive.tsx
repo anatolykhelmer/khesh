@@ -54,13 +54,27 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
   const sync = useSync();
   const [confirming, setConfirming] = useState<FirstConnectChoice | null>(null);
 
+  // Which choice the provider accepted, so only that button says it is working. Set from
+  // `applyChoice`'s `onStarted` and never from the tap itself — `applyChoice` turns a tap
+  // away when the live plan no longer offers the choice, and when an apply is already
+  // running, and a second tap that lands inside that window would otherwise move the
+  // label onto a button that is doing nothing. Paired with `sync.applying` at every read,
+  // never trusted alone: a failed apply leaves the stage `choosing` and the inspection
+  // unchanged, so the reset effect below never fires and a label keyed on this alone would
+  // sit at "Working…" over a re-enabled button.
+  const [running, setRunning] = useState<FirstConnectChoice | null>(null);
+
   // A pending confirmation belongs to the plan it was opened against. `pendingInspection`
   // is a fresh object per connect and null between them, so this clears the expanded row
-  // when the plan is cancelled, applied or replaced — otherwise the next Connect would
-  // open with a stale "are you sure" already unfolded.
+  // whenever a plan ends — cancelled, applied, replaced, or dropped because the book moved
+  // underneath it, which is the one this component's notice is about and the one a reader
+  // is likeliest to come here to check. Otherwise the next Connect would open with a stale
+  // "are you sure" already unfolded. `running` tracks the same window, and clearing it here
+  // prevents a stale "Working…" label from carrying into the next choice screen.
   const inspection = sync.pendingInspection;
   useEffect(() => {
     setConfirming(null);
+    setRunning(null);
   }, [inspection]);
 
   if (!sync.configured) return null;
@@ -69,24 +83,48 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
   // apply let the user dismiss the UI while the write it started ran on to completion.
   const blocked = disabled || sync.applying;
 
+  // The one thing this component cannot leave unsaid: the choices the user tapped Connect
+  // for were dropped because the book moved underneath them, so Connect looks like it did
+  // nothing. Neutral, not `alert` — nothing broke and nothing was lost, and in the
+  // commonest case (onboarding's Continue) the user did exactly what the previous red line
+  // asked for. `role="status"` because the screen changes with no focus move.
+  //
+  // Rendered by **both** branches below, always, and as the first child of the fragment
+  // each returns — that is load-bearing, not tidiness. A drop unmounts the whole choice
+  // subtree and mounts the collapsed row in a single commit, and a live region that enters
+  // the DOM together with its text is the classic case screen readers miss, VoiceOver
+  // worst of all. Holding the same slot in both fragments makes React reconcile one <p>
+  // across the transition, so the region is already there when the sentence arrives.
+  // Empty in between: `.muted` sets `margin: 0` and an empty <p> has no line box, so it
+  // costs nothing but the flex gap on onboarding. Above the card rather than inside the
+  // Connect row for the same reason — that row exists in only one of the two branches.
+  const notice = (
+    <p className="muted row-hint" role="status">
+      {sync.planWasDropped ? t("sync.planDropped") : null}
+    </p>
+  );
+
   if (inspection === null) {
     return (
-      <ul className="settings-list group">
-        <li className="settings-row">
-          <button
-            type="button"
-            className="row-button"
-            disabled={blocked}
-            onClick={() => void sync.connect()}
-          >
-            {t("sync.connect")}
-          </button>
-          <p className="muted row-hint">
-            {t(book === null ? "sync.connectRestoreHint" : "sync.connectHint")}
-          </p>
-          {sync.lastError !== null ? <p className="row-hint alert">{sync.lastError}</p> : null}
-        </li>
-      </ul>
+      <>
+        {notice}
+        <ul className="settings-list group">
+          <li className="settings-row">
+            <button
+              type="button"
+              className="row-button"
+              disabled={blocked}
+              onClick={() => void sync.connect()}
+            >
+              {t(sync.applying ? "sync.connecting" : "sync.connect")}
+            </button>
+            <p className="muted row-hint">
+              {t(book === null ? "sync.connectRestoreHint" : "sync.connectHint")}
+            </p>
+            {sync.lastError !== null ? <p className="row-hint alert">{sync.lastError}</p> : null}
+          </li>
+        </ul>
+      </>
     );
   }
 
@@ -104,6 +142,7 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
 
   return (
     <>
+      {notice}
       <h2 className="section-label statement">{t(heading)}</h2>
       <ul className="settings-list group">
         {inspection.kind === "book" ? (
@@ -143,9 +182,13 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
                         type="button"
                         className="danger"
                         disabled={blocked}
-                        onClick={() => void sync.applyChoice(choice)}
+                        onClick={() => void sync.applyChoice(choice, () => setRunning(choice))}
                       >
-                        {t(confirmKeys.confirm)}
+                        {t(
+                          running === choice && sync.applying
+                            ? "sync.applyingChoice"
+                            : confirmKeys.confirm,
+                        )}
                       </button>
                       <button
                         type="button"
@@ -171,10 +214,14 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
                         setConfirming(choice);
                         return;
                       }
-                      void sync.applyChoice(choice);
+                      void sync.applyChoice(choice, () => setRunning(choice));
                     }}
                   >
-                    {t(CHOICE_KEYS[choice].label)}
+                    {t(
+                      running === choice && sync.applying
+                        ? "sync.applyingChoice"
+                        : CHOICE_KEYS[choice].label,
+                    )}
                   </button>
                   <p className="muted row-hint">{hint}</p>
                 </li>

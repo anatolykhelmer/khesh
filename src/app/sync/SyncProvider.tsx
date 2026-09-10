@@ -21,7 +21,16 @@ import { createSyncEngine, type SyncEngine, type SyncState } from "../../service
 import type { SyncStorePort } from "../../ports/sync-store";
 import type { Book } from "../../kernel";
 import { useLedger } from "../ledger-context";
-import { isPendingPlanStale, type PendingConnect } from "./pending-plan-rule";
+import {
+  afterLocalStateChange,
+  afterTeardown,
+  connectStillApplies,
+  IDLE,
+  teardownVerdict,
+  visibleError,
+  type ConnectStage,
+  type TeardownIntent,
+} from "./pending-plan-rule";
 import { SyncContext, type SyncContextValue } from "./sync-context";
 import { runExclusive } from "./sync-lock";
 import { syncSignal } from "./sync-signal";
@@ -42,14 +51,36 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [state, setState] = useState<SyncState | null>(null);
-  // Inspection, plan and the local state the plan was decided against, as one value: they
-  // are written and cleared together, and no render may show one without the others.
-  const [pending, setPending] = useState<PendingConnect | null>(null);
+  // Inspection, plan, the local state the plan was decided against, and "the plan was
+  // dropped and the user has not been told yet", as one value: they are written and
+  // cleared together, and no render may show one without the others.
+  const [stage, setStage] = useState<ConnectStage>(IDLE);
   const [lastError, setLastError] = useState<string | null>(null);
   // The ref is the guard and the state is what the UI reads: a second tap arrives before
   // React has re-rendered with `applying`, so only a ref can turn it away.
   const applyingRef = useRef(false);
   const [applying, setApplying] = useState(false);
+  // Bumped by `teardownConnection` before it touches anything, so an async operation that
+  // started against the old connection can tell that the store, the auth and the file id
+  // it captured have since been pulled out from under it. A ref, not state: it has to be
+  // readable synchronously from inside a callback that is mid-await, and nothing renders
+  // from it. Deliberately invisible to `pending-plan-rule`'s tables — those describe the
+  // stage, and this is a fact about the provider's timeline that no stage can express.
+  const teardownGenerationRef = useRef(0);
+  // The other direction, and the other half of the same problem: connections this tab has
+  // established. `teardownConnection`'s tail reads it back to find out whether it still
+  // speaks for the current connection at all. Both counters exist because a teardown and
+  // a connect can be in flight at once — the notice this branch adds asks the user to
+  // tap Connect at precisely the moment a teardown is running.
+  const connectionGenerationRef = useRef(0);
+  // Teardowns the *user* asked for: Disconnect, the Settings reset, start over. A third
+  // counter and not a flag, because the question a connect asks is "did an erase begin
+  // under me?", which outlives the teardown itself — `performReset` goes on to erase the
+  // book after `disconnect()` has resolved, and a flag cleared at the tail would answer no
+  // for the rest of that flow. A subset of `teardownGenerationRef` on purpose: a
+  // `bookVanished` teardown must never veto a connect, because the drop notice asks for
+  // that connect. See `connectStillApplies`, which is the only reader.
+  const userTeardownsRef = useRef(0);
 
   const buildStore = useCallback((): SyncStorePort => {
     if (!authRef.current) authRef.current = createGoogleAuth(CLIENT_ID);
@@ -105,6 +136,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       fileIdRef.current = meta.fileId;
       setEmail(meta.accountEmail);
       setConnected(true);
+      // Being connected retires any first-connect state by definition — the plan
+      // describes a connection that is now made, and the notice asks for a tap on a
+      // Connect row this tab is about to stop rendering (`SyncSection` swaps to the
+      // connected view). Left standing, neither is reachable and neither can be cleared:
+      // the notice would reappear on the Connect row the user's next Disconnect opens,
+      // explaining a book move from arbitrarily earlier in the session.
+      setStage(IDLE);
       setState({ kind: "idle", lastSyncAt: meta.lastSyncAt });
       void startEngine().syncNow();
     });
@@ -130,15 +168,68 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const finalizeConnect = useCallback(async () => {
-    const emailResult = await fetchAccountEmail((interactive = false) =>
-      authRef.current!.getToken(interactive),
-    );
+  /** Claim the connection: persist it, show it, and start the engine. `userTeardownsAtStart`
+   * is `userTeardownsRef` as it stood when the *operation* began, not as it stands here: the
+   * erase can begin during the Drive round trips in between, and this function is only ever
+   * reached after them.
+   *
+   * **Where that read happens is the caller's, and for neither caller is it the top of
+   * `connect()`.** The context wrapper reads it a frame above, at the tap
+   * (`connect: () => connect(userTeardownsRef.current)`), and `reconnect` reads it before
+   * `connect()` is entered at all, because `forgetFile()`'s IndexedDB write stands in
+   * between. `applyChoice` reads its own, in place, having crossed nothing but synchronous
+   * guards. This comment used to say "at the top of `connect()` or `applyChoice`", which is
+   * now the one arrangement that is wrong: moving either read into `connect()` for
+   * consistency restores the erase-counter race with `tsc` green and the suite passing. See
+   * `connect`'s doc for that interleaving. */
+  const finalizeConnect = useCallback(async (userTeardownsAtStart: number) => {
+    // Asked before the bump, so an operation the user's own erase has already overtaken
+    // does not first claim a connection the tail would then have to override.
+    if (!connectStillApplies(userTeardownsAtStart, userTeardownsRef.current)) return;
+    // Bumped before the first await, so a teardown tail landing anywhere from here on
+    // sees that a connection has superseded it — including one that lands between the
+    // meta write below and `setConnected(true)`.
+    connectionGenerationRef.current += 1;
+    const emailResult = await fetchAccountEmail(async (interactive = false) => {
+      // Same reasoning as `buildStore`'s `getToken`, and now the same shape. A teardown
+      // that began while the apply was in flight nulls this ref before its first await,
+      // so `authRef.current!` would throw a TypeError inside an async function nobody
+      // awaits — `applyChoice` is invoked as `void sync.applyChoice(…)`. A failed email
+      // is already a case this function handles: it becomes `null`.
+      const auth = authRef.current;
+      if (!auth) return err<string>("SYNC_AUTH_REQUIRED", "Sync is not connected");
+      return auth.getToken(interactive);
+    });
     const accountEmail = emailResult.ok ? emailResult.value : null;
+    // And again, because the email fetch above is a network round trip and an erase can
+    // begin inside it. Everything below this line is what a teardown would have to undo:
+    // the persisted record, the connected view, and an engine armed at the user's real
+    // Drive file.
+    //
+    // **The residual is the `metaStore.save` await itself, and nothing catches it.** A
+    // teardown beginning inside that save captures `connectionGenerationRef` *after* the
+    // bump above, so its `teardownVerdict` answers `proceed`, the `override` re-release is
+    // skipped, and this function resumes into `setConnected(true)` and `startEngine()`
+    // under a record the tail is writing as `connected: false`. The claim that stood here —
+    // that the tail's `override` catches it "when that tail has not already run" — was
+    // false whichever way the two land: `override` needs a bump the teardown did not see,
+    // and this bump always precedes the capture. `override` is in fact produced by no path
+    // at all; see `teardownVerdict`.
+    //
+    // What the residual leaves: `startEngine()` re-arms `engineRef`, `storeRef` and
+    // `authRef` on the refs the teardown released and — having answered `proceed` — will
+    // not revisit, so this tab's view and the persisted record disagree in whichever
+    // direction the two tails settle, and the next boot believes the record. The engine is
+    // dormant rather than disarmed: `buildStore` made a fresh `GoogleAuth` holding no
+    // token and `forgetFile` nulled `fileIdRef`, so its first cycle is a silent
+    // `getToken(false)` after `releaseConnection` revoked the token that auth's
+    // predecessor held, and normally ends in `needsAuth` — whose banner offers the
+    // interactive sign-in that would make it live again (BL-054).
+    if (!connectStillApplies(userTeardownsAtStart, userTeardownsRef.current)) return;
     await metaStore.save({ connected: true, accountEmail });
     setEmail(accountEmail);
     setConnected(true);
-    setPending(null);
+    setStage(IDLE);
     void startEngine().syncNow();
   }, [metaStore, startEngine]);
 
@@ -151,26 +242,142 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     await metaStore.save({ fileId: null });
   }, [metaStore]);
 
-  /** Tear down this tab's connection: dispose the engine, drop the store/auth/file refs,
-   * revoke the token, and persist "disconnected" to the shared sync-meta record. Shared
-   * by `disconnect` (the user's own Settings action) and by the effect below (another
-   * tab reset the book while this tab was still connected). Safe to run concurrently in
-   * several tabs — each tab only touches its own in-memory refs and its own token, and
-   * every tab's final write to the shared record agrees, so whichever write lands last
-   * still leaves it correct. */
-  const teardownConnection = useCallback(async () => {
+  /** Let go of everything this tab holds against the user's Drive file: the engine, the
+   * store, the auth and the cached file id. **Releasing, and nothing else** — it writes no
+   * connection state, tells no screen anything and takes no view on *why*. That split is
+   * what lets `teardownConnection` run it twice.
+   *
+   * Everything dangerous goes synchronously, ahead of both awaits: a disposed engine is
+   * the difference between "this tab may still write the old book to Drive" and "it may
+   * not", and the two awaits after it are unbounded (`revoke()` is a network round trip
+   * with no timeout of its own).
+   *
+   * Idempotent and null-safe on every ref, so running it against an already-released tab
+   * costs one best-effort write to the meta database — which is what `performStartOver`
+   * relies on when it disconnects unconditionally. */
+  const releaseConnection = useCallback(async () => {
     engineRef.current?.dispose();
     engineRef.current = null;
     storeRef.current = null;
-    await forgetFile();
-    await authRef.current?.revoke();
+    // The auth comes off the ref **here**, synchronously beside the store, and the revoke
+    // below runs against the local. Nulling it after the await instead was the bug the PR
+    // review caught: `revoke()` clears its own token cache on entry but the object stays
+    // on the ref, so a `connect()` inside the window — which is what the drop notice asks
+    // the user for — reuses it, caches a fresh interactive token into it, and then this
+    // throws that auth away. The user is left holding a live, correct choice screen whose
+    // next tap builds an empty auth, does a silent `getToken(false)`, and paints
+    // SYNC_AUTH_REQUIRED under the choices with no notice to explain it. Off the ref
+    // first, and `connect()` builds its own auth that nothing here can reach.
+    const auth = authRef.current;
     authRef.current = null;
+    await forgetFile();
+    // `auth`, not `authRef.current` — see nine lines up before changing this. Reading the
+    // ref here would revoke whatever auth is on it *now*, which after an intervening
+    // `connect()` is the user's new one.
+    await auth?.revoke();
+  }, [forgetFile]);
+
+  /** Say that this tab is disconnected: persist it to the shared sync-meta record, and
+   * bring this tab's own view into line. The other half of a teardown, and deliberately
+   * the half that touches no ref — by the time this runs the connection is already gone;
+   * what is left is bookkeeping about it.
+   *
+   * Safe to run concurrently in several tabs: each tab only ever released its own refs and
+   * its own token, and every tab's write here agrees, so whichever lands last still leaves
+   * the shared record correct. */
+  const recordDisconnection = useCallback(async (intent: TeardownIntent) => {
     await metaStore.save({ connected: false, accountEmail: null, lastSyncAt: null });
     setConnected(false);
     setEmail(null);
     setState(null);
-    setPending(null);
-  }, [forgetFile, metaStore]);
+    // Not an unconditional clear, and not a plain value either: this runs after the
+    // teardown's awaits, so the stage it must decide from is whatever is current when it
+    // lands — while the plan it is entitled to drop is the one named in `intent`, captured
+    // when the teardown started. See `afterTeardown`.
+    setStage((s) => afterTeardown(s, intent));
+    // `userAction` only. The flow the user ended can have left an error on screen that
+    // belongs to a screen they are leaving — a failed `applyChoice` on the recovery screen
+    // before Start over, a failed file-missing Reconnect before Disconnect — and
+    // `afterTeardown` has just written `IDLE`, which `visibleError` does not suppress, so
+    // it would otherwise be painted under the Connect button of the fresh screen this
+    // teardown opens. Not on the `bookVanished` arm: there the same clear swallowed the
+    // sign-in error of a Connect the user made *during* the teardown window, which is the
+    // "Connect looks like it did nothing" this branch exists to remove.
+    //
+    // The reason written here before was false and is worth naming: it said the erase
+    // flows have no window to swallow from because `performReset` "ends by calling
+    // `cancelConnect()` itself", as though that cancelled an in-flight connect. It does
+    // not — `cancelConnect` is `setStage(IDLE)` and nothing more.
+    //
+    // What makes this arm safe is not that no error can arrive but that clearing is the
+    // right answer for any error that does. `bookVanished` leaves the user where they are
+    // and asks them to tap Connect, so an error from that tap is the only thing they have
+    // to go on. `userAction` is the user leaving: Disconnect collapses the row, reset and
+    // start over open onboarding. Every error still standing belongs to the screen being
+    // left — including a sign-in failure from a connect begun inside the window, which is
+    // about a Connect button that is disabled for the length of the flow and about to stop
+    // existing. It does not need the path survey the old comment rested on.
+    if (intent.cause === "userAction") setLastError(null);
+  }, [metaStore]);
+
+  /** Tear down this tab's connection: release everything it holds against Drive, then
+   * record the disconnection. Shared by `disconnect` (the user's own Settings action) and
+   * by the effect below (another tab reset the book while this tab was still connected).
+   *
+   * Two functions with a verdict between them, rather than one body with a guard on every
+   * line. A connect can *complete* inside this function's own window — after a vanished
+   * book the drop notice asks the user for exactly that — so by the time the release has
+   * finished, "what this teardown is entitled to do next" is a real question with three
+   * answers, and `teardownVerdict` is where it is answered and tested.
+   *
+   * The reverse overlap is **not** covered, and this is the honest statement of the limit:
+   * a `finalizeConnect` already past its own last guard when this starts has already
+   * bumped, so the tail sees a changed count but that finalize can still land on top of
+   * whatever this writes — `connected: true` and `setStage(IDLE)`, notice included.
+   * Narrowed by `finalizeConnect`'s second `connectStillApplies` check but not closed, and
+   * recorded as a known debt rather than papered over here: telling "a finalize that will
+   * succeed" from one that will not is not something a counter read at one instant can do.
+   *
+   * `intent` reaches `afterTeardown` and the error clear: a first-connect plan on screen
+   * means one thing when the book was pulled out from under it and another when the user
+   * ended the flow — and on the first of those, *which* plan matters too. */
+  const teardownConnection = useCallback(
+    async (intent: TeardownIntent) => {
+      // Both bumps go before the first await, so anything already in flight sees them the
+      // moment this begins rather than two awaits later.
+      teardownGenerationRef.current += 1;
+      if (intent.cause === "userAction") userTeardownsRef.current += 1;
+      const connections = connectionGenerationRef.current;
+      await releaseConnection();
+      const verdict = teardownVerdict(intent, connections, connectionGenerationRef.current);
+      // Asked before the meta write rather than after, so that a superseded teardown never
+      // submits a contradicting write at all. That is the whole claim: it is *not* an
+      // ordering guarantee. `createSyncMetaStore().save` is a non-atomic read-modify-write
+      // (`await db.get`, then `await db.put` of a merge), so two concurrent saves each
+      // merge from their own snapshot and the loser's patch is dropped whole — submission
+      // order does not decide the outcome. A `finalizeConnect` that bumps inside the
+      // synchronous gap between this and the write below is therefore still unordered
+      // against it.
+      if (verdict === "superseded") return;
+      // **No path in this provider produces `override` today**, so read this line as what
+      // the outcome would mean rather than as something that happens: a connect finalized
+      // inside the window above with this teardown outranking it, the refs released at the
+      // top live again — a fresh engine pointed at the user's real Drive file, and a fresh
+      // store and auth behind it. Recording "disconnected" over that is the exact end state
+      // BL-040 names. The release would run *before* the record so the engine is gone from
+      // the first synchronous line, rather than for two more awaits after the app has
+      // already claimed to be disconnected.
+      //
+      // `teardownVerdict`'s doc carries the proof of unreachability and the reason the
+      // outcome is kept rather than flattened into `proceed`. The short of it: the bump
+      // this asks about can only land after the capture two lines up if the connect read
+      // its erase count after the increment one line above that — a tap made during this
+      // very teardown, on a control the same click handler disabled.
+      if (verdict === "override") await releaseConnection();
+      await recordDisconnection(intent);
+    },
+    [releaseConnection, recordDisconnection],
+  );
 
   // Another tab's reset nulls the book here via the cross-tab broadcast, but that
   // broadcast never touches this tab's connection state directly — `connected`, the
@@ -187,18 +394,35 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // now *begin* while the book is null, because the onboarding and recovery screens
   // offer Connect, and tearing that down would destroy the choice as it appeared.
   //
-  // This effect reads the *raw* `pending`, not the staleness-gated view below it. A plan
+  // This effect reads the *raw* `stage`, not the staleness-gated view below it. A plan
   // that has gone stale is still a store, an auth and a file id bound to the user's real
-  // Drive file, and the transition is exactly the moment to let go of them. Hook order
-  // matters here: this effect is declared before the one that drops a stale plan, so it
-  // sees `pending` on the flush where the book vanished rather than a beat after.
+  // Drive file, and the transition is exactly the moment to let go of them. Reading
+  // `choosing`/`liveStage` here is the mutation that breaks it: that view is already null
+  // on the very render the plan goes stale, so `shouldTearDown` would see no pending
+  // inspection, and with `connected` still false nothing would ever release the refs.
+  //
+  // Its position relative to the effect that commits the drop, on the other hand, is not
+  // load-bearing and swapping the two changes nothing: both are created by the same
+  // render and close over that render's `stage`, and a pending passive effect always runs
+  // with the values of the render that queued it. Nor does the notice depend on the two
+  // firing in any particular order — this teardown settles the stage itself through
+  // `afterTeardown`, which is the whole point of passing an intent.
+  //
+  // That same raw `stage` is what the intent carries, and it must come from here rather
+  // than from a closure inside `teardownConnection` or a ref mirroring the state: it is
+  // this render's stage, the one `shouldTearDown` just judged, so the plan the teardown
+  // announces as dropped is exactly the plan it was called about. Threading it as an
+  // argument also keeps `teardownConnection` off `stage` as a dependency — it is this
+  // effect's own dependency, so a new identity per stage change would re-run the effect.
   useEffect(() => {
     const previous = previousBookRef.current;
     previousBookRef.current = book;
-    if (!shouldTearDown(previous, book, { connected, pendingInspection: pending })) return;
-    void teardownConnection().catch(() => {
-      // `teardownConnection`'s first statement, `engineRef.current?.dispose()`, is
-      // synchronous — the one danger this effect exists to close (a live engine
+    const pendingInspection = stage.kind === "choosing" ? stage.inspection : null;
+    if (!shouldTearDown(previous, book, { connected, pendingInspection })) return;
+    void teardownConnection({ cause: "bookVanished", startedFrom: stage }).catch(() => {
+      // `teardownConnection`'s first act is `releaseConnection()`, whose
+      // `engineRef.current?.dispose()` runs synchronously ahead of every await in either
+      // function — the one danger this effect exists to close (a live engine
       // merging a fresh book against the old remote) is already shut by the time any
       // await here could reject. What a rejection (a thrown `revoke()`, say) leaves
       // behind is this tab's own `connected`/`pendingInspection` state not catching
@@ -207,7 +431,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       // an error banner to (the book is null, so Settings is not even on screen), so
       // swallow rather than surface a message the user cannot act on.
     });
-  }, [book, connected, pending, teardownConnection]);
+  }, [book, connected, stage, teardownConnection]);
 
   // What the local side has to lose. A null book covers both "storage is empty" and
   // "the stored book failed to load" — neither holds data a remote book could destroy.
@@ -217,22 +441,96 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // A plan is decided once, from the local state at the moment the remote was inspected —
   // that is what stops the choices shifting under the user's finger. The book can still
   // move underneath it, and then the plan describes a local side that no longer exists.
-  // See `isPendingPlanStale` for the three ways that happens and what each one costs.
+  // See `afterLocalStateChange` for the three ways that happens and what each one costs.
   //
-  // Gated in render, not only cleared in the effect: the effect is a passive one, so a
-  // frame carrying the stale choices could otherwise reach the screen before it runs.
-  const planIsStale = isPendingPlanStale(pending, localState);
+  // Computed in render and merely committed by the effect: the effect is a passive one,
+  // so a frame carrying the stale choices could otherwise reach the screen before it runs.
+  // The transition returns its input object when nothing moved, so `!==` is the whole
+  // change test.
+  //
+  // The third argument must be `applying` and nothing else. It marks the one window in
+  // which the local state moves *because of the user's own choice*: pass `false` and a
+  // successful `useRemote` announces "the book changed, connect again" over its own
+  // success for the length of `finalizeConnect`'s account-email request; pass anything
+  // broader — a screen's `disabled`, an import in flight, `state.kind !== "idle"` — and
+  // the drop stays suppressed while the book really is moving underneath, which is the
+  // hole `plannedFor` exists to close. Both are booleans, so nothing here catches it.
+  const liveStage = afterLocalStateChange(stage, localState, applying);
   useEffect(() => {
-    if (planIsStale) setPending(null);
-  }, [planIsStale]);
-  const livePending = planIsStale ? null : pending;
+    // The notice and a red error may not share the collapsed Connect row. `components.css`
+    // reserves colour for what needs a person or cannot be undone, and a dropped plan needs
+    // one tap on Connect — the neutral sentence is the whole explanation. The error that
+    // would sit under it is a failed apply from the plan being dropped, which is now moot.
+    // Not folded into `afterLocalStateChange`: that table is pure and `lastError` is not
+    // part of `ConnectStage`.
+    //
+    // Above the early return, not below it, and keyed on the stage rather than on the
+    // transition. A `DROPPED` written by `teardownConnection`'s own `setStage` arrives here
+    // as `stage`, and `afterLocalStateChange` returns its input for anything that is not
+    // `choosing` — so `liveStage === stage` and the return below would skip the clear on
+    // exactly the path where the teardown carries none of its own. Keyed this way the rule
+    // is "while the plan is dropped there is no error in state", which is the guarantee
+    // `visibleError`'s doc comment claims. Idempotent: React bails out on an unchanged
+    // null, and this effect only re-runs when the stage moves.
+    //
+    // This is the *state* half and cannot be the whole rule: it lands a render after the
+    // notice becomes derivable, so `visibleError` in the context value covers the frame in
+    // between. `teardownConnection` carries a clear too, but only on its `userAction` arm —
+    // an unconditional one there swallowed the sign-in error of a Connect the user made
+    // during the teardown window.
+    if (liveStage.kind === "dropped") setLastError(null);
+    if (liveStage === stage) return;
+    // Compare-and-set rather than `setStage(liveStage)`. This effect is passive, so a tap
+    // handled between the paint and this flush has already queued a stage of its own —
+    // `connect()` queues `IDLE` — and a plain write would land on top of it, leaving the
+    // notice showing beside the `lastError` of the connect it asked for. Committing only
+    // while the stage is still the one this render derived from leaves a newer write
+    // alone; the render it schedules re-derives the gate from it anyway.
+    setStage((s) => (s === stage ? liveStage : s));
+  }, [liveStage, stage]);
+  const choosing = liveStage.kind === "choosing" ? liveStage : null;
 
-  const connect = async () => {
+  /**
+   * The first-connect flow: sign in, read Drive, then either apply the one obvious answer
+   * or put the choices on screen.
+   *
+   * **`userTeardownsAtStart` is a parameter and not a read at the top of this function**,
+   * because the top of this function is not always the start of the operation the user
+   * asked for. Every `connectStillApplies` below is only as good as the moment its first
+   * argument was read: it asks "did the user's own erase begin under me?", and an erase
+   * that began *before* the capture reads equal on both sides and is waved through.
+   *
+   * `reconnect` is the caller that makes this concrete. It awaits `forgetFile()` — an
+   * IndexedDB read-modify-write — before it gets here, and nothing is holding the erase
+   * off during it: `applying` is still false, so `DangerZone`'s already-open confirmation
+   * is live, and a tap there runs `performReset`, whose `disconnect()` bumps
+   * `userTeardownsRef` synchronously. Reading the counter here would capture the bumped
+   * value, every comparison below would compare 1 with 1, and the connect would run to
+   * `finalizeConnect` — persisting `connected: true` and arming an engine at the user's
+   * real Drive file while `resetAll()` erases the book. BL-040, by the exact route this
+   * counter exists to block.
+   *
+   * The two reasons recorded here before were both false for that interleaving, and are
+   * worth naming: "that tap is disabled while a teardown runs (`SyncSection`)" describes a
+   * Reconnect tap made *during* a teardown, where here the tap precedes it; and "the
+   * teardown's own `override` catches the finalize on the other side" holds at best for a
+   * finalize that bumps inside the teardown's remaining `revoke()`, where this window
+   * spans an interactive token, a Drive read, an apply and an email fetch — and, since no
+   * path produces `override` at all (see `teardownVerdict`), for nothing.
+   *
+   * What is left is narrower and stated rather than closed: an erase that begins during
+   * `forgetFile()` is now seen, but only at the first guard below — the OAuth popup has
+   * opened by then. A doomed connect costs the user one popup it then says nothing about.
+   */
+  const connect = async (userTeardownsAtStart: number) => {
     if (applyingRef.current) return;
     applyingRef.current = true;
     setApplying(true);
     try {
       setLastError(null);
+      // The user did the thing the dropped-plan notice asks for, so the notice goes now
+      // rather than when this connect lands — the button beside it is already disabled.
+      setStage(IDLE);
       if (!authRef.current) authRef.current = createGoogleAuth(CLIENT_ID);
       const token = await authRef.current.getToken(true); // the tap satisfies the popup rule
       if (!token.ok) {
@@ -245,6 +543,23 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         setLastError(errorMessage(inspection.error.code));
         return;
       }
+      // The user's own erase began while Drive was being read, so nothing below is worth
+      // doing and one line of it is actively harmful: `applyFirstConnect` *writes the local
+      // book*, and both erase flows continue past the teardown — `performReset` calls
+      // `resetAll()` next. An apply landing on either side of that either has its work
+      // erased or, worse, restores the Drive book onto disk after the erase cleared it,
+      // leaving the app on onboarding with the old book back in storage. The sync lock
+      // orders the two but does not stop that; `DangerZone`'s own comment says so.
+      //
+      // Silent, like `applyChoice`'s doomed-apply arm and for the same reason: the user
+      // asked for the thing that made this moot, and every screen this can happen on is
+      // one they are leaving — onboarding replaces Settings after a reset, and a Disconnect
+      // taken during a hung Reconnect collapses the row it was on. (That Disconnect is the
+      // one path that reaches here without the tap having been disabled: it is deliberately
+      // not gated on `sync.applying`, because a reconnect that will not finish is exactly
+      // when disconnecting must stay possible.) The `finally` still clears `applying`, so
+      // no button is left reading "Connecting…".
+      if (!connectStillApplies(userTeardownsAtStart, userTeardownsRef.current)) return;
       const plan = firstConnectOptions(localState, inspection.value);
       if (plan.kind === "apply") {
         const applied = await applyFirstConnect(plan.choice, { repo, store, runExclusive });
@@ -252,13 +567,14 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           setLastError(errorMessage(applied.error.code));
           return;
         }
-        await finalizeConnect();
+        await finalizeConnect(userTeardownsAtStart);
         return;
       }
       // "choose" and "explain" both need the user to see the screen. `localState` here is
       // the value captured before the await above; stamping the plan with it is what lets
-      // the gate above notice that the book moved while Drive was being read.
-      setPending({ inspection: inspection.value, plan, plannedFor: localState });
+      // the gate above notice the book moving out from under these choices — during the
+      // Drive read, and, far more often, at any point while they sit on screen.
+      setStage({ kind: "choosing", inspection: inspection.value, plan, plannedFor: localState });
     } finally {
       applyingRef.current = false;
       setApplying(false);
@@ -270,14 +586,24 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     connected,
     email,
     state,
-    pendingInspection: livePending?.inspection ?? null,
-    pendingPlan: livePending?.plan ?? null,
-    pendingLocalState: livePending?.plannedFor ?? null,
-    lastError,
+    pendingInspection: choosing?.inspection ?? null,
+    pendingPlan: choosing?.plan ?? null,
+    pendingLocalState: choosing?.plannedFor ?? null,
+    planWasDropped: liveStage.kind === "dropped",
+
+    // The render half of the same rule as the clear in the drop-commit effect, and not an
+    // alternative to it — `visibleError` closes the frame between the derived notice and
+    // that state write, the clear stops a hidden error resurfacing later. Both halves,
+    // and why each is insufficient alone, are written up there.
+    lastError: visibleError(liveStage, lastError),
 
     applying,
 
-    connect,
+    // Wrapped for `disconnect`'s reason — a bare reference would let an
+    // `onClick={sync.connect}` hand the erase counter a click event — and for one more:
+    // this is where the counter is read, at the tap, because for a plain Connect the tap
+    // *is* the whole operation. No await stands between this read and the guards inside.
+    connect: () => connect(userTeardownsRef.current),
 
     // What "the sync file is missing — reconnect to create it again" has always
     // promised, in one tap: drop the dead id, then run the connect flow. Never a blind
@@ -286,23 +612,48 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     // of being overwritten.
     reconnect: async () => {
       if (applyingRef.current) return;
+      // **Before `forgetFile()`, not inside `connect()`.** This tap is the start of the
+      // operation, and everything after it is a window an erase can begin in — starting
+      // with the IndexedDB write on the next line, during which nothing disables the
+      // Settings erase confirmation that renders beside this row. See `connect`'s doc.
+      const userTeardownsAtStart = userTeardownsRef.current;
       await forgetFile();
-      await connect();
+      await connect(userTeardownsAtStart);
     },
 
-    applyChoice: async (choice: FirstConnectChoice) => {
+    applyChoice: async (choice: FirstConnectChoice, onStarted?: () => void) => {
       // Act only on a choice the live plan actually offers. A tap carries a value that
       // was rendered from some earlier plan, and between the render and the handler the
       // plan can have been dropped as stale, cancelled, or replaced by a second Connect.
       // Running it anyway performs the write the current plan withheld — see
       // `isChoiceOffered`. The screens disable these buttons too; this is the half that
       // does not depend on every future screen remembering to.
-      if (!isChoiceOffered(livePending?.plan ?? null, choice)) return;
+      if (!isChoiceOffered(choosing?.plan ?? null, choice)) return;
       // The lock below serializes two of these; this turns the second one away entirely,
       // which is what a double-tapped choice button means.
       if (applyingRef.current) return;
       applyingRef.current = true;
       setApplying(true);
+      // Past both guards, so this choice and no other is what is now running. Announced
+      // here rather than assumed by the caller: a tap the guards turn away leaves the
+      // screen's "Working…" on the refused button while the accepted one runs underneath
+      // it — and, if that one fails, puts its error under the wrong label. Before the
+      // first await, so it batches with `setApplying(true)` and no frame sees one
+      // without the other.
+      onStarted?.();
+      // Which connection this apply is running on. Read before the first await, and
+      // compared in the failure arm below.
+      const generation = teardownGenerationRef.current;
+      // And which erase generation, for the guards this shares with `connect()`. A
+      // separate counter because the two questions differ: the one above asks "was I torn
+      // down?" and any cause answers it, this one asks "did the user start erasing under
+      // me?" and only `userAction` does.
+      //
+      // Read at the start of the operation and not merely before some await — the
+      // distinction `connect()`'s doc is about. Here the two coincide: the tap reaches
+      // this line through nothing but synchronous guards, so no caller can widen the gap
+      // the way `reconnect` widens `connect`'s, and there is nothing to thread in.
+      const userTeardowns = userTeardownsRef.current;
       try {
         setLastError(null);
         const applied = await applyFirstConnect(choice, {
@@ -311,20 +662,72 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           runExclusive,
         });
         if (!applied.ok) {
+          // A doomed apply says nothing. When the book vanishes mid-apply the teardown
+          // fires on that flush and this apply cannot survive it: `buildStore`'s
+          // `getToken` answers SYNC_AUTH_REQUIRED the moment `authRef` is nulled, so the
+          // red line under the choices would read "Sync is not connected" — an artifact
+          // of the teardown, needing nobody, contradicting the neutral drop notice that
+          // `afterTeardown` is writing for this very event.
+          //
+          // No claim here about which lands first, because it varies and the likelier
+          // order is the opposite of what this comment used to assert. The apply holds
+          // the store it captured before the teardown, and that store's `getToken` reads
+          // `authRef.current` live — so the apply keeps working until the teardown nulls
+          // that ref, then fails at its next token fetch, usually well before the tail.
+          // But an apply sitting between token fetches survives longer and can fail after
+          // the tail, and only then does clearing `lastError` at the drop commit fail to
+          // cover it. The guard holds for both orders because the bump above precedes
+          // every await in the teardown.
+          //
+          // A generation counter and not the stage: this is a fact about the provider's
+          // timeline, invisible to `pending-plan-rule`'s tables and to the whole test
+          // suite with it. Scoped to this arm deliberately — `connect()`'s failure arm
+          // recreates the auth and the store it needs, so a concurrent teardown does not
+          // doom it, and silencing it there would hide real sign-in failures.
+          if (teardownGenerationRef.current !== generation) return;
           setLastError(errorMessage(applied.error.code));
           return;
         }
+        // The erase guard belongs **behind** the apply, and used to sit in front of it
+        // where it could not fire at all: the capture above and the check were separated
+        // by `setLastError(null)` and a comment — no await, no async boundary — so the two
+        // reads were one read and `connectStillApplies` was equality on a value with
+        // itself. Its comment blamed `DangerZone`'s gate for that, which invited the next
+        // reader to think relaxing the gate would wake the check up. Nothing would have.
+        //
+        // Here it is capable of firing, and there is something left for it to stop.
+        // `applyFirstConnect` is Drive I/O plus a `repo.save`, so an erase can begin
+        // inside it, and the two lines below are what an erase would then have to undo:
+        // `announceBookChanged` puts the book being erased back into the app — moments
+        // later `performReset` announces null, and whichever lands last decides whether
+        // the user ends on onboarding or on the ledger they just erased — and
+        // `finalizeConnect` persists `connected: true` over an engine aimed at the real
+        // Drive file. What it cannot do is unwrite the `repo.save` the apply already made;
+        // that residual is `connect()`'s comment's and the spec's, not this line's.
+        //
+        // Still not reachable today, and the honest reason is a fact about three other
+        // components: `DangerZone` and `RecoveryScreen` both gate their erase on
+        // `sync.applying`, true for the whole of this function, and `SyncSection`'s
+        // Disconnect is not rendered at all while a plan is on screen. That is exactly the
+        // kind of claim this branch has repeatedly had to retract, so the guard is placed
+        // where it can act if one of the three changes — not deleted on their word.
+        //
+        // Not a substitute for `finalizeConnect`'s own checks, which cover its awaits from
+        // the inside. This is the only one that reaches `announceBookChanged`.
+        if (!connectStillApplies(userTeardowns, userTeardownsRef.current)) return;
         announceBookChanged(applied.value);
-        await finalizeConnect();
+        await finalizeConnect(userTeardowns);
       } finally {
         applyingRef.current = false;
         setApplying(false);
       }
     },
 
-    cancelConnect: () => setPending(null),
+    cancelConnect: () => setStage(IDLE),
 
-    disconnect: teardownConnection,
+    // Wrapped, not passed through: `teardownConnection` now takes an intent, and a bare
+    // reference would let an `onClick={sync.disconnect}` hand it a click event.
+    disconnect: () => teardownConnection({ cause: "userAction" }),
 
     syncNow: () => void engineRef.current?.syncNow(),
 

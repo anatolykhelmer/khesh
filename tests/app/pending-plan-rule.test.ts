@@ -4,6 +4,7 @@ import {
   afterTeardown,
   DROPPED,
   IDLE,
+  teardownStillApplies,
   visibleError,
   type ConnectStage,
 } from "../../src/app/sync/pending-plan-rule";
@@ -252,5 +253,65 @@ describe("visibleError", () => {
     expect(visibleError(DROPPED, null)).toBe(null);
     expect(visibleError(IDLE, null)).toBe(null);
     expect(visibleError(choosing("real"), null)).toBe(null);
+  });
+});
+
+describe("teardownStillApplies", () => {
+  const ERASE = { cause: "userAction" } as const;
+  const VANISHED = { cause: "bookVanished", startedFrom: choosing("real") } as const;
+
+  it("lets a connect made after a vanished book overrule the teardown", () => {
+    // The drop notice asks the user to tap Connect, and `revoke()` is a network round trip
+    // with no timeout of its own, so that tap can land inside the teardown's own window. A
+    // connect that reached `finalizeConnect` has written `connected: true`; the tail's
+    // "disconnected" would leave a live engine and live refs under an app that says it is
+    // disconnected — persisted, so the next boot resumes nothing.
+    expect(teardownStillApplies(VANISHED, 3, 4)).toBe(false);
+  });
+
+  it("keeps a vanished-book teardown when nothing connected underneath it", () => {
+    // The ordinary case, and the one that must not be broken by the clause above.
+    expect(teardownStillApplies(VANISHED, 0, 0)).toBe(true);
+    expect(teardownStillApplies(VANISHED, 7, 7)).toBe(true);
+  });
+
+  it("never lets a connect overrule an erase the user asked for", () => {
+    // The asymmetry this function exists for. `performReset` erases the book next and
+    // `performStartOver` opens onboarding, so a connect that won here leaves `connected:
+    // true` persisted with a live engine on the real Drive file while the book is null —
+    // and onboarding's Continue then merges a fresh seed against the real remote. BL-040,
+    // the failure these two flows exist to prevent.
+    expect(teardownStillApplies(ERASE, 3, 4)).toBe(true);
+    expect(teardownStillApplies(ERASE, 0, 9)).toBe(true);
+  });
+
+  it("does not fall back on the teardown effect to undo a skipped erase", () => {
+    // Why the clause above cannot be left to self-correct. The teardown effect writes
+    // `previousBookRef.current = book` on every run, so a run that sees the book go null
+    // while `connected` is still false consumes the transition — and `shouldTearDown`
+    // needs `previous` to be non-null, so it can never fire for that erase again. Pinned
+    // as a truth about the pair: the answer for `userAction` does not depend on the counts
+    // at all, which is what makes it independent of that timing.
+    for (const [start, now] of [[0, 0], [1, 2], [5, 5], [2, 99]] as const) {
+      expect(teardownStillApplies(ERASE, start, now)).toBe(true);
+    }
+  });
+
+  it("asks whether the count differs, not which way", () => {
+    // `connectionGenerationRef` only ever increments, so `>=` and `===` agree on every
+    // input the provider can produce and this case is unreachable today — which is exactly
+    // why it is worth pinning. A future edit that resets the ref (on unmount, on a
+    // disconnect) would make `>=` answer "still applies" for a teardown that a live
+    // connection had superseded, and nothing else in this file would notice.
+    expect(teardownStillApplies(VANISHED, 5, 3)).toBe(false);
+  });
+
+  it("is exactly the cause crossed with whether a connection landed", () => {
+    // The table. A mutant that drops the cause check fails the `userAction` row; one that
+    // swaps the causes fails both; one that answers a constant fails one row entirely.
+    for (const [start, now] of [[0, 0], [4, 4], [0, 1], [4, 9], [9, 4]] as const) {
+      expect(teardownStillApplies(ERASE, start, now)).toBe(true);
+      expect(teardownStillApplies(VANISHED, start, now)).toBe(start === now);
+    }
   });
 });

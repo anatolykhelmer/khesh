@@ -25,6 +25,7 @@ import {
   afterLocalStateChange,
   afterTeardown,
   IDLE,
+  teardownStillApplies,
   visibleError,
   type ConnectStage,
   type TeardownIntent,
@@ -199,10 +200,18 @@ export function SyncProvider({ children }: { children: ReactNode }) {
    * still leaves it correct.
    *
    * The refs go synchronously; everything after that is a tail, and the tail is
-   * conditional. A connect can complete inside this function's own window — the drop
-   * notice asks the user for exactly that — and a teardown that no longer speaks for the
-   * current connection must not say "disconnected" over it. See the two comments in the
-   * body.
+   * conditional. A connect can *complete* inside this function's own window — after a
+   * vanished book the drop notice asks the user for exactly that — and a teardown that no
+   * longer speaks for the current connection must not say "disconnected" over it. See
+   * `teardownStillApplies` and the comments in the body.
+   *
+   * The reverse overlap is **not** covered, and this is the honest statement of the limit:
+   * a `finalizeConnect` already in flight when this starts has already bumped, so the tail
+   * sees no change, proceeds, and that finalize then lands on top of it — writing
+   * `connected: true` and `setStage(IDLE)` over whatever this wrote, notice included.
+   * Pre-existing, unchanged by the guard, and recorded as a known debt rather than papered
+   * over here: telling "a finalize that will succeed" from one that will not is not
+   * something a counter read at one instant can do.
    *
    * `intent` exists for the last line only: a first-connect plan on screen means one thing
    * when the book was pulled out from under it and another when the user ended the flow —
@@ -227,17 +236,23 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const auth = authRef.current;
     authRef.current = null;
     await forgetFile();
+    // `auth`, not `authRef.current` — see nine lines up before changing this. Reading the
+    // ref here would revoke whatever auth is on it *now*, which after an intervening
+    // `connect()` is the user's new one.
     await auth?.revoke();
-    // A connection established while this teardown was in flight supersedes it, and
-    // everything below says "disconnected" — in this tab's state and in the shared meta
-    // record. Without this check a `connect()` the user made after the book vanished, one
-    // whose `applyFirstConnect` and `finalizeConnect` both succeeded, ends with a live
-    // engine, live refs, and an app claiming to be disconnected — persisted, so the next
-    // boot resumes nothing. Checked before the meta write and not after: from here to
-    // that write is synchronous, so a save `finalizeConnect` submits later still lands
-    // last, and `finalizeConnect` bumps ahead of its own first await so there is no gap
-    // on its side either.
-    if (connectionGenerationRef.current !== connections) return;
+    // Whether this teardown still speaks for the connection at all. The asymmetry between
+    // the two causes is load-bearing and lives in `teardownStillApplies` — a `userAction`
+    // teardown is never overruled by a connect that landed inside its window, because the
+    // flows that call it go on to erase the book.
+    //
+    // Checked before the meta write rather than after, so that a superseded teardown never
+    // submits a contradicting write at all. That is the whole claim: it is *not* an
+    // ordering guarantee. `createSyncMetaStore().save` is a non-atomic read-modify-write
+    // (`await db.get`, then `await db.put` of a merge), so two concurrent saves each merge
+    // from their own snapshot and the loser's patch is dropped whole — submission order
+    // does not decide the outcome. A `finalizeConnect` that bumps inside the synchronous
+    // gap between this check and the write below is therefore still unordered against it.
+    if (!teardownStillApplies(intent, connections, connectionGenerationRef.current)) return;
     await metaStore.save({ connected: false, accountEmail: null, lastSyncAt: null });
     setConnected(false);
     setEmail(null);
@@ -247,6 +262,17 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     // while the plan it is entitled to drop is the one named in `intent`, captured when
     // it started. See `afterTeardown`.
     setStage((s) => afterTeardown(s, intent));
+    // `userAction` only. The flow the user ended can have left an error on screen that
+    // belongs to a screen they are leaving — a failed `applyChoice` on the recovery screen
+    // before Start over, a failed file-missing Reconnect before Disconnect — and
+    // `afterTeardown` has just written `IDLE`, which `visibleError` does not suppress, so
+    // it would otherwise be painted under the Connect button of the fresh screen this
+    // teardown opens. Not on the `bookVanished` arm: there the same clear swallowed the
+    // sign-in error of a Connect the user made *during* the teardown window, which is the
+    // "Connect looks like it did nothing" this branch exists to remove. The two erase
+    // flows have no such window — `RecoveryScreen` disables Connect for the length of
+    // `performStartOver`, and `performReset` ends by calling `cancelConnect()` itself.
+    if (intent.cause === "userAction") setLastError(null);
   }, [forgetFile, metaStore]);
 
   // Another tab's reset nulls the book here via the cross-tab broadcast, but that
@@ -326,6 +352,28 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // hole `plannedFor` exists to close. Both are booleans, so nothing here catches it.
   const liveStage = afterLocalStateChange(stage, localState, applying);
   useEffect(() => {
+    // The notice and a red error may not share the collapsed Connect row. `components.css`
+    // reserves colour for what needs a person or cannot be undone, and a dropped plan needs
+    // one tap on Connect — the neutral sentence is the whole explanation. The error that
+    // would sit under it is a failed apply from the plan being dropped, which is now moot.
+    // Not folded into `afterLocalStateChange`: that table is pure and `lastError` is not
+    // part of `ConnectStage`.
+    //
+    // Above the early return, not below it, and keyed on the stage rather than on the
+    // transition. A `DROPPED` written by `teardownConnection`'s own `setStage` arrives here
+    // as `stage`, and `afterLocalStateChange` returns its input for anything that is not
+    // `choosing` — so `liveStage === stage` and the return below would skip the clear on
+    // exactly the path where the teardown carries none of its own. Keyed this way the rule
+    // is "while the plan is dropped there is no error in state", which is the guarantee
+    // `visibleError`'s doc comment claims. Idempotent: React bails out on an unchanged
+    // null, and this effect only re-runs when the stage moves.
+    //
+    // This is the *state* half and cannot be the whole rule: it lands a render after the
+    // notice becomes derivable, so `visibleError` in the context value covers the frame in
+    // between. `teardownConnection` carries a clear too, but only on its `userAction` arm —
+    // an unconditional one there swallowed the sign-in error of a Connect the user made
+    // during the teardown window.
+    if (liveStage.kind === "dropped") setLastError(null);
     if (liveStage === stage) return;
     // Compare-and-set rather than `setStage(liveStage)`. This effect is passive, so a tap
     // handled between the paint and this flush has already queued a stage of its own —
@@ -334,20 +382,6 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     // while the stage is still the one this render derived from leaves a newer write
     // alone; the render it schedules re-derives the gate from it anyway.
     setStage((s) => (s === stage ? liveStage : s));
-    // The notice and a red error may not share the collapsed Connect row. `components.css`
-    // reserves colour for what needs a person or cannot be undone, and a dropped plan needs
-    // one tap on Connect — the neutral sentence is the whole explanation. The error that
-    // would sit under it is a failed apply from the plan being dropped, which is now moot.
-    // Not folded into `afterLocalStateChange`: that table is pure and `lastError` is not
-    // part of `ConnectStage`.
-    //
-    // This clear is the *state* half. It cannot be the whole rule, because it lands a
-    // render after the notice becomes derivable — see the suppression in the context value
-    // below, which covers the frame in between. Nor does `teardownConnection` carry a copy
-    // of it any more: an unconditional clear there swallowed the sign-in error of a
-    // Connect the user made during the teardown window, which is "Connect looks like it
-    // did nothing" all over again.
-    if (liveStage.kind === "dropped") setLastError(null);
   }, [liveStage, stage]);
   const choosing = liveStage.kind === "choosing" ? liveStage : null;
 

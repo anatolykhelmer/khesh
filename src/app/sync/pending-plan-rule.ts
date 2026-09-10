@@ -152,6 +152,42 @@ export function afterTeardown(stage: ConnectStage, intent: TeardownIntent): Conn
 }
 
 /**
+ * Whether a teardown's tail still speaks for this tab's connection — that is, whether it
+ * may still write "disconnected" into this tab's state and the shared meta record.
+ *
+ * `teardownConnection` clears the refs synchronously and then runs a tail behind three
+ * awaits, none of them bounded (`revoke()` is a network round trip with no timeout of its
+ * own). A `connect()` can complete inside that window — after a vanished book the drop
+ * notice asks the user for exactly that — and `finalizeConnect` will have written the
+ * opposite of everything the tail is about to write. `connectionsAtStart` is the count of
+ * connections this tab had established when the teardown began; `connectionsNow` is the
+ * count when the tail landed.
+ *
+ * **The two causes want opposite answers, and that asymmetry is the whole of this
+ * function.** A vanished book is the app's own judgement, and a connect the user made
+ * afterwards is newer information about a local state the erase left behind, so it wins.
+ * A `userAction` teardown is not a judgement to be overruled: the user asked to
+ * disconnect, reset or start over, and those flows *continue* — `performReset` erases the
+ * book next, `performStartOver` opens onboarding. Letting a connect win there leaves
+ * `connected: true` persisted with a live engine pointed at the real Drive file while the
+ * book is null and onboarding is on screen, whose Continue then merges a fresh seed
+ * against the real remote. That is BL-040, the failure these flows exist to prevent.
+ *
+ * The teardown effect cannot be relied on to clean that up afterwards: it writes
+ * `previousBookRef.current = book` on every run, so a run that sees the book go null while
+ * `connected` is still false consumes the transition, and `shouldTearDown` — which needs
+ * `previous` to be non-null — can never fire for it again.
+ */
+export function teardownStillApplies(
+  intent: TeardownIntent,
+  connectionsAtStart: number,
+  connectionsNow: number,
+): boolean {
+  if (intent.cause === "userAction") return true;
+  return connectionsAtStart === connectionsNow;
+}
+
+/**
  * Which error the Connect row may still show in red, once the stage has had its say.
  *
  * `lastError` is not part of `ConnectStage`. It is `errorMessage(code)` from a real
@@ -170,6 +206,13 @@ export function afterTeardown(stage: ConnectStage, intent: TeardownIntent): Conn
  * error, then another tab erases the book). This closes that frame. The clear is what
  * stops a merely hidden error resurfacing when something else moves the stage off
  * `dropped` without touching `lastError`, which the resume effect does.
+ *
+ * That second half is a claim about the provider, so it has to be true there: the clear is
+ * keyed on `liveStage.kind === "dropped"` and sits *above* the commit effect's early
+ * return, precisely so that a `DROPPED` written by `teardownConnection` — which
+ * `afterLocalStateChange` passes through unchanged, making the transition a no-op — is
+ * covered too. An earlier arrangement put it below, where it fired only for drops the
+ * render derived; this comment asserted the guarantee anyway, and the PR review caught it.
  *
  * Only `dropped` suppresses. A `choosing` screen shows its apply failures — the choices
  * are still live and the user can retry one — and `idle` is the plain Connect row, where a

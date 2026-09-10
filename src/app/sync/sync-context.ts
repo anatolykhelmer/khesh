@@ -31,6 +31,12 @@ export type SyncContextValue = {
    * gate already guarantees the two agree for as long as the plan is live. Re-deriving
    * would be a second source of truth that can only ever drift. */
   pendingLocalState: LocalState | null;
+  /** A first-connect plan was dropped because the local book moved out from under it,
+   * and the user has not tapped Connect since. Without this the choice screen simply
+   * vanishes and Connect looks like it did nothing (BL-050). Never true at the same time
+   * as `pendingPlan`: both are derived from one stage, which is either `choosing` or
+   * `dropped` and cannot be both. */
+  planWasDropped: boolean;
   /** A connect or first-connect choice is running: its buttons stay disabled, so a
    * second tap cannot start a second load/merge/save/write over the first. */
   applying: boolean;

@@ -288,6 +288,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     pendingInspection: choosing?.inspection ?? null,
     pendingPlan: choosing?.plan ?? null,
     pendingLocalState: choosing?.plannedFor ?? null,
+    planWasDropped: liveStage.kind === "dropped",
     lastError,
 
     applying,

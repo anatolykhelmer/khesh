@@ -84,6 +84,17 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
           <p className="muted row-hint">
             {t(book === null ? "sync.connectRestoreHint" : "sync.connectHint")}
           </p>
+          {/* The one thing this row cannot leave unsaid: the choices the user tapped
+              Connect for were dropped because the book moved underneath them, so Connect
+              looks like it did nothing. Neutral, not `alert` — nothing broke and nothing
+              was lost, and in the commonest case (onboarding's Continue) the user did
+              exactly what the previous red line asked for. `role="status"` because the
+              screen changes with no focus move. */}
+          {sync.planWasDropped ? (
+            <p className="muted row-hint" role="status">
+              {t("sync.planDropped")}
+            </p>
+          ) : null}
           {sync.lastError !== null ? <p className="row-hint alert">{sync.lastError}</p> : null}
         </li>
       </ul>

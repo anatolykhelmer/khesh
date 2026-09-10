@@ -58,6 +58,11 @@ export const DROPPED: ConnectStage = { kind: "dropped" };
  * network round trip for the account email. Dropping there would announce "the book
  * changed, connect again" over a choice that is completing. Nothing is lost by waiting:
  * on success the stage is cleared, and on failure the next render drops it correctly.
+ *
+ * The one case where waiting *would* lose something — the book vanishing under an apply,
+ * where this suppression means no drop is ever committed — is not this function's to
+ * catch: the same flush tears the connection down, and `afterTeardown` settles the stage
+ * itself on that path.
  */
 export function afterLocalStateChange(
   stage: ConnectStage,
@@ -69,19 +74,44 @@ export function afterLocalStateChange(
   return stage.plannedFor === localState ? stage : DROPPED;
 }
 
+/** Why the connection is being torn down. The two callers of `teardownConnection` want
+ * opposite things from a first-connect plan that is still on screen, so the caller says
+ * which it is rather than the rule guessing from the stage. */
+export type TeardownCause =
+  /** `SyncProvider`'s effect: the local book disappeared from under a live connection or
+   * a live choice screen — another tab reset it. */
+  | "bookVanished"
+  /** Disconnect, the Settings reset, start over. The user ended the flow themselves. */
+  | "userAction";
+
 /**
- * The stage a connection teardown leaves behind.
+ * The stage a connection teardown leaves behind, which depends on *why* it happened.
  *
- * A live choice screen goes: `teardownConnection` has just dropped the store, the auth
- * and the file id the choices would act on. A drop notice stays, and that is the whole
- * reason this function exists rather than a bare `setStage(IDLE)`. When another tab
- * erases the book, the teardown effect and the drop fire on the same flush; the teardown
- * then runs three awaits and finishes *after* the notice is on screen, so an
- * unconditional clear would silently eat the message a few microtasks after it appeared.
+ * A live choice screen cannot survive either way: `teardownConnection` has just dropped
+ * the store, the auth and the file id its choices would act on. What differs is whether
+ * the user is owed a sentence about it.
  *
- * A user's own Disconnect while the notice shows therefore leaves it showing. The
- * sentence is still true, and telling the two callers apart would buy nothing.
+ * - **`bookVanished`** is exactly the transition BL-050 exists to explain, so this
+ *   teardown *is* the drop — `choosing` ends in `dropped` here rather than waiting for
+ *   `afterLocalStateChange` to reach the same answer. It used to wait: the drop and this
+ *   teardown fire on the same flush, the teardown then runs three awaits, so the notice
+ *   was assumed to be on screen by the time this ran. That assumption fails whenever a
+ *   choice was being applied when the book went — `afterLocalStateChange` suppresses the
+ *   drop while `applying`, so nothing was ever committed, this found `choosing` and wrote
+ *   `IDLE`, and all the user got was the raw "sync is not connected" the doomed apply
+ *   then failed with. Deciding it here needs no ordering assumption at all.
+ * - **`userAction`** clears, notice included. Disconnect, reset and start over all end
+ *   the first-connect flow deliberately; a notice that outlived the erase which made it
+ *   irrelevant would surface on the fresh onboarding screen explaining an event from
+ *   before it. (Disconnect itself cannot be tapped while the notice shows — the button
+ *   only exists in the connected view, and becoming connected clears the stage — so this
+ *   arm is about the two erase flows.)
+ *
+ * `dropped` stays terminal everywhere else: it survives the teardown that caused it. Only
+ * the next `connect()`, adopting a connection another tab made, or a deliberate end to
+ * the flow clears it.
  */
-export function afterTeardown(stage: ConnectStage): ConnectStage {
-  return stage.kind === "dropped" ? stage : IDLE;
+export function afterTeardown(stage: ConnectStage, cause: TeardownCause): ConnectStage {
+  if (cause === "userAction") return IDLE;
+  return stage.kind === "idle" ? IDLE : DROPPED;
 }

@@ -26,6 +26,7 @@ import {
   afterTeardown,
   IDLE,
   type ConnectStage,
+  type TeardownCause,
 } from "./pending-plan-rule";
 import { SyncContext, type SyncContextValue } from "./sync-context";
 import { runExclusive } from "./sync-lock";
@@ -111,6 +112,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       fileIdRef.current = meta.fileId;
       setEmail(meta.accountEmail);
       setConnected(true);
+      // Being connected retires any first-connect state by definition — the plan
+      // describes a connection that is now made, and the notice asks for a tap on a
+      // Connect row this tab is about to stop rendering (`SyncSection` swaps to the
+      // connected view). Left standing, neither is reachable and neither can be cleared:
+      // the notice would reappear on the Connect row the user's next Disconnect opens,
+      // explaining a book move from arbitrarily earlier in the session.
+      setStage(IDLE);
       setState({ kind: "idle", lastSyncAt: meta.lastSyncAt });
       void startEngine().syncNow();
     });
@@ -163,8 +171,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
    * tab reset the book while this tab was still connected). Safe to run concurrently in
    * several tabs — each tab only touches its own in-memory refs and its own token, and
    * every tab's final write to the shared record agrees, so whichever write lands last
-   * still leaves it correct. */
-  const teardownConnection = useCallback(async () => {
+   * still leaves it correct.
+   *
+   * `cause` exists for the last line only: a first-connect plan on screen means one thing
+   * when the book was pulled out from under it and another when the user ended the flow.
+   * See `afterTeardown`. */
+  const teardownConnection = useCallback(async (cause: TeardownCause) => {
     engineRef.current?.dispose();
     engineRef.current = null;
     storeRef.current = null;
@@ -175,10 +187,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setConnected(false);
     setEmail(null);
     setState(null);
-    // Not an unconditional clear: this runs after three awaits, and in the "another tab
-    // erased the book" case it lands after the drop notice is already on screen. See
-    // `afterTeardown`.
-    setStage(afterTeardown);
+    // Not an unconditional clear, and not a plain value either: this runs after three
+    // awaits, so the stage it must decide from is whatever is current when it lands, not
+    // what was captured when it started. See `afterTeardown`.
+    setStage((s) => afterTeardown(s, cause));
   }, [forgetFile, metaStore]);
 
   // Another tab's reset nulls the book here via the cross-tab broadcast, but that
@@ -198,15 +210,23 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   //
   // This effect reads the *raw* `stage`, not the staleness-gated view below it. A plan
   // that has gone stale is still a store, an auth and a file id bound to the user's real
-  // Drive file, and the transition is exactly the moment to let go of them. Hook order
-  // matters here: this effect is declared before the one that commits the drop, so it
-  // sees the `choosing` stage on the flush where the book vanished rather than a beat after.
+  // Drive file, and the transition is exactly the moment to let go of them. Reading
+  // `choosing`/`liveStage` here is the mutation that breaks it: that view is already null
+  // on the very render the plan goes stale, so `shouldTearDown` would see no pending
+  // inspection, and with `connected` still false nothing would ever release the refs.
+  //
+  // Its position relative to the effect that commits the drop, on the other hand, is not
+  // load-bearing and swapping the two changes nothing: both are created by the same
+  // render and close over that render's `stage`, and a pending passive effect always runs
+  // with the values of the render that queued it. Nor does the notice depend on the two
+  // firing in any particular order — this teardown settles the stage itself through
+  // `afterTeardown`, which is the whole point of passing a cause.
   useEffect(() => {
     const previous = previousBookRef.current;
     previousBookRef.current = book;
     const pendingInspection = stage.kind === "choosing" ? stage.inspection : null;
     if (!shouldTearDown(previous, book, { connected, pendingInspection })) return;
-    void teardownConnection().catch(() => {
+    void teardownConnection("bookVanished").catch(() => {
       // `teardownConnection`'s first statement, `engineRef.current?.dispose()`, is
       // synchronous — the one danger this effect exists to close (a live engine
       // merging a fresh book against the old remote) is already shut by the time any
@@ -233,9 +253,24 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // so a frame carrying the stale choices could otherwise reach the screen before it runs.
   // The transition returns its input object when nothing moved, so `!==` is the whole
   // change test.
+  //
+  // The third argument must be `applying` and nothing else. It marks the one window in
+  // which the local state moves *because of the user's own choice*: pass `false` and a
+  // successful `useRemote` announces "the book changed, connect again" over its own
+  // success for the length of `finalizeConnect`'s account-email request; pass anything
+  // broader — a screen's `disabled`, an import in flight, `state.kind !== "idle"` — and
+  // the drop stays suppressed while the book really is moving underneath, which is the
+  // hole `plannedFor` exists to close. Both are booleans, so nothing here catches it.
   const liveStage = afterLocalStateChange(stage, localState, applying);
   useEffect(() => {
-    if (liveStage !== stage) setStage(liveStage);
+    if (liveStage === stage) return;
+    // Compare-and-set rather than `setStage(liveStage)`. This effect is passive, so a tap
+    // handled between the paint and this flush has already queued a stage of its own —
+    // `connect()` queues `IDLE` — and a plain write would land on top of it, leaving the
+    // notice showing beside the `lastError` of the connect it asked for. Committing only
+    // while the stage is still the one this render derived from leaves a newer write
+    // alone; the render it schedules re-derives the gate from it anyway.
+    setStage((s) => (s === stage ? liveStage : s));
   }, [liveStage, stage]);
   const choosing = liveStage.kind === "choosing" ? liveStage : null;
 
@@ -306,7 +341,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       await connect();
     },
 
-    applyChoice: async (choice: FirstConnectChoice) => {
+    applyChoice: async (choice: FirstConnectChoice, onStarted?: () => void) => {
       // Act only on a choice the live plan actually offers. A tap carries a value that
       // was rendered from some earlier plan, and between the render and the handler the
       // plan can have been dropped as stale, cancelled, or replaced by a second Connect.
@@ -319,6 +354,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       if (applyingRef.current) return;
       applyingRef.current = true;
       setApplying(true);
+      // Past both guards, so this choice and no other is what is now running. Announced
+      // here rather than assumed by the caller: a tap the guards turn away leaves the
+      // screen's "Working…" on the refused button while the accepted one runs underneath
+      // it — and, if that one fails, puts its error under the wrong label. Before the
+      // first await, so it batches with `setApplying(true)` and no frame sees one
+      // without the other.
+      onStarted?.();
       try {
         setLastError(null);
         const applied = await applyFirstConnect(choice, {
@@ -340,7 +382,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
     cancelConnect: () => setStage(IDLE),
 
-    disconnect: teardownConnection,
+    // Wrapped, not passed through: `teardownConnection` now takes a cause, and a bare
+    // reference would let an `onClick={sync.disconnect}` hand it a click event.
+    disconnect: () => teardownConnection("userAction"),
 
     syncNow: () => void engineRef.current?.syncNow(),
 

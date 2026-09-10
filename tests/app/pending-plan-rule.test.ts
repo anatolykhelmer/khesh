@@ -96,20 +96,52 @@ describe("afterLocalStateChange", () => {
 });
 
 describe("afterTeardown", () => {
-  it("closes a live choice screen", () => {
+  it("closes a live choice screen the user themselves ended", () => {
+    // Disconnect, the Settings reset, start over: the choices are gone because the user
+    // said so, and there is nothing to explain.
     for (const local of ALL) {
-      expect(afterTeardown(choosing(local))).toBe(IDLE);
+      expect(afterTeardown(choosing(local), "userAction")).toBe(IDLE);
     }
   });
 
-  it("keeps a drop notice the teardown's own late cleanup would otherwise eat", () => {
-    // Both fire on the flush where another tab's reset nulls the book: the teardown
-    // effect first (it reads the raw stage), the drop a beat later. teardownConnection
-    // then finishes three awaits and clears the stage — after the notice appeared.
-    expect(afterTeardown(DROPPED)).toBe(DROPPED);
+  it("turns a live choice screen into the notice when the book vanished under it", () => {
+    // Another tab's reset nulls the book, teardownConnection drops the store, auth and
+    // file id the choices would have acted on. Clearing to IDLE here is BL-050's exact
+    // silence: the screen collapses to a plain Connect row that looks untouched.
+    for (const local of ALL) {
+      expect(afterTeardown(choosing(local), "bookVanished")).toBe(DROPPED);
+    }
   });
 
-  it("leaves an idle stage alone", () => {
-    expect(afterTeardown(IDLE)).toBe(IDLE);
+  it("does not need the staleness drop to have been committed first", () => {
+    // The case that broke when this took no cause. The book vanishes while the user's
+    // own choice is being applied, so afterLocalStateChange suppresses the drop on that
+    // flush — nothing is ever committed — and the teardown is the only writer left. It
+    // used to find `choosing` and write IDLE, leaving the user with the raw "sync is not
+    // connected" that the apply then failed with, and nothing saying why.
+    const suppressed = afterLocalStateChange(choosing("real"), "none", true);
+    expect(suppressed.kind).toBe("choosing");
+    expect(afterTeardown(suppressed, "bookVanished")).toBe(DROPPED);
+  });
+
+  it("keeps a notice through the teardown that caused it", () => {
+    // The drop did commit first here — the ordering the old rule assumed always held.
+    // Both orders now reach the same stage.
+    expect(afterTeardown(DROPPED, "bookVanished")).toBe(DROPPED);
+  });
+
+  it("retires a notice the user's own erase has made irrelevant", () => {
+    // performStartOver disconnects unconditionally, so this is the whole of its guard
+    // against carrying "the book on this device changed…" onto the fresh onboarding
+    // screen it is one line from opening.
+    expect(afterTeardown(DROPPED, "userAction")).toBe(IDLE);
+  });
+
+  it("leaves an idle stage alone, whichever end of the connection it came from", () => {
+    // The bookVanished half matters: that effect also fires for a plain connected tab
+    // with no plan pending (BL-040's case), and a rule that answered DROPPED for every
+    // vanished book would put the notice on a screen where no choices were ever offered.
+    expect(afterTeardown(IDLE, "userAction")).toBe(IDLE);
+    expect(afterTeardown(IDLE, "bookVanished")).toBe(IDLE);
   });
 });

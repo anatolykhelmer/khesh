@@ -44,7 +44,17 @@ export type SyncContextValue = {
   /** Recovery for SYNC_FILE_MISSING: forget the dead file id and run `connect` again,
    * inspection and all, so a Drive that does hold a book still reaches the choice UI. */
   reconnect: () => Promise<void>;
-  applyChoice: (choice: FirstConnectChoice) => Promise<void>;
+  /** Apply one of `pendingPlan`'s choices. `onStarted` fires once the dispatch is
+   * accepted — never for a tap the provider turns away, either because the live plan no
+   * longer offers that choice or because another apply is already running. A screen that
+   * marks the running choice must key on this rather than on the tap: the two guards are
+   * invisible from outside, so a refused tap would otherwise re-label the wrong button
+   * while a different choice runs. */
+  applyChoice: (choice: FirstConnectChoice, onStarted?: () => void) => Promise<void>;
+  /** Ends the first-connect flow: no plan, no inspection, no dropped-plan notice. The
+   * Cancel button, and `performReset` once the erase has landed — an erase leaves nothing
+   * for either to be about, and a dropped plan is invisible to the "is anything
+   * connected?" gate that decides whether that flow disconnects at all. */
   cancelConnect: () => void;
   disconnect: () => Promise<void>;
   syncNow: () => void;

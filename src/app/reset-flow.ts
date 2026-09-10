@@ -11,6 +11,12 @@ export type ResetSyncDeps = {
    * trigger teardown — otherwise the choice UI survives the reset armed at the old file. */
   pendingInspection: unknown;
   disconnect: () => Promise<void>;
+  /** Ends the first-connect flow outright — `SyncProvider`'s `setStage(IDLE)`. Needed
+   * beyond `disconnect` because a *dropped* plan holds neither a connection nor an
+   * inspection: both fields above read quiet, the gate below skips the teardown that
+   * would have cleared it, and the notice explaining a book move that happened before
+   * the erase rides through onto the fresh onboarding screen. */
+  cancelConnect: () => void;
 };
 
 export type ResetDeps = {
@@ -51,6 +57,11 @@ export async function performReset(deps: ResetDeps): Promise<void> {
   }
 
   deps.setError(null);
+  // After the erase and before the announce: whatever the first-connect flow had to say
+  // was about the book that no longer exists, and the screen this is one line from
+  // opening is onboarding's. Not earlier — an erase that fails leaves the book, and with
+  // it every reason the notice was put up.
+  deps.sync.cancelConnect();
   // No book: App renders OnboardingScreen here, and the other tabs follow the
   // broadcast into the same place.
   deps.announceBookChanged(null);
@@ -101,7 +112,10 @@ export type StartOverDeps = {
  * a book, so the resume effect has run and `connected` does reflect the stored record.
  *
  * `teardownConnection` is idempotent and null-safe on every ref it touches, so running it
- * against a genuinely idle tab costs one best-effort write to the meta database.
+ * against a genuinely idle tab costs one best-effort write to the meta database. It is
+ * also why this flow needs no `cancelConnect` of its own where `performReset` does: the
+ * unconditional call ends the first-connect flow on every path, dropped plan included
+ * (`afterTeardown`, cause `userAction`).
  *
  * **It erases nothing.** No repository, no `resetAll` — the type above carries no way to
  * reach storage, and that is the point. The stored book stays until onboarding's Continue

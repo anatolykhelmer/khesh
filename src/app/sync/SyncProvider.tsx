@@ -21,7 +21,12 @@ import { createSyncEngine, type SyncEngine, type SyncState } from "../../service
 import type { SyncStorePort } from "../../ports/sync-store";
 import type { Book } from "../../kernel";
 import { useLedger } from "../ledger-context";
-import { isPendingPlanStale, type PendingConnect } from "./pending-plan-rule";
+import {
+  afterLocalStateChange,
+  afterTeardown,
+  IDLE,
+  type ConnectStage,
+} from "./pending-plan-rule";
 import { SyncContext, type SyncContextValue } from "./sync-context";
 import { runExclusive } from "./sync-lock";
 import { syncSignal } from "./sync-signal";
@@ -42,9 +47,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [state, setState] = useState<SyncState | null>(null);
-  // Inspection, plan and the local state the plan was decided against, as one value: they
-  // are written and cleared together, and no render may show one without the others.
-  const [pending, setPending] = useState<PendingConnect | null>(null);
+  // Inspection, plan, the local state the plan was decided against, and "the plan was
+  // dropped and the user has not been told yet", as one value: they are written and
+  // cleared together, and no render may show one without the others.
+  const [stage, setStage] = useState<ConnectStage>(IDLE);
   const [lastError, setLastError] = useState<string | null>(null);
   // The ref is the guard and the state is what the UI reads: a second tap arrives before
   // React has re-rendered with `applying`, so only a ref can turn it away.
@@ -138,7 +144,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     await metaStore.save({ connected: true, accountEmail });
     setEmail(accountEmail);
     setConnected(true);
-    setPending(null);
+    setStage(IDLE);
     void startEngine().syncNow();
   }, [metaStore, startEngine]);
 
@@ -169,7 +175,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setConnected(false);
     setEmail(null);
     setState(null);
-    setPending(null);
+    // Not an unconditional clear: this runs after three awaits, and in the "another tab
+    // erased the book" case it lands after the drop notice is already on screen. See
+    // `afterTeardown`.
+    setStage(afterTeardown);
   }, [forgetFile, metaStore]);
 
   // Another tab's reset nulls the book here via the cross-tab broadcast, but that
@@ -187,15 +196,16 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // now *begin* while the book is null, because the onboarding and recovery screens
   // offer Connect, and tearing that down would destroy the choice as it appeared.
   //
-  // This effect reads the *raw* `pending`, not the staleness-gated view below it. A plan
+  // This effect reads the *raw* `stage`, not the staleness-gated view below it. A plan
   // that has gone stale is still a store, an auth and a file id bound to the user's real
   // Drive file, and the transition is exactly the moment to let go of them. Hook order
-  // matters here: this effect is declared before the one that drops a stale plan, so it
-  // sees `pending` on the flush where the book vanished rather than a beat after.
+  // matters here: this effect is declared before the one that commits the drop, so it
+  // sees the `choosing` stage on the flush where the book vanished rather than a beat after.
   useEffect(() => {
     const previous = previousBookRef.current;
     previousBookRef.current = book;
-    if (!shouldTearDown(previous, book, { connected, pendingInspection: pending })) return;
+    const pendingInspection = stage.kind === "choosing" ? stage.inspection : null;
+    if (!shouldTearDown(previous, book, { connected, pendingInspection })) return;
     void teardownConnection().catch(() => {
       // `teardownConnection`'s first statement, `engineRef.current?.dispose()`, is
       // synchronous — the one danger this effect exists to close (a live engine
@@ -207,7 +217,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       // an error banner to (the book is null, so Settings is not even on screen), so
       // swallow rather than surface a message the user cannot act on.
     });
-  }, [book, connected, pending, teardownConnection]);
+  }, [book, connected, stage, teardownConnection]);
 
   // What the local side has to lose. A null book covers both "storage is empty" and
   // "the stored book failed to load" — neither holds data a remote book could destroy.
@@ -217,15 +227,17 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // A plan is decided once, from the local state at the moment the remote was inspected —
   // that is what stops the choices shifting under the user's finger. The book can still
   // move underneath it, and then the plan describes a local side that no longer exists.
-  // See `isPendingPlanStale` for the three ways that happens and what each one costs.
+  // See `afterLocalStateChange` for the three ways that happens and what each one costs.
   //
-  // Gated in render, not only cleared in the effect: the effect is a passive one, so a
-  // frame carrying the stale choices could otherwise reach the screen before it runs.
-  const planIsStale = isPendingPlanStale(pending, localState);
+  // Computed in render and merely committed by the effect: the effect is a passive one,
+  // so a frame carrying the stale choices could otherwise reach the screen before it runs.
+  // The transition returns its input object when nothing moved, so `!==` is the whole
+  // change test.
+  const liveStage = afterLocalStateChange(stage, localState, applying);
   useEffect(() => {
-    if (planIsStale) setPending(null);
-  }, [planIsStale]);
-  const livePending = planIsStale ? null : pending;
+    if (liveStage !== stage) setStage(liveStage);
+  }, [liveStage, stage]);
+  const choosing = liveStage.kind === "choosing" ? liveStage : null;
 
   const connect = async () => {
     if (applyingRef.current) return;
@@ -233,6 +245,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setApplying(true);
     try {
       setLastError(null);
+      // The user did the thing the dropped-plan notice asks for, so the notice goes now
+      // rather than when this connect lands — the button beside it is already disabled.
+      setStage(IDLE);
       if (!authRef.current) authRef.current = createGoogleAuth(CLIENT_ID);
       const token = await authRef.current.getToken(true); // the tap satisfies the popup rule
       if (!token.ok) {
@@ -258,7 +273,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       // "choose" and "explain" both need the user to see the screen. `localState` here is
       // the value captured before the await above; stamping the plan with it is what lets
       // the gate above notice that the book moved while Drive was being read.
-      setPending({ inspection: inspection.value, plan, plannedFor: localState });
+      setStage({ kind: "choosing", inspection: inspection.value, plan, plannedFor: localState });
     } finally {
       applyingRef.current = false;
       setApplying(false);
@@ -270,9 +285,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     connected,
     email,
     state,
-    pendingInspection: livePending?.inspection ?? null,
-    pendingPlan: livePending?.plan ?? null,
-    pendingLocalState: livePending?.plannedFor ?? null,
+    pendingInspection: choosing?.inspection ?? null,
+    pendingPlan: choosing?.plan ?? null,
+    pendingLocalState: choosing?.plannedFor ?? null,
     lastError,
 
     applying,
@@ -297,7 +312,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       // Running it anyway performs the write the current plan withheld — see
       // `isChoiceOffered`. The screens disable these buttons too; this is the half that
       // does not depend on every future screen remembering to.
-      if (!isChoiceOffered(livePending?.plan ?? null, choice)) return;
+      if (!isChoiceOffered(choosing?.plan ?? null, choice)) return;
       // The lock below serializes two of these; this turns the second one away entirely,
       // which is what a double-tapped choice button means.
       if (applyingRef.current) return;
@@ -322,7 +337,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       }
     },
 
-    cancelConnect: () => setPending(null),
+    cancelConnect: () => setStage(IDLE),
 
     disconnect: teardownConnection,
 

@@ -96,11 +96,18 @@ describe("afterLocalStateChange", () => {
 });
 
 describe("afterTeardown", () => {
+  /** The vanished-book intent as `SyncProvider`'s effect builds it: the stage of the
+   * render that decided to tear down. Every assertion below has to name it, because the
+   * plan a teardown may drop is the plan it started from and no other. */
+  function vanished(startedFrom: ConnectStage) {
+    return { cause: "bookVanished", startedFrom } as const;
+  }
+
   it("closes a live choice screen the user themselves ended", () => {
     // Disconnect, the Settings reset, start over: the choices are gone because the user
     // said so, and there is nothing to explain.
     for (const local of ALL) {
-      expect(afterTeardown(choosing(local), "userAction")).toBe(IDLE);
+      expect(afterTeardown(choosing(local), { cause: "userAction" })).toBe(IDLE);
     }
   });
 
@@ -109,7 +116,8 @@ describe("afterTeardown", () => {
     // file id the choices would have acted on. Clearing to IDLE here is BL-050's exact
     // silence: the screen collapses to a plain Connect row that looks untouched.
     for (const local of ALL) {
-      expect(afterTeardown(choosing(local), "bookVanished")).toBe(DROPPED);
+      const stage = choosing(local);
+      expect(afterTeardown(stage, vanished(stage))).toBe(DROPPED);
     }
   });
 
@@ -119,29 +127,76 @@ describe("afterTeardown", () => {
     // flush — nothing is ever committed — and the teardown is the only writer left. It
     // used to find `choosing` and write IDLE, leaving the user with the raw "sync is not
     // connected" that the apply then failed with, and nothing saying why.
-    const suppressed = afterLocalStateChange(choosing("real"), "none", true);
-    expect(suppressed.kind).toBe("choosing");
-    expect(afterTeardown(suppressed, "bookVanished")).toBe(DROPPED);
+    const stage = choosing("real");
+    const suppressed = afterLocalStateChange(stage, "none", true);
+    // The suppression returns its input, so the plan the teardown started from is still
+    // the plan on screen — which is exactly why identity lets this one through.
+    expect(suppressed).toBe(stage);
+    expect(afterTeardown(suppressed, vanished(stage))).toBe(DROPPED);
+  });
+
+  it("leaves alone a plan that was decided after the teardown began", () => {
+    // The reviewer's case, and the reason the intent carries a stage at all. This tail
+    // runs after three awaits — `revoke()` is a network round trip with no timeout of its
+    // own — while `connect()` is free the whole time, recreating the auth and store the
+    // teardown nulled. So a second Connect can land a plan decided from the local state
+    // the vanished book left behind: valid, current, and none of this teardown's
+    // business. Answering DROPPED here would print BL-050's notice over live choices.
+    const startedFrom = choosing("real");
+    const decidedAfter = choosing("none");
+    expect(afterTeardown(decidedAfter, vanished(startedFrom))).toBe(decidedAfter);
+  });
+
+  it("tells two plans apart by identity, not by the local state they were planned for", () => {
+    // A `choosing` that merely *looks* like the one the teardown started from is still a
+    // different plan, carrying a different inspection of Drive. Kills the mutant that
+    // compares `plannedFor`, or `kind`, instead of the object.
+    for (const local of ALL) {
+      const startedFrom = choosing(local);
+      const lookalike = choosing(local);
+      expect(afterTeardown(lookalike, vanished(startedFrom))).toBe(lookalike);
+      expect(afterTeardown(startedFrom, vanished(startedFrom))).toBe(DROPPED);
+    }
   });
 
   it("keeps a notice through the teardown that caused it", () => {
     // The drop did commit first here — the ordering the old rule assumed always held.
-    // Both orders now reach the same stage.
-    expect(afterTeardown(DROPPED, "bookVanished")).toBe(DROPPED);
+    // Both orders now reach the same stage, and the commit effect got here first, so the
+    // stage no longer matches `startedFrom` and this simply leaves it standing.
+    expect(afterTeardown(DROPPED, vanished(choosing("real")))).toBe(DROPPED);
+    expect(afterTeardown(DROPPED, vanished(DROPPED))).toBe(DROPPED);
   });
 
   it("retires a notice the user's own erase has made irrelevant", () => {
     // performStartOver disconnects unconditionally, so this is the whole of its guard
     // against carrying "the book on this device changed…" onto the fresh onboarding
     // screen it is one line from opening.
-    expect(afterTeardown(DROPPED, "userAction")).toBe(IDLE);
+    expect(afterTeardown(DROPPED, { cause: "userAction" })).toBe(IDLE);
   });
 
   it("leaves an idle stage alone, whichever end of the connection it came from", () => {
     // The bookVanished half matters: that effect also fires for a plain connected tab
     // with no plan pending (BL-040's case), and a rule that answered DROPPED for every
     // vanished book would put the notice on a screen where no choices were ever offered.
-    expect(afterTeardown(IDLE, "userAction")).toBe(IDLE);
-    expect(afterTeardown(IDLE, "bookVanished")).toBe(IDLE);
+    // `startedFrom` is IDLE here, so identity alone would match — the `kind` check beside
+    // it is what keeps the notice off a screen that never offered choices.
+    expect(afterTeardown(IDLE, { cause: "userAction" })).toBe(IDLE);
+    expect(afterTeardown(IDLE, vanished(IDLE))).toBe(IDLE);
+  });
+
+  it("is exactly the started-from plan and nothing else, across the whole table", () => {
+    // The truth table with identity folded in. `userAction` clears every stage; a vanished
+    // book drops the one stage the teardown named and returns every other unchanged. A
+    // mutant that inverts the identity test fails the diagonal; one that drops it fails
+    // everywhere off the diagonal.
+    const plans = ALL.map(choosing);
+    const stages: ConnectStage[] = [IDLE, DROPPED, ...plans];
+    for (const startedFrom of stages) {
+      for (const current of stages) {
+        expect(afterTeardown(current, { cause: "userAction" })).toBe(IDLE);
+        const dropped = current.kind === "choosing" && current === startedFrom;
+        expect(afterTeardown(current, vanished(startedFrom))).toBe(dropped ? DROPPED : current);
+      }
+    }
   });
 });

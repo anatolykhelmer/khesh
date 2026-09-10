@@ -74,15 +74,27 @@ export function afterLocalStateChange(
   return stage.plannedFor === localState ? stage : DROPPED;
 }
 
-/** Why the connection is being torn down. The two callers of `teardownConnection` want
- * opposite things from a first-connect plan that is still on screen, so the caller says
- * which it is rather than the rule guessing from the stage. */
-export type TeardownCause =
-  /** `SyncProvider`'s effect: the local book disappeared from under a live connection or
-   * a live choice screen — another tab reset it. */
-  | "bookVanished"
+/**
+ * Why the connection is being torn down — and, when a vanished book is why, *which* plan
+ * the teardown set out to end.
+ *
+ * The two callers of `teardownConnection` want opposite things from a first-connect plan
+ * that is still on screen, so the caller says which it is rather than the rule guessing
+ * from the stage. `bookVanished` carries one thing more, because the cause alone is not
+ * enough to identify the plan: see `afterTeardown`.
+ *
+ * The two arms are a union rather than one optional field so the type refuses both
+ * mistakes — a vanished-book teardown that forgot to name the plan it started from, and a
+ * user action pretending to have one.
+ */
+export type TeardownIntent =
   /** Disconnect, the Settings reset, start over. The user ended the flow themselves. */
-  | "userAction";
+  | { cause: "userAction" }
+  /** `SyncProvider`'s effect: the local book disappeared from under a live connection or
+   * a live choice screen — another tab reset it. `startedFrom` is the stage as it stood
+   * when the teardown began, which is not necessarily the stage that will be current
+   * when it finishes. */
+  | { cause: "bookVanished"; startedFrom: ConnectStage };
 
 /**
  * The stage a connection teardown leaves behind, which depends on *why* it happened.
@@ -92,14 +104,14 @@ export type TeardownCause =
  * the user is owed a sentence about it.
  *
  * - **`bookVanished`** is exactly the transition BL-050 exists to explain, so this
- *   teardown *is* the drop — `choosing` ends in `dropped` here rather than waiting for
- *   `afterLocalStateChange` to reach the same answer. It used to wait: the drop and this
- *   teardown fire on the same flush, the teardown then runs three awaits, so the notice
- *   was assumed to be on screen by the time this ran. That assumption fails whenever a
- *   choice was being applied when the book went — `afterLocalStateChange` suppresses the
- *   drop while `applying`, so nothing was ever committed, this found `choosing` and wrote
- *   `IDLE`, and all the user got was the raw "sync is not connected" the doomed apply
- *   then failed with. Deciding it here needs no ordering assumption at all.
+ *   teardown *is* the drop — the plan it started from ends in `dropped` here rather than
+ *   waiting for `afterLocalStateChange` to reach the same answer. It used to wait: the
+ *   drop and this teardown fire on the same flush, the teardown then runs three awaits,
+ *   so the notice was assumed to be on screen by the time this ran. That assumption fails
+ *   whenever a choice was being applied when the book went — `afterLocalStateChange`
+ *   suppresses the drop while `applying`, so nothing was ever committed, this found
+ *   `choosing` and wrote `IDLE`, and all the user got was the raw "sync is not connected"
+ *   the doomed apply then failed with.
  * - **`userAction`** clears, notice included. Disconnect, reset and start over all end
  *   the first-connect flow deliberately; a notice that outlived the erase which made it
  *   irrelevant would surface on the fresh onboarding screen explaining an event from
@@ -107,11 +119,34 @@ export type TeardownCause =
  *   only exists in the connected view, and becoming connected clears the stage — so this
  *   arm is about the two erase flows.)
  *
+ * **Why `bookVanished` needs `startedFrom`, and this is the ordering assumption that
+ * really is gone.** The three awaits are still there, and nothing bounds them:
+ * `revoke()` is a network round trip with no timeout of its own, so this last line can
+ * land arbitrarily late. `connect()` is not blocked in the meantime — it recreates the
+ * auth and the store the teardown nulled — so by the time this runs the user may be
+ * looking at a *second*, perfectly valid plan, decided from the local state the vanished
+ * book left behind. Answering `dropped` for "whatever `choosing` is current" would print
+ * the BL-050 notice over that plan: a false sentence, on the branch that exists to make
+ * this sentence true. Identity is the whole test — stages are frozen and every
+ * `choosing` is a fresh object from one `connect()`, so `stage === intent.startedFrom`
+ * means "still the plan this teardown was about" and nothing else.
+ *
+ * The `kind` check beside it is not redundant with that identity. A teardown that begins
+ * at `idle` — the plain connected tab of BL-040, no plan ever offered — would otherwise
+ * match itself and put the notice on a screen that never showed choices.
+ *
  * `dropped` stays terminal everywhere else: it survives the teardown that caused it. Only
  * the next `connect()`, adopting a connection another tab made, or a deliberate end to
  * the flow clears it.
+ *
+ * `userAction` needs no such care. Its two flows disable the Connect button for the
+ * length of the teardown (`RecoveryScreen`'s `startingOver`) or end by calling
+ * `cancelConnect()` themselves after the erase (`performReset`), so no plan started
+ * mid-teardown survives to be wrongly cleared — and clearing is this arm's answer for
+ * every stage anyway.
  */
-export function afterTeardown(stage: ConnectStage, cause: TeardownCause): ConnectStage {
-  if (cause === "userAction") return IDLE;
-  return stage.kind === "idle" ? IDLE : DROPPED;
+export function afterTeardown(stage: ConnectStage, intent: TeardownIntent): ConnectStage {
+  if (intent.cause === "userAction") return IDLE;
+  if (stage.kind === "choosing" && stage === intent.startedFrom) return DROPPED;
+  return stage;
 }

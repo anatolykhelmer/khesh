@@ -26,7 +26,7 @@ import {
   afterTeardown,
   IDLE,
   type ConnectStage,
-  type TeardownCause,
+  type TeardownIntent,
 } from "./pending-plan-rule";
 import { SyncContext, type SyncContextValue } from "./sync-context";
 import { runExclusive } from "./sync-lock";
@@ -173,10 +173,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
    * every tab's final write to the shared record agrees, so whichever write lands last
    * still leaves it correct.
    *
-   * `cause` exists for the last line only: a first-connect plan on screen means one thing
-   * when the book was pulled out from under it and another when the user ended the flow.
-   * See `afterTeardown`. */
-  const teardownConnection = useCallback(async (cause: TeardownCause) => {
+   * `intent` exists for the last line only: a first-connect plan on screen means one thing
+   * when the book was pulled out from under it and another when the user ended the flow —
+   * and on the first of those, *which* plan matters too. See `afterTeardown`. */
+  const teardownConnection = useCallback(async (intent: TeardownIntent) => {
     engineRef.current?.dispose();
     engineRef.current = null;
     storeRef.current = null;
@@ -188,9 +188,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setEmail(null);
     setState(null);
     // Not an unconditional clear, and not a plain value either: this runs after three
-    // awaits, so the stage it must decide from is whatever is current when it lands, not
-    // what was captured when it started. See `afterTeardown`.
-    setStage((s) => afterTeardown(s, cause));
+    // awaits, so the stage it must decide from is whatever is current when it lands —
+    // while the plan it is entitled to drop is the one named in `intent`, captured when
+    // it started. See `afterTeardown`.
+    setStage((s) => afterTeardown(s, intent));
   }, [forgetFile, metaStore]);
 
   // Another tab's reset nulls the book here via the cross-tab broadcast, but that
@@ -220,13 +221,20 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // render and close over that render's `stage`, and a pending passive effect always runs
   // with the values of the render that queued it. Nor does the notice depend on the two
   // firing in any particular order — this teardown settles the stage itself through
-  // `afterTeardown`, which is the whole point of passing a cause.
+  // `afterTeardown`, which is the whole point of passing an intent.
+  //
+  // That same raw `stage` is what the intent carries, and it must come from here rather
+  // than from a closure inside `teardownConnection` or a ref mirroring the state: it is
+  // this render's stage, the one `shouldTearDown` just judged, so the plan the teardown
+  // announces as dropped is exactly the plan it was called about. Threading it as an
+  // argument also keeps `teardownConnection` off `stage` as a dependency — it is this
+  // effect's own dependency, so a new identity per stage change would re-run the effect.
   useEffect(() => {
     const previous = previousBookRef.current;
     previousBookRef.current = book;
     const pendingInspection = stage.kind === "choosing" ? stage.inspection : null;
     if (!shouldTearDown(previous, book, { connected, pendingInspection })) return;
-    void teardownConnection("bookVanished").catch(() => {
+    void teardownConnection({ cause: "bookVanished", startedFrom: stage }).catch(() => {
       // `teardownConnection`'s first statement, `engineRef.current?.dispose()`, is
       // synchronous — the one danger this effect exists to close (a live engine
       // merging a fresh book against the old remote) is already shut by the time any
@@ -382,9 +390,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
     cancelConnect: () => setStage(IDLE),
 
-    // Wrapped, not passed through: `teardownConnection` now takes a cause, and a bare
+    // Wrapped, not passed through: `teardownConnection` now takes an intent, and a bare
     // reference would let an `onClick={sync.disconnect}` hand it a click event.
-    disconnect: () => teardownConnection("userAction"),
+    disconnect: () => teardownConnection({ cause: "userAction" }),
 
     syncNow: () => void engineRef.current?.syncNow(),
 

@@ -63,7 +63,9 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
   // A pending confirmation belongs to the plan it was opened against. `pendingInspection`
   // is a fresh object per connect and null between them, so this clears the expanded row
   // when the plan is cancelled, applied or replaced — otherwise the next Connect would
-  // open with a stale "are you sure" already unfolded.
+  // open with a stale "are you sure" already unfolded. `running` tracks the same window,
+  // and clearing it here prevents a stale "Working…" label from carrying into the next
+  // choice screen.
   const inspection = sync.pendingInspection;
   useEffect(() => {
     setConfirming(null);

@@ -49,6 +49,39 @@ describe("LedgerApp boot + createHousehold", () => {
     expect(holdsNoUserData(unwrap(await app.createHousehold("ILS")))).toBe(true);
   });
 
+  /* The other side of the same predicate, and the one users actually reach: a wizard-built
+   * tree must classify as real, or `localState` would call a household book "empty" and
+   * stop offering Merge on a second device's first connect — with the skip case above, and
+   * `holdsNoUserData`'s own hand-built suite, both still green. The skip path is the only
+   * one allowed to look like a seed. */
+  it("a household plan produces a book that does hold user data", async () => {
+    const app = createLedgerApp(createMemoryRepository(null));
+    let answers = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    answers = applyOption(answers, "money", "bank", "ILS");
+    const book = unwrap(await app.createHousehold("ILS", planStarterBook(answers, "ILS")));
+    expect(holdsNoUserData(book)).toBe(false);
+    // The smallest household plan there is — Skip's four roots plus one leaf — is already
+    // enough, so no branch of the wizard can slip back under the predicate.
+    const bare = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    const bareBook = unwrap(
+      await createLedgerApp(createMemoryRepository(null)).createHousehold(
+        "ILS",
+        planStarterBook(bare, "ILS"),
+      ),
+    );
+    expect(holdsNoUserData(bareBook)).toBe(false);
+  });
+
+  /* And Skip must stay on the other side of it: the empty-book path creates the four roots
+   * and nothing else, which is exactly what `localState` reads as "empty". */
+  it("the skip answer produces a book that holds no user data", async () => {
+    const app = createLedgerApp(createMemoryRepository(null));
+    const answers = applyOption(EMPTY_ANSWERS, "household", "skip", "ILS");
+    const book = unwrap(await app.createHousehold("ILS", planStarterBook(answers, "ILS")));
+    expect(book.accounts).toHaveLength(4);
+    expect(holdsNoUserData(book)).toBe(true);
+  });
+
   it("createHousehold rejects invalid currency", async () => {
     const app = createLedgerApp(createMemoryRepository(null));
     expect(unwrapErr(await app.createHousehold("il")).code).toBe("INVALID_CURRENCY_CODE");
@@ -80,8 +113,8 @@ describe("LedgerApp boot + createHousehold", () => {
     expect(book.accounts).toHaveLength(plan.length);
     expect(commits).toEqual([plan.length]);
     expect(validateBook(book).ok).toBe(true);
-    // The starter.accounts.* i18n strings don't exist yet (Task 4), so identify each
-    // created account by its plan position rather than its resolved name: createAccount
+    // Identify each created account by its plan position rather than its resolved name,
+    // so this test says nothing about the wording of the starter strings: createAccount
     // pushes to the end of book.accounts, and every plan item here is created
     // successfully, so book.accounts[i] is the account minted from plan[i].
     const byKey = new Map(plan.map((item, i) => [item.key, book.accounts[i]]));

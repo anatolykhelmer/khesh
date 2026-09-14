@@ -171,20 +171,35 @@ export function afterTeardown(stage: ConnectStage, intent: TeardownIntent): Conn
  * error under it is either the failed apply of the plan being dropped, now moot, or the
  * teardown's own doing.
  *
- * A function here rather than a `setLastError(null)` alone, because the two are not the
- * same kind of guarantee and the provider needs both. `planWasDropped` is *derived* — true
- * on the very frame the drop becomes derivable — while a clear is a state write that lands
- * a render later, so one painted frame fits in between (a `merge` fails with a network
- * error, then another tab erases the book). This closes that frame. The clear is what
- * stops a merely hidden error resurfacing when something else moves the stage off
- * `dropped` without touching `lastError`, which the resume effect does.
+ * A function here rather than a `lastError = null` alone, because hiding and clearing are
+ * not the same guarantee and the session needs both. This one is the hide, and it is
+ * total: `buildSnapshot` applies it to every snapshot it builds, so no subscriber can ever
+ * be handed an error under a dropped stage — not even for the instant between the drop and
+ * whatever clear follows it. (When this rule lived in the provider that instant was a
+ * painted frame, because deriving the drop and writing the clear were a render apart.
+ * Inside the session they are the same statement, and the hide stays anyway: it is what
+ * makes the property hold by construction rather than by everyone remembering to clear.)
  *
- * That second half is a claim about the provider, so it has to be true there: the clear is
- * keyed on `liveStage.kind === "dropped"` and sits *above* the commit effect's early
- * return, precisely so that a `DROPPED` written by `teardownConnection` — which
- * `afterLocalStateChange` passes through unchanged, making the transition a no-op — is
- * covered too. An earlier arrangement put it below, where it fired only for drops the
- * render derived; this comment asserted the guarantee anyway, and the PR review caught it.
+ * The clear is the other half, and it belongs to the session. Its job is not what is on
+ * screen now — this function already settles that — but what comes back later: a merely
+ * hidden error resurfaces verbatim the moment anything moves the stage off `dropped`
+ * without touching it, and two things do, `cancelConnect()` (which `performReset` calls)
+ * and adopting a stored connection. So `sync-session.ts` clears `lastError` whenever the
+ * stage *becomes* `dropped`, in both places that write one:
+ *
+ * - `applyStalenessGate`, keyed on the resulting stage and placed **above** the
+ *   `next === stage` early return. Above, because `afterLocalStateChange` passes a stage
+ *   that is already `dropped` straight through — so a `DROPPED` written by `teardown`
+ *   reaches that function as a no-op transition, and a clear below the return would miss
+ *   exactly the case it exists for. It has been arranged the wrong way round twice now,
+ *   with this paragraph asserting the guarantee both times; the second one is why the
+ *   wording above is about where the code is rather than about what it intends.
+ * - `teardown`, after `afterTeardown` has answered — keyed on that answer being `dropped`,
+ *   never on the cause. That distinction is load-bearing: a Connect made *during* a
+ *   teardown window sets the stage itself, so `afterTeardown` no longer recognises the
+ *   plan it started from and answers `idle`, the clear does not fire, and that connect's
+ *   own sign-in error survives to be shown. A clear keyed on `cause === "bookVanished"`
+ *   swallowed it, which is the whole of "Connect looks like it did nothing" (BL-050).
  *
  * Only `dropped` suppresses. A `choosing` screen shows its apply failures — the choices
  * are still live and the user can retry one — and `idle` is the plain Connect row, where a

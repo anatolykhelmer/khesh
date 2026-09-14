@@ -82,13 +82,6 @@ export class Gate<T> {
     d.resolve(value);
     await flush();
   }
-
-  async fail(error: unknown): Promise<void> {
-    const d = this.queue.shift();
-    if (!d) throw new Error("Gate.fail() with no pending call");
-    d.reject(error);
-    await flush();
-  }
 }
 
 /** Run every already-queued microtask. Several awaits can stand between a settle and the

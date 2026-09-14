@@ -14,6 +14,8 @@ function tracked(overrides?: {
   pendingInspection?: unknown;
   disconnect?: () => Promise<void>;
   resetAll?: () => Promise<ReturnType<typeof ok<void>> | ReturnType<typeof err<void>>>;
+  beginErase?: () => void;
+  endErase?: () => void;
 }) {
   const calls: string[] = [];
   const errors: (string | null)[] = [];
@@ -31,6 +33,8 @@ function tracked(overrides?: {
       cancelConnect: () => {
         calls.push("cancelConnect");
       },
+      beginErase: overrides?.beginErase ?? (() => {}),
+      endErase: overrides?.endErase ?? (() => {}),
     },
     resetAll:
       overrides?.resetAll ??
@@ -114,6 +118,28 @@ describe("performReset", () => {
     await performReset(deps);
     expect(announced).toEqual([null]);
     expect(errors.at(-1)).toBeNull();
+  });
+
+  it("holds the erase flag for the whole sequence, including after disconnect resolves", async () => {
+    // Own local `calls`, distinct from `tracked()`'s internal one: the point is the
+    // relative order of exactly the four steps this test overrides, not the full
+    // sequence `tracked()`'s own defaults (`cancelConnect`, `announceBookChanged`)
+    // would otherwise add to it.
+    const calls: string[] = [];
+    const { deps } = tracked({
+      connected: true,
+      beginErase: () => calls.push("begin"),
+      endErase: () => calls.push("end"),
+      disconnect: async () => {
+        calls.push("disconnect");
+      },
+      resetAll: async () => {
+        calls.push("resetAll");
+        return ok(undefined);
+      },
+    });
+    await performReset(deps);
+    expect(calls).toEqual(["begin", "disconnect", "resetAll", "end"]);
   });
 });
 

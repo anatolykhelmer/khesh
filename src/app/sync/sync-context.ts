@@ -6,6 +6,7 @@ import type {
   RemoteInspection,
 } from "../../service/sync-connect";
 import type { SyncState } from "../../service/sync-engine";
+import type { SyncActivity } from "./sync-session";
 
 export type SyncContextValue = {
   /** VITE_GOOGLE_CLIENT_ID is present: without it the whole feature stays hidden. */
@@ -37,9 +38,9 @@ export type SyncContextValue = {
    * as `pendingPlan`: both are derived from one stage, which is either `choosing` or
    * `dropped` and cannot be both. */
   planWasDropped: boolean;
-  /** A connect or first-connect choice is running: its buttons stay disabled, so a
-   * second tap cannot start a second load/merge/save/write over the first. */
-  applying: boolean;
+  /** The session's own record of what is currently running, so a screen can gate a
+   * button on exactly the operation it means rather than on one shared `applying`. */
+  activity: SyncActivity;
   connect: () => Promise<void>;
   /** Recovery for SYNC_FILE_MISSING: forget the dead file id and run `connect` again,
    * inspection and all, so a Drive that does hold a book still reaches the choice UI. */
@@ -62,6 +63,11 @@ export type SyncContextValue = {
    * to make something else safe. */
   cancelConnect: () => void;
   disconnect: () => Promise<void>;
+  /** Published to every screen through the sync snapshot for the whole of `performReset`.
+   * Replaces the `DangerZone → SettingsScreen → SyncSection → ConnectDrive` prop chain,
+   * whose middle hops were invisible to the suite: deleting both left 724/724 green. */
+  beginErase: () => void;
+  endErase: () => void;
   syncNow: () => void;
   reauth: () => Promise<void>;
   resolveUseLocal: () => void;

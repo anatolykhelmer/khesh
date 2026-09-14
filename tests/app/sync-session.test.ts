@@ -114,6 +114,36 @@ async function connectedSession() {
   return h;
 }
 
+/**
+ * A session parked on the choice screen with a plan that offers `useRemote` and
+ * `replaceRemote` and **not** `merge`.
+ *
+ * `local = "empty"` is deliberate: `firstConnectOptions("real", book)` offers all three,
+ * which would leave the refusal tests below with nothing to be refused. Against an empty
+ * local book `merge` is withheld — it is the case that doubles the root accounts (BL-048).
+ *
+ * Deviates from the brief the same way `connectedSession()` does: also seeds `repo`, not
+ * just `session.setBook()`. Found by mutation-testing the refusal test below — with the
+ * `isChoiceOffered` guard gutted, `applyChoice("merge")` still left `meta.record.connected`
+ * `false`, but for the wrong reason: `firstConnect`'s `merge` branch calls `loadLocal(repo)`
+ * before it ever touches the remote, and an unseeded `repo` fails that with `BOOK_INVALID`
+ * regardless of what the guard does. Seeding `repo` (with the same `emptyBook()` already
+ * passed to `setBook`, so `localState()` still reads "empty" and the offered choices do
+ * not change) is what lets a disabled guard actually reach the merge and turn the test red.
+ */
+async function choosingSession() {
+  const h = makeSession();
+  h.drive.files.set("file-remote", remotePayload());
+  const book = emptyBook();
+  await h.repo.save(book);
+  h.session.setBook(book);
+  const connecting = h.session.connect();
+  await h.auth.tokenGate.settle(ok("token-1"));
+  await connecting;
+  expect(h.session.getSnapshot().stage.kind).toBe("choosing");
+  return h;
+}
+
 describe("sync session: snapshot", () => {
   it("starts idle, disconnected and unconfigured-aware", () => {
     const { session } = makeSession();
@@ -460,5 +490,95 @@ describe("sync session: finalize and rollback", () => {
     void session.disconnect();               // bumps userEnds synchronously
     await session.connect();
     expect(auth.tokenGate.calls).toBe(0);
+  });
+});
+
+describe("sync session: applying a choice", () => {
+  it("runs a choice the live plan offers and ends connected", async () => {
+    const { session, auth, meta } = await choosingSession();
+    await session.applyChoice("useRemote");
+    expect(meta.record.connected).toBe(true);
+    expect(session.getSnapshot().stage.kind).toBe("idle");
+    void auth;
+  });
+
+  it("turns away a choice the live plan does not offer", async () => {
+    // `choosingSession` plans against an empty local book, so the offer is
+    // useRemote/replaceRemote and `merge` is withheld — running it anyway would perform
+    // the write the plan deliberately declined (BL-048's doubled roots).
+    const { session, meta } = await choosingSession();
+    await session.applyChoice("merge");
+    expect(meta.record.connected).toBe(false);
+  });
+
+  it("turns away a second tap while the first is still running", async () => {
+    // Deviates from the brief in two ways, both found by running it as written.
+    //
+    // First, `await meta.saveGate.settle(undefined)` right after the two calls: neither
+    // call reaches `metaStore.save` synchronously — `applyFirstConnect`'s `runExclusive`
+    // (`serialLock`, this file) hands `firstConnect` to `chain.then(fn)`, and a `.then`
+    // reaction is never run synchronously even against an already-resolved `chain`. With
+    // nothing else awaited in between, the gate has nothing queued yet and `settle` throws
+    // "no pending call". An `await flush()` first is what lets that pending write actually
+    // reach the gate, the same way every other test in this block that stands inside a
+    // write's own window gets there via a real `await` on a different gate first.
+    //
+    // Second, the bound itself: `choosingSession()`'s own `connect()` already spends one
+    // call on this exact counter before this test ever runs — `inspectRemote`'s `read()`
+    // discovers the seeded Drive file by name and persists its id (`ConnectionIO.onFileId`
+    // → `metaStore.save`), in the gate's default automatic mode, ahead of `meta.saveGate.
+    // manual()` below. An absolute `calls <= 2` counts that leftover call as one of the
+    // two it means to bound, so it would still pass with `replaceRemote` sneaking a write
+    // of its own past the guard. A delta from a baseline taken after setup is what actually
+    // bounds *this test's own* writes: two is what the accepted `useRemote` legitimately
+    // costs — finalize's `connected: true` write, and the fire-and-forget `syncNow()` a
+    // healthy connect kicks off next — and a third would mean the refused tap wrote too.
+    const { session, meta } = await choosingSession();
+    meta.saveGate.manual();
+    const callsBeforeTap = meta.saveGate.calls;
+    const first = session.applyChoice("useRemote");
+    const second = session.applyChoice("replaceRemote");   // both are offered here
+    expect(session.getSnapshot().activity.applying).toBe(true);
+    await flush();
+    await meta.saveGate.settle(undefined);
+    await Promise.all([first, second]);
+    expect(meta.saveGate.calls - callsBeforeTap).toBeLessThanOrEqual(2);
+  });
+
+  it("does not claim to be connecting while a choice is being applied", async () => {
+    // BL-052. One `applying` boolean was set by both connect() and applyChoice(), and
+    // ConnectDrive's collapsed row keyed its "Connecting…" label on it — so a running
+    // choice made the Connect button describe a write that was not a connect.
+    //
+    // Deviates from the brief: an `await flush()` ahead of `meta.saveGate.settle(undefined)`
+    // — see the previous test's note. `applyChoice("useRemote")` has nothing synchronous
+    // left to reach `metaStore.save` through; without a real `await` first, the gate has
+    // nothing pending yet and `settle` throws.
+    const { session, meta } = await choosingSession();
+    meta.saveGate.manual();
+    const running = session.applyChoice("useRemote");
+    const activity = session.getSnapshot().activity;
+    expect(activity.applying).toBe(true);
+    expect(activity.connecting).toBe(false);
+    expect(activity.blocking).toBe(true);
+    await flush();
+    await meta.saveGate.settle(undefined);
+    await running;
+  });
+
+  it("announces the accepted choice through onStarted, and only the accepted one", async () => {
+    const { session } = await choosingSession();
+    const started: string[] = [];
+    await session.applyChoice("merge", () => started.push("merge"));
+    expect(started).toEqual([]);          // refused: never announced
+    await session.applyChoice("useRemote", () => started.push("useRemote"));
+    expect(started).toEqual(["useRemote"]);
+  });
+
+  it("cancelConnect clears the screen without releasing the connection", async () => {
+    const { session } = await choosingSession();
+    session.cancelConnect();
+    expect(session.getSnapshot().stage.kind).toBe("idle");
+    expect(session.getSnapshot().activity.blocking).toBe(false);
   });
 });

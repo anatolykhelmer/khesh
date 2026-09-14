@@ -16,6 +16,7 @@ import {
   applyFirstConnect,
   firstConnectOptions,
   inspectRemote,
+  isChoiceOffered,
   type FirstConnectChoice,
   type LocalState,
 } from "../../service/sync-connect";
@@ -438,18 +439,25 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       if (superseded(conn) || !token.ok) return;
       await conn.engine?.syncNow();
     },
-    // Task 3's own "erase lands inside the apply itself" test is the one place this task
-    // needs to reach `applyAndFinalize` through a user's choice rather than through
-    // `connect`'s own auto-apply branch — a no-op stub would make that test vacuous. This is
-    // only that much of Task 4's `applyChoice`: capture `current` and `userEnds` at the true
-    // start, hand off, toggle `applying`. Choice validation (`isChoiceOffered`), `onStarted`,
-    // and what a dropped stage does to a stale choice are Task 4's to add.
-    async applyChoice(choice) {
+    async applyChoice(choice, onStarted) {
+      // Act only on a choice the live plan actually offers. A tap carries a value rendered
+      // from some earlier plan, and between the render and the handler the plan can have
+      // been dropped as stale, cancelled, or replaced by a second Connect. The screens
+      // disable these buttons too; this is the half that does not depend on every future
+      // screen remembering to.
+      const live = stage.kind === "choosing" ? stage : null;
+      if (!isChoiceOffered(live?.plan ?? null, choice)) return;
+      if (connecting || applying) return;
       const conn = current;
-      if (!conn || connecting || applying) return;
-      const endsAtStart = userEnds;
+      if (!conn) return;
       applying = true;
+      // Past both guards, so this choice and no other is what is now running. Announced
+      // here rather than assumed by the caller: a tap the guards turn away would otherwise
+      // leave the screen's "Working…" on the refused button while the accepted one runs.
+      onStarted?.();
+      lastError = null;
       publish();
+      const endsAtStart = userEnds;
       try {
         await applyAndFinalize(conn, choice, endsAtStart);
       } finally {
@@ -457,9 +465,17 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
         publish();
       }
     },
-    // Every remaining method is added by Tasks 4, 6 and 8. Until then they must exist and
+    cancelConnect() {
+      // Ends the first-connect flow *as the screen shows it* and nothing more. Not a
+      // cancellation: a connect in flight keeps running. `disconnect()` is what lets go of
+      // a connection — and unlike in the old provider, it genuinely does, because a connect
+      // that finishes afterwards finds itself superseded and rolls back.
+      if (stage.kind === "idle") return;
+      stage = IDLE;
+      publish();
+    },
+    // Every remaining method is added by Tasks 6 and 8. Until then they must exist and
     // be typed, so the interface compiles:
-    cancelConnect() {},
     syncNow() {},
     resolveUseLocal() {},
     resolveUseRemote() {},

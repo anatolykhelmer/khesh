@@ -21,8 +21,9 @@ export type ResetSyncDeps = {
    * **It is not cancellation**, and comments elsewhere used to lean on it as though it
    * were. It cannot see a `connect()` that is in flight, let alone stop one: an inspection
    * already under way still returns, still holds the store and auth it bound to the user's
-   * real Drive file, and still finalizes. What stops that is `connectStillApplies` in the
-   * provider and the erase flag `DangerZone` now publishes to `SyncSection`. */
+   * real Drive file, and still finalizes. What stops that is the connect itself finding an
+   * erase began under it and turning away, and the `erasing` flag every screen reads back
+   * as `activity.blocking`, which keeps a second one from starting. */
   cancelConnect: () => void;
   /** Published to every screen through the sync snapshot for the whole of `performReset`.
    * Replaces the `DangerZone → SettingsScreen → SyncSection → ConnectDrive` prop chain,

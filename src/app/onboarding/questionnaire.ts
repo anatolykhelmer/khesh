@@ -287,12 +287,21 @@ export function applyHomeCurrency(a: Answers, homeCurrency: CurrencyCode): Answe
 }
 
 /** One tap written into `Answers`, before settling. Seeding reuses it so that an option
- * id becomes a stored value in exactly one place, whoever chose the option. */
+ * id becomes a stored value in exactly one place, whoever chose the option. The one case
+ * that can return its input unchanged is `household`, and seeding never reaches it:
+ * `settle` only seeds follow-ups (see `isFollowUp`) and `household` is visible from the
+ * start, so the no-op below cannot stall the settling loop. */
 function setAnswer(a: Answers, id: QuestionId, option: string): Answers {
   let next: Answers;
   switch (id) {
     case "household": {
       const household = option as Household;
+      // Re-tapping the household already chosen is a no-op, not a reset. Changing the
+      // household *does* re-seed extras by design — a family's suggestions are not a
+      // solo's — but tapping the selected option changes nothing the user can see, so it
+      // must not silently throw away extras they ticked afterwards. Returning `a` itself
+      // (not a fresh object) is also what makes the tap free of a re-render.
+      if (household === a.household) return a;
       next = { ...a, household, extras: defaultExtras(household) };
       break;
     }
@@ -362,10 +371,12 @@ function isFollowUp(q: Question): boolean {
  * Runs to a fixpoint rather than one sweep over `QUESTIONS`, so nothing here depends on
  * prerequisites being listed before their dependents: pruning one answer can change what a
  * later question allows (clearing `income` down to no "freelance" hides `trackBusiness`
- * too) and seeding one can reveal the next (`housing` seeds "rent", which reveals
- * `buildingFees`), and the loop keeps going until a full pass changes nothing. It
- * terminates because the only answer whose value narrows another question's options is
- * `household`, and `household` is never seeded.
+ * too), and a seeded answer could equally reveal the next question. No default does that
+ * today — every one of them is the answer that adds nothing, and `housing`'s "family" is
+ * precisely the option that keeps `buildingFees` hidden — but the loop does not depend on
+ * that staying true. It keeps going until a full pass changes nothing, and terminates
+ * because the only answer whose value narrows another question's options is `household`,
+ * and `household` is never seeded.
  */
 function settle(a: Answers, homeCurrency: CurrencyCode): Answers {
   let out = a;

@@ -4,6 +4,7 @@ import { CURRENCIES } from "../../src/app/currencies";
 import {
   applyHomeCurrency,
   applyOption,
+  defaultExtras,
   EMPTY_ANSWERS,
   nextStep,
   previousStep,
@@ -98,6 +99,69 @@ function currencySwitchedStates(home: CurrencyCode): Answers[] {
   );
 }
 
+/**
+ * States that answer a question and *then* change the household, which is the only way a
+ * stored answer can fall outside its own question's current options while the question
+ * stays visible (household=couple, income=salary2, then household=solo), and the only way
+ * a question that was answered can be hidden again with its answer already written down.
+ * `representativeStates` never builds these: it applies each question's options on top of
+ * a household base and never revisits the household afterwards.
+ */
+function householdSwitchedStates(): Answers[] {
+  let a1 = applyOption(EMPTY_ANSWERS, "household", "couple", "ILS");
+  a1 = applyOption(a1, "income", "salary2", "ILS");
+  a1 = applyOption(a1, "household", "solo", "ILS");
+
+  let a2 = applyOption(EMPTY_ANSWERS, "household", "family", "ILS");
+  a2 = applyOption(a2, "childAges", "under3", "ILS");
+  a2 = applyOption(a2, "household", "solo", "ILS");
+
+  let a3 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+  a3 = applyOption(a3, "income", "freelance", "ILS");
+  a3 = applyOption(a3, "trackBusiness", "yes", "ILS");
+  a3 = applyOption(a3, "household", "couple", "ILS");
+
+  let a4 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+  a4 = applyOption(a4, "transport", "car", "ILS");
+  a4 = applyOption(a4, "carLoan", "yes", "ILS");
+  a4 = applyOption(a4, "household", "family", "ILS");
+
+  let a5 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+  a5 = applyOption(a5, "money", "bank", "ILS");
+  a5 = applyOption(a5, "secondBank", "yes", "ILS");
+  a5 = applyOption(a5, "household", "couple", "ILS");
+
+  let a6 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+  a6 = applyOption(a6, "money", "card", "ILS");
+  a6 = applyOption(a6, "cardCount", "2", "ILS");
+  a6 = applyOption(a6, "household", "family", "ILS");
+
+  let a7 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+  a7 = applyOption(a7, "money", "fx", "ILS");
+  a7 = applyOption(a7, "fxCurrency", "USD", "ILS");
+  a7 = applyOption(a7, "household", "couple", "ILS");
+
+  // A full walk, then Skip: every question below `household` disappears at once, with
+  // every one of them already answered.
+  let a8 = applyOption(EMPTY_ANSWERS, "household", "family", "ILS");
+  a8 = applyOption(a8, "childAges", "school", "ILS");
+  a8 = applyOption(a8, "income", "salary", "ILS");
+  a8 = applyOption(a8, "income", "freelance", "ILS");
+  a8 = applyOption(a8, "trackBusiness", "yes", "ILS");
+  a8 = applyOption(a8, "housing", "rent", "ILS");
+  a8 = applyOption(a8, "buildingFees", "yes", "ILS");
+  a8 = applyOption(a8, "transport", "car", "ILS");
+  a8 = applyOption(a8, "carLoan", "yes", "ILS");
+  a8 = applyOption(a8, "money", "bank", "ILS");
+  a8 = applyOption(a8, "money", "card", "ILS");
+  a8 = applyOption(a8, "money", "fx", "ILS");
+  a8 = applyOption(a8, "extras", "pets", "ILS");
+  const walked = a8;
+  a8 = applyOption(a8, "household", "skip", "ILS");
+
+  return [a1, a2, a3, a4, a5, a6, a7, walked, a8];
+}
+
 describe("questionnaire", () => {
   it("the representative-state list stays small", () => {
     const states = representativeStates();
@@ -175,6 +239,30 @@ describe("questionnaire", () => {
     ]);
   });
 
+  /**
+   * Re-choosing the household that is already chosen looks like a no-op on screen, so it
+   * must be one. It was not: the household case rewrote `extras` to that household's
+   * defaults unconditionally, so walking Solo -> Extras, unticking Health, ticking Pets,
+   * then jumping back to Household through the progress bar and tapping "Just me" again
+   * silently restored health/phone/leisure and lost Pets. No existing test could see it:
+   * "no option is dead" skips options that are already selected, which is exactly this one.
+   */
+  it("re-tapping the household already chosen leaves customised extras alone", () => {
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "extras", "health", "ILS"); // untick one solo suggests
+    a = applyOption(a, "extras", "pets", "ILS"); // tick one it does not
+    expect(selectedOptions(a, "extras")).toEqual(["phone", "leisure", "pets"]);
+
+    const reTapped = applyOption(a, "household", "solo", "ILS");
+    expect(selectedOptions(reTapped, "extras")).toEqual(["phone", "leisure", "pets"]);
+    expect(reTapped).toEqual(a);
+
+    // A real change still re-seeds: a family's suggestions are not a solo's, and the
+    // reviewer called that reset reasonable by design. Only the same-value tap changed.
+    const changed = applyOption(a, "household", "family", "ILS");
+    expect(selectedOptions(changed, "extras")).toEqual(defaultExtras("family"));
+  });
+
   it("a 'many' option toggles; a 'one' option replaces; yes/no and counts round-trip", () => {
     let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
     a = applyOption(a, "money", "cash", "ILS");
@@ -226,43 +314,6 @@ describe("questionnaire", () => {
     // changing the household afterwards, which is how a stored answer can fall outside
     // its own question's current options while the question stays visible (the reported
     // bug: household=couple, income=salary2, then household=solo).
-    const householdSwitchedStates = (): Answers[] => {
-      let a1 = applyOption(EMPTY_ANSWERS, "household", "couple", "ILS");
-      a1 = applyOption(a1, "income", "salary2", "ILS");
-      a1 = applyOption(a1, "household", "solo", "ILS");
-
-      let a2 = applyOption(EMPTY_ANSWERS, "household", "family", "ILS");
-      a2 = applyOption(a2, "childAges", "under3", "ILS");
-      a2 = applyOption(a2, "household", "solo", "ILS");
-
-      let a3 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
-      a3 = applyOption(a3, "income", "freelance", "ILS");
-      a3 = applyOption(a3, "trackBusiness", "yes", "ILS");
-      a3 = applyOption(a3, "household", "couple", "ILS");
-
-      let a4 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
-      a4 = applyOption(a4, "transport", "car", "ILS");
-      a4 = applyOption(a4, "carLoan", "yes", "ILS");
-      a4 = applyOption(a4, "household", "family", "ILS");
-
-      let a5 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
-      a5 = applyOption(a5, "money", "bank", "ILS");
-      a5 = applyOption(a5, "secondBank", "yes", "ILS");
-      a5 = applyOption(a5, "household", "couple", "ILS");
-
-      let a6 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
-      a6 = applyOption(a6, "money", "card", "ILS");
-      a6 = applyOption(a6, "cardCount", "2", "ILS");
-      a6 = applyOption(a6, "household", "family", "ILS");
-
-      let a7 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
-      a7 = applyOption(a7, "money", "fx", "ILS");
-      a7 = applyOption(a7, "fxCurrency", "USD", "ILS");
-      a7 = applyOption(a7, "household", "couple", "ILS");
-
-      return [a1, a2, a3, a4, a5, a6, a7];
-    };
-
     for (const a of [...representativeStates(), ...householdSwitchedStates()]) {
       for (const q of QUESTIONS) {
         if (!q.visibleWhen(a)) continue;
@@ -292,6 +343,32 @@ describe("questionnaire", () => {
           expect(selectedOptions(a, q.id), `home ${home}: ${q.id} is visible and unanswered`)
             .toHaveLength(1);
         }
+      }
+    }
+  });
+
+  /**
+   * The other half of pruning, and the half the two "stored answer is offered" tests
+   * cannot see: both of those `continue` on `!q.visibleWhen(a)`, so nothing asserted that
+   * a question which *disappeared* left nothing behind. `settle` folds "hidden" into
+   * "offers nothing" precisely so that it does, and the planner double-gates today
+   * (`a.transport.includes("car") && a.carLoan === true`), which is why a prune miss would
+   * change no book and no test — until the first planner branch reads a follow-up without
+   * re-checking its trigger.
+   */
+  it("a hidden question stores nothing, under every home currency", () => {
+    const states = [
+      ...CURRENCIES.flatMap((home) => [...representativeStates(home), ...currencySwitchedStates(home)]),
+      ...householdSwitchedStates(),
+    ];
+    for (const a of states) {
+      for (const q of QUESTIONS) {
+        if (q.visibleWhen(a)) continue;
+        const stored = a[q.id];
+        const where = `${q.id} is hidden but stores ${JSON.stringify(stored)}`;
+        if (Array.isArray(stored)) expect(stored, where).toEqual([]);
+        else expect(stored, where).toBeNull();
+        expect(selectedOptions(a, q.id), where).toEqual([]);
       }
     }
   });

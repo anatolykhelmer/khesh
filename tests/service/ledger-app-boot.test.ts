@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import i18n from "../../src/app/i18n";
 import { createMemoryRepository } from "../../src/adapters/memory-repository";
 import { holdsNoUserData } from "../../src/kernel/book-utils";
+import { validateBook } from "../../src/kernel";
+import { applyOption, EMPTY_ANSWERS } from "../../src/app/onboarding/questionnaire";
+import { planStarterBook, rootsPlan } from "../../src/service/starter-plan";
 import { createLedgerApp, HOUSEHOLD_BOOK_NAME, ROOT_SEEDS } from "../../src/service/ledger-app";
 import { unwrap, unwrapErr } from "../helpers";
 
@@ -59,5 +62,41 @@ describe("LedgerApp boot + createHousehold", () => {
     expect(rootNames.sort()).toEqual(
       ["נכסים", "התחייבויות", "הכנסות", "הוצאות"].sort(),
     );
+  });
+
+  it("createHousehold with a plan creates every account under its parent, in one commit", async () => {
+    const repo = createMemoryRepository(null);
+    const commits: number[] = [];
+    const app = createLedgerApp(repo, { afterCommit: (b) => commits.push(b.accounts.length) });
+    let answers = applyOption(EMPTY_ANSWERS, "household", "family");
+    answers = applyOption(answers, "childAges", "school");
+    answers = applyOption(answers, "money", "bank");
+    answers = applyOption(answers, "money", "card");
+    answers = applyOption(answers, "cardCount", "2");
+    const plan = planStarterBook(answers, "ILS");
+
+    const book = unwrap(await app.createHousehold("ILS", plan));
+
+    expect(book.accounts).toHaveLength(plan.length);
+    expect(commits).toEqual([plan.length]);
+    expect(validateBook(book).ok).toBe(true);
+    // The starter.accounts.* i18n strings don't exist yet (Task 4), so identify each
+    // created account by its plan position rather than its resolved name: createAccount
+    // pushes to the end of book.accounts, and every plan item here is created
+    // successfully, so book.accounts[i] is the account minted from plan[i].
+    const byKey = new Map(plan.map((item, i) => [item.key, book.accounts[i]]));
+    const expenses = byKey.get("expenses")!;
+    const children = byKey.get("children")!;
+    expect(children).toMatchObject({ parentId: expenses.id, isPlaceholder: true, type: "expense" });
+    expect(byKey.get("school")).toMatchObject({ parentId: children.id, isPlaceholder: false });
+    expect(byKey.get("card2")).toMatchObject({ type: "liability", currency: "ILS" });
+    expect(unwrap(await repo.load())?.accounts).toHaveLength(plan.length);
+  });
+
+  it("createHousehold rejects a plan whose parent is not created first", async () => {
+    const app = createLedgerApp(createMemoryRepository(null));
+    const broken = [...rootsPlan("ILS")].reverse();
+    broken.push({ key: "x", parentKey: "nope", nameKey: "starter.accounts.cash", type: "asset", isPlaceholder: false, currency: "ILS" });
+    expect(unwrapErr(await app.createHousehold("ILS", broken)).code).toBe("ACCOUNT_PARENT_INVALID");
   });
 });

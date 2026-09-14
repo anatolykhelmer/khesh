@@ -46,6 +46,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     session.setBook(book);
   }, [book, session]);
 
+  // The session's page-level subscriptions — the local-commit signal, `visibilitychange`,
+  // `online` — live for as long as this effect and not as long as the session. The session
+  // is created once in the ref above and survives StrictMode's dev cycle of
+  // setup → cleanup → setup, so wiring them at construction and removing them in
+  // `dispose()` left them gone for good after the first dev remount.
+  useEffect(() => session.attach(), [session]);
+
   useEffect(() => () => session.dispose(), [session]);
 
   const value: SyncContextValue = useMemo(() => {

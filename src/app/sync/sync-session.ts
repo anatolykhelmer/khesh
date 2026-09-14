@@ -76,6 +76,10 @@ export type SyncSessionPorts = {
 export interface SyncSession {
   getSnapshot(): SyncSnapshot;
   subscribe(listener: () => void): () => void;
+  /** Wire this session to the page — local commits, tab visibility, connectivity — and
+   * return the detach. Separate from construction and from `dispose()` because the session
+   * outlives both ends of a React effect; see the implementation's own note. */
+  attach(): () => void;
   setBook(book: Book | null): void;
   connect(): Promise<void>;
   reconnect(): Promise<void>;
@@ -112,29 +116,55 @@ function swallow(where: string, error: unknown): void {
 export function createSyncSession(ports: SyncSessionPorts): SyncSession {
   const listeners = new Set<() => void>();
 
-  // Local commits nudge the engine; window events trigger opportunistic syncs. In the
-  // session rather than in a provider effect, because `current.engine` is the thing they
-  // are about and the provider no longer has a reference to it. Named handlers, not
-  // inline closures, so `dispose()` can remove exactly what this added — an
-  // unremoved `visibilitychange` listener keeps a released connection's closure alive
-  // and fires `syncNow()` into it.
-  const unsubscribeSignal = syncSignal.subscribe(() => current?.engine?.notifyLocalChange());
-  const handleVisibilityChange = (): void => {
-    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+  /**
+   * Local commits nudge the engine; window events trigger opportunistic syncs. In the
+   * session rather than in a provider effect, because `current.engine` is the thing they
+   * are about and the provider has no reference to it.
+   *
+   * **Wired here and not at construction, torn down by the returned detach and not by
+   * `dispose()`.** The session is created once, in a ref, and that ref survives React's
+   * StrictMode dev cycle — mount is setup → cleanup → setup — while `dispose()` is called
+   * from an effect cleanup. So anything wired at construction was gone for good after the
+   * first dev remount: `syncSignal` unsubscribed, which is the *only* path from a local
+   * commit to `engine.notifyLocalChange()`, and both window listeners removed. Production
+   * never saw it — the provider is at the root and never unmounts — but the one live
+   * verification this seam gets is a human running dev against real Google, which is
+   * precisely the build it broke. The lifetime of these three is the effect's, so the
+   * effect is what owns them.
+   *
+   * Named handlers, not inline closures, so the detach removes exactly what this added —
+   * an unremoved `visibilitychange` listener keeps a released connection's closure alive
+   * and fires `syncNow()` into it.
+   *
+   * `typeof document`/`typeof window` guards because this module runs under
+   * `environment: "node"`, where neither exists. They are load-bearing: without them every
+   * session test that attaches throws.
+   */
+  function attach(): () => void {
+    const unsubscribeSignal = syncSignal.subscribe(() => current?.engine?.notifyLocalChange());
+    const handleVisibilityChange = (): void => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void current?.engine?.syncNow();
+      }
+    };
+    const handleOnline = (): void => {
       void current?.engine?.syncNow();
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
     }
-  };
-  const handleOnline = (): void => {
-    void current?.engine?.syncNow();
-  };
-  // `typeof document`/`typeof window` guards because this module now runs under
-  // `environment: "node"`, where neither exists. Without them every session test throws
-  // on construction.
-  if (typeof document !== "undefined") {
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-  }
-  if (typeof window !== "undefined") {
-    window.addEventListener("online", handleOnline);
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", handleOnline);
+    }
+    return () => {
+      unsubscribeSignal();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", handleOnline);
+      }
+    };
   }
 
   // The mutable truth. `snapshot` below is the cached, frozen view of it.
@@ -571,6 +601,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
 
   return {
     getSnapshot: () => snapshot,
+    attach,
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -718,18 +749,11 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
         ?.resolveUseRemote()
         .catch((error: unknown) => swallow("resolveUseRemote", error));
     },
+    // The connection and this session's own subscribers, and nothing else. The page-level
+    // subscriptions belong to `attach`'s detach: they have the effect's lifetime, not the
+    // session's, and undoing them here is what StrictMode's dev remount turned permanent.
     dispose() {
       listeners.clear();
-      unsubscribeSignal();
-      // Remove exactly what construction added. Left behind, a `visibilitychange`
-      // listener keeps this closure — and the released connection it still reaches
-      // through `current` at the moment it fires — alive past unmount.
-      if (typeof document !== "undefined") {
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
-      }
-      if (typeof window !== "undefined") {
-        window.removeEventListener("online", handleOnline);
-      }
       if (current) {
         void releaseConnection(current).catch((error: unknown) => swallow("dispose", error));
       }

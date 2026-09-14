@@ -18,6 +18,7 @@ import { postEntry } from "../../src/kernel/journal";
 import type { Book } from "../../src/kernel/types";
 import { err, ok, type Result } from "../../src/kernel/result";
 import { createSyncEngine, type SyncEngine, type SyncEngineDeps } from "../../src/service/sync-engine";
+import { syncSignal } from "../../src/app/sync/sync-signal";
 import { NOW, unwrap } from "../helpers";
 
 /** A book with no user data: `holdsNoUserData` answers true, so `LocalState` is "empty". */
@@ -145,6 +146,72 @@ async function choosingSession() {
   await connecting;
   expect(h.session.getSnapshot().stage.kind).toBe("choosing");
   return h;
+}
+
+type RecordingEngine = {
+  engine: SyncEngine;
+  calls: string[];
+  setReport: (fn: SyncEngineDeps["onStateChanged"]) => void;
+};
+
+/** A `SyncEngine` that records what it was asked to do and reports a *distinct* state on
+ * every sync, through the `onStateChanged` the session hands it. Distinct because "the
+ * sync ran" has to be visible in the snapshot and not only in a call count: the connect
+ * that sets these tests up already runs one sync of its own, so a fixed state would make
+ * the post-reauth assertion true before the reauth. */
+function recordingEngine(): RecordingEngine {
+  const calls: string[] = [];
+  let syncs = 0;
+  let report: SyncEngineDeps["onStateChanged"] = () => {};
+  const engine: SyncEngine = {
+    async syncNow() {
+      syncs += 1;
+      calls.push("syncNow");
+      report({ kind: "idle", lastSyncAt: `sync-${syncs}` });
+    },
+    notifyLocalChange() {
+      calls.push("notifyLocalChange");
+    },
+    async resolveUseLocal() {},
+    async resolveUseRemote() {},
+    getState: () => ({ kind: "idle", lastSyncAt: null }),
+    dispose() {
+      calls.push("dispose");
+    },
+  };
+  return {
+    engine,
+    calls,
+    setReport: (fn) => {
+      report = fn;
+    },
+  };
+}
+
+/** A connected session whose engines are recording stand-ins, one per connection. The
+ * connect's own fire-and-forget `syncNow()` has already run and been cleared from
+ * `calls` by the time this returns; the snapshot therefore stands at `lastSyncAt: "sync-1"`. */
+async function connectedWithRecordingEngines() {
+  const engines: RecordingEngine[] = [];
+  const h = makeSession({
+    createEngine: (deps: SyncEngineDeps) => {
+      const rec = recordingEngine();
+      rec.setReport(deps.onStateChanged);
+      engines.push(rec);
+      return rec.engine;
+    },
+  });
+  const book = emptyBook();
+  await h.repo.save(book);
+  h.session.setBook(book);
+  const connecting = h.session.connect();
+  await h.auth.tokenGate.settle(ok("token-1"));
+  await connecting;
+  await flush();                       // finalize's own fire-and-forget syncNow
+  expect(h.session.getSnapshot().connected).toBe(true);
+  expect(h.session.getSnapshot().state).toEqual({ kind: "idle", lastSyncAt: "sync-1" });
+  engines[0].calls.length = 0;
+  return { ...h, engines };
 }
 
 describe("sync session: snapshot", () => {
@@ -891,72 +958,6 @@ describe("sync session: the book moving underneath", () => {
 });
 
 describe("sync session: the rest of the surface", () => {
-  type RecordingEngine = {
-    engine: SyncEngine;
-    calls: string[];
-    setReport: (fn: SyncEngineDeps["onStateChanged"]) => void;
-  };
-
-  /** A `SyncEngine` that records what it was asked to do and reports a *distinct* state on
-   * every sync, through the `onStateChanged` the session hands it. Distinct because "the
-   * sync ran" has to be visible in the snapshot and not only in a call count: the connect
-   * that sets these tests up already runs one sync of its own, so a fixed state would make
-   * the post-reauth assertion true before the reauth. */
-  function recordingEngine(): RecordingEngine {
-    const calls: string[] = [];
-    let syncs = 0;
-    let report: SyncEngineDeps["onStateChanged"] = () => {};
-    const engine: SyncEngine = {
-      async syncNow() {
-        syncs += 1;
-        calls.push("syncNow");
-        report({ kind: "idle", lastSyncAt: `sync-${syncs}` });
-      },
-      notifyLocalChange() {
-        calls.push("notifyLocalChange");
-      },
-      async resolveUseLocal() {},
-      async resolveUseRemote() {},
-      getState: () => ({ kind: "idle", lastSyncAt: null }),
-      dispose() {
-        calls.push("dispose");
-      },
-    };
-    return {
-      engine,
-      calls,
-      setReport: (fn) => {
-        report = fn;
-      },
-    };
-  }
-
-  /** A connected session whose engines are recording stand-ins, one per connection. The
-   * connect's own fire-and-forget `syncNow()` has already run and been cleared from
-   * `calls` by the time this returns; the snapshot therefore stands at `lastSyncAt: "sync-1"`. */
-  async function connectedWithRecordingEngines() {
-    const engines: RecordingEngine[] = [];
-    const h = makeSession({
-      createEngine: (deps: SyncEngineDeps) => {
-        const rec = recordingEngine();
-        rec.setReport(deps.onStateChanged);
-        engines.push(rec);
-        return rec.engine;
-      },
-    });
-    const book = emptyBook();
-    await h.repo.save(book);
-    h.session.setBook(book);
-    const connecting = h.session.connect();
-    await h.auth.tokenGate.settle(ok("token-1"));
-    await connecting;
-    await flush();                       // finalize's own fire-and-forget syncNow
-    expect(h.session.getSnapshot().connected).toBe(true);
-    expect(h.session.getSnapshot().state).toEqual({ kind: "idle", lastSyncAt: "sync-1" });
-    engines[0].calls.length = 0;
-    return { ...h, engines };
-  }
-
   it("reauth takes an interactive token and syncs on success", async () => {
     // The assertion this test used to carry — `tokenGate.calls > 0` — was already true from
     // `connectedSession()`'s own setup, so deleting `await conn.engine?.syncNow()` from
@@ -1265,36 +1266,104 @@ describe("sync session: port-failure sweep", () => {
 });
 
 describe("sync session: window and signal wiring", () => {
-  it("dispose removes the visibilitychange and online listeners construction added", () => {
-    // `environment: "node"` means `document`/`window` do not exist unless a test defines
-    // them — which is also why construction guards on `typeof document`/`typeof window`
-    // in the first place. Stubbing minimal fakes here, for this test only, is what lets
-    // "dispose removes what it added" be checked directly instead of only inferred from
-    // "no crash under node".
+  /** `environment: "node"` means `document`/`window` do not exist unless a test defines
+   * them — which is also why `attach` guards on `typeof document`/`typeof window` in the
+   * first place. Stubbing minimal fakes is what lets "the detach removes what attach
+   * added" be checked directly instead of only inferred from "no crash under node". */
+  function stubDomListeners() {
     const docListeners = new Map<string, () => void>();
     const winListeners = new Map<string, () => void>();
-    const fakeDocument = {
+    vi.stubGlobal("document", {
       visibilityState: "visible",
       addEventListener: (type: string, fn: () => void) => docListeners.set(type, fn),
       removeEventListener: (type: string, fn: () => void) => {
         if (docListeners.get(type) === fn) docListeners.delete(type);
       },
-    };
-    const fakeWindow = {
+    });
+    vi.stubGlobal("window", {
       addEventListener: (type: string, fn: () => void) => winListeners.set(type, fn),
       removeEventListener: (type: string, fn: () => void) => {
         if (winListeners.get(type) === fn) winListeners.delete(type);
       },
-    };
-    vi.stubGlobal("document", fakeDocument);
-    vi.stubGlobal("window", fakeWindow);
+    });
+    return { docListeners, winListeners };
+  }
+
+  it("attach adds the window listeners, its detach removes them, and a re-attach restores them", () => {
+    // The re-attach is the point. These used to be wired at construction and removed in
+    // `dispose()`, which the provider calls from an effect cleanup — while the session
+    // itself lives in a ref that survives the cycle. React's StrictMode dev mount is
+    // setup → cleanup → setup, so after the first dev remount both listeners (and the
+    // local-commit subscription below) were gone for good. Production never saw it: the
+    // provider is at the root and never unmounts. Dev is the only place this seam is ever
+    // verified against real Google.
+    const { docListeners, winListeners } = stubDomListeners();
     try {
       const { session } = makeSession();
+      expect(docListeners.has("visibilitychange")).toBe(false);   // not at construction
+      expect(winListeners.has("online")).toBe(false);
+
+      const detach = session.attach();
       expect(docListeners.has("visibilitychange")).toBe(true);
       expect(winListeners.has("online")).toBe(true);
-      session.dispose();
+
+      detach();
       expect(docListeners.has("visibilitychange")).toBe(false);
       expect(winListeners.has("online")).toBe(false);
+
+      const detachAgain = session.attach();                       // the StrictMode remount
+      expect(docListeners.has("visibilitychange")).toBe(true);
+      expect(winListeners.has("online")).toBe(true);
+
+      // And the ownership split: `dispose()` owns the connection and this session's own
+      // subscribers, not the page-level listeners. Undoing them there is what the remount
+      // turned permanent.
+      session.dispose();
+      expect(docListeners.has("visibilitychange")).toBe(true);
+      expect(winListeners.has("online")).toBe(true);
+      detachAgain();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("the attached local-commit signal reaches the live engine, and stops at detach", async () => {
+    // `syncSignal.emit` is the only path from a local commit to the engine's
+    // `notifyLocalChange()`, and nothing tested it at all. Detaching and re-attaching is
+    // the StrictMode cycle again: a dev remount that left this unsubscribed meant every
+    // edit the user made stopped reaching Drive until the tab was reloaded.
+    const { session, engines } = await connectedWithRecordingEngines();
+    const detach = session.attach();
+    syncSignal.emit(realBook());
+    expect(engines[0].calls).toEqual(["notifyLocalChange"]);
+
+    detach();
+    syncSignal.emit(realBook());
+    expect(engines[0].calls).toEqual(["notifyLocalChange"]);      // nothing more
+
+    const detachAgain = session.attach();
+    syncSignal.emit(realBook());
+    expect(engines[0].calls).toEqual(["notifyLocalChange", "notifyLocalChange"]);
+    detachAgain();
+  });
+
+  it("the attached visibility and online listeners sync the live connection", async () => {
+    // What those two listeners are for, which "the listener is registered" does not say.
+    // Reachable now only because `attach` — not construction — is what reads the globals,
+    // so the session can be built and connected before they are stubbed.
+    const { session, engines } = await connectedWithRecordingEngines();
+    const { docListeners, winListeners } = stubDomListeners();
+    try {
+      const detach = session.attach();
+      docListeners.get("visibilitychange")!();
+      await flush();
+      expect(engines[0].calls).toEqual(["syncNow"]);
+
+      engines[0].calls.length = 0;
+      winListeners.get("online")!();
+      await flush();
+      expect(engines[0].calls).toEqual(["syncNow"]);
+      detach();
     } finally {
       vi.unstubAllGlobals();
     }

@@ -5,7 +5,9 @@ import {
   applyOption,
   EMPTY_ANSWERS,
   QUESTIONS,
+  selectedOptions,
   type Answers,
+  type QuestionId,
 } from "../../src/app/onboarding/questionnaire";
 import {
   planStarterBook,
@@ -155,42 +157,44 @@ describe("planStarterBook", () => {
     expect(car.children.map((n) => n.key)).toEqual(["fuel", "carInsurance", "carRepairs", "parking"]);
   });
 
+  /** Tap every option a "many" question currently offers that isn't already selected. Deriving
+   * the taps from the live question definitions (rather than writing the union's current
+   * members out as literals) means a future addition to `IncomeSource`, `Transport`,
+   * `MoneyPlace` or `Extra` gets exercised automatically by this test, instead of silently
+   * missing coverage the way a hardcoded list would. */
+  function tapAllOptions(a: Answers, id: QuestionId): Answers {
+    let next = a;
+    const q = QUESTIONS.find((x) => x.id === id)!;
+    for (const option of q.options(next, "ILS")) {
+      if (!selectedOptions(next, id).includes(option)) next = applyOption(next, id, option);
+    }
+    return next;
+  }
+
   it("the maximal plan (every group and every extra at once) has unique keys and resolvable parents", () => {
-    const taps: [keyof Answers, string][] = [
-      ["household", "family"],
-      ["childAges", "under3"],
-      ["childAges", "school"],
-      ["childAges", "student"],
-      ["income", "salary"],
-      ["income", "salary2"],
-      ["income", "freelance"],
-      ["income", "benefits"],
-      ["income", "rental"],
-      ["income", "investments"],
-      ["trackBusiness", "yes"],
-      ["housing", "mortgage"],
-      ["buildingFees", "yes"],
-      ["transport", "car"],
-      ["transport", "lease"],
-      ["transport", "public"],
-      ["carLoan", "yes"],
-      ["money", "cash"],
-      ["money", "bank"],
-      ["money", "card"],
-      ["money", "savings"],
-      ["money", "fx"],
-      ["secondBank", "yes"],
-      ["cardCount", "3"],
-      ["fxCurrency", "USD"],
-      // `household: "family"` already seeds `extras` with its defaults (defaultExtras);
-      // tap only the ones missing from that default so every extra ends up present.
-      ["extras", "sport"],
-      ["extras", "beauty"],
-      ["extras", "pets"],
-      ["extras", "education"],
-    ];
-    let a = EMPTY_ANSWERS;
-    for (const [id, option] of taps) a = applyOption(a, id, option);
+    // "one" questions stay literal: the maximal plan depends on choosing one specific answer
+    // for each, not "all of them" (there is no "all of them" for a single choice) — "family" is
+    // the household that unlocks the children group, "mortgage" is the housing that yields both
+    // the liabilities line and the housing-group interest line, "3" is the card count that
+    // yields the most numbered cards, and each yes/no follow-up must be "yes" to add its branch.
+    // "many" questions (income, transport, money, extras) are derived via `tapAllOptions` below
+    // instead, because their unions could grow and a hardcoded list of "every current member"
+    // would not tap a future new member.
+    let a = applyOption(EMPTY_ANSWERS, "household", "family");
+    a = applyOption(a, "childAges", "under3");
+    a = applyOption(a, "childAges", "school");
+    a = applyOption(a, "childAges", "student");
+    a = tapAllOptions(a, "income");
+    a = applyOption(a, "trackBusiness", "yes");
+    a = applyOption(a, "housing", "mortgage");
+    a = applyOption(a, "buildingFees", "yes");
+    a = tapAllOptions(a, "transport");
+    a = applyOption(a, "carLoan", "yes");
+    a = tapAllOptions(a, "money");
+    a = applyOption(a, "secondBank", "yes");
+    a = applyOption(a, "cardCount", "3");
+    a = applyOption(a, "fxCurrency", "USD");
+    a = tapAllOptions(a, "extras");
 
     const plan = planStarterBook(a, "ILS");
     const keys = new Set(plan.map((p) => p.key));
@@ -199,5 +203,9 @@ describe("planStarterBook", () => {
     for (const item of plan) {
       if (item.parentKey !== null) expect(keys.has(item.parentKey), `${item.key}'s parent ${item.parentKey} is missing`).toBe(true);
     }
+    for (const groupKey of ["housing", "car", "children", "business"]) {
+      expect(keys.has(groupKey), `expected group "${groupKey}" in the maximal plan`).toBe(true);
+    }
+    expect(plan.length).toBeGreaterThanOrEqual(52);
   });
 });

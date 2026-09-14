@@ -1,3 +1,9 @@
+/**
+ * No method on this interface rejects. `applyChoice` and `connect` are invoked as
+ * `void sync.applyChoice(…)` from click handlers in an app with no error boundary, so a
+ * throw reaching the caller is an unhandled rejection and nothing more. Port failures that
+ * the user can act on become `lastError`; the rest are swallowed deliberately.
+ */
 import {
   IDLE,
   afterLocalStateChange,
@@ -7,6 +13,7 @@ import {
   type TeardownIntent,
 } from "./pending-plan-rule";
 import { shouldTearDown } from "./teardown-rule";
+import { syncSignal } from "./sync-signal";
 import type { SyncState, SyncEngineDeps, SyncEngine } from "../../service/sync-engine";
 import type { SyncStorePort } from "../../ports/sync-store";
 import type { GoogleAuth } from "../../adapters/google-drive-sync";
@@ -96,8 +103,39 @@ type Connection = {
   released: boolean;
 };
 
+/** Never rejects, and never silent. A throw reaching a caller is an unhandled rejection
+ * (see the module doc); a throw nobody records is an undebuggable one. */
+function swallow(where: string, error: unknown): void {
+  console.error(`[sync-session] ${where}`, error);
+}
+
 export function createSyncSession(ports: SyncSessionPorts): SyncSession {
   const listeners = new Set<() => void>();
+
+  // Local commits nudge the engine; window events trigger opportunistic syncs. In the
+  // session rather than in a provider effect, because `current.engine` is the thing they
+  // are about and the provider no longer has a reference to it. Named handlers, not
+  // inline closures, so `dispose()` can remove exactly what this added — an
+  // unremoved `visibilitychange` listener keeps a released connection's closure alive
+  // and fires `syncNow()` into it.
+  const unsubscribeSignal = syncSignal.subscribe(() => current?.engine?.notifyLocalChange());
+  const handleVisibilityChange = (): void => {
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+      void current?.engine?.syncNow();
+    }
+  };
+  const handleOnline = (): void => {
+    void current?.engine?.syncNow();
+  };
+  // `typeof document`/`typeof window` guards because this module now runs under
+  // `environment: "node"`, where neither exists. Without them every session test throws
+  // on construction.
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+  }
+  if (typeof window !== "undefined") {
+    window.addEventListener("online", handleOnline);
+  }
 
   // The mutable truth. `snapshot` below is the cached, frozen view of it.
   let connected = false;
@@ -167,7 +205,9 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       onStateChanged: (next) => {
         engineState = next;
         if (next.kind === "idle" && next.lastSyncAt !== null) {
-          void ports.metaStore.save({ lastSyncAt: next.lastSyncAt });
+          void ports.metaStore
+            .save({ lastSyncAt: next.lastSyncAt })
+            .catch((error: unknown) => swallow("onStateChanged", error));
         }
       },
     });
@@ -252,8 +292,8 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       stage = IDLE;
       armEngine(conn);
       publish();
-      void conn.engine?.syncNow();
-    });
+      conn.engine?.syncNow().catch((error: unknown) => swallow("resumeStoredConnection", error));
+    }).catch((error: unknown) => swallow("resumeStoredConnection", error));
   }
 
   async function runConnect(): Promise<void> {
@@ -272,9 +312,9 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     // notice goes now rather than when the connect lands.
     stage = IDLE;
     publish();
-    const endsAtStart = userEnds;
-    const conn = openConnection();
     try {
+      const endsAtStart = userEnds;
+      const conn = openConnection();
       const token = await conn.auth.getToken(true);
       if (superseded(conn) || userEnds !== endsAtStart) return;
       if (!token.ok) {
@@ -294,6 +334,8 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
         return;
       }
       stage = { kind: "choosing", inspection: inspection.value, plan, plannedFor: seenLocal };
+    } catch (error) {
+      swallow("connect", error);
     } finally {
       connecting = false;
       publish();
@@ -415,7 +457,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       );
       return;
     }
-    void conn.engine?.syncNow();
+    conn.engine?.syncNow().catch((error: unknown) => swallow("finalize", error));
   }
 
   /** The one place `blocking` is computed. Assigning it anywhere else is how a fifth
@@ -490,28 +532,37 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     connect: runConnect,
     async reconnect() {
       if (connecting || applying) return;
-      // One operation with one capture at its true start. The provider's old `reconnect`
-      // had to read the erase counter *before* `forgetFile()` and thread it into
-      // `connect()`, because that IndexedDB write was a window an erase could begin in and
-      // a read at the top of `connect` would have seen the bumped value and waved it
-      // through. Inside the session there is no gap to thread across.
-      if (current) current.fileId = null;
-      await ports.metaStore.save({ fileId: null });
-      await runConnect();
+      try {
+        // One operation with one capture at its true start. The provider's old `reconnect`
+        // had to read the erase counter *before* `forgetFile()` and thread it into
+        // `connect()`, because that IndexedDB write was a window an erase could begin in
+        // and a read at the top of `connect` would have seen the bumped value and waved it
+        // through. Inside the session there is no gap to thread across.
+        if (current) current.fileId = null;
+        await ports.metaStore.save({ fileId: null });
+        await runConnect();
+      } catch (error) {
+        swallow("reconnect", error);
+      }
     },
     async disconnect() {
-      await teardown({ cause: "userAction" });
+      try {
+        await teardown({ cause: "userAction" });
+      } catch (error) {
+        swallow("disconnect", error);
+      }
     },
-    // A user tap may open the Google popup, which the silent path cannot. Task 2 needs this
-    // much of Task 6's `reauth` for its own "disconnect must not wait on a hanging token
-    // fetch" test; the rest of that task's surface (`syncNow`, `resolveUseLocal`,
-    // `resolveUseRemote`, `dispose`, the port-failure sweep) stays stubbed below.
+    // A user tap may open the Google popup, which the silent path cannot.
     async reauth() {
-      const conn = current;
-      if (!conn) return;
-      const token = await conn.auth.getToken(true);
-      if (superseded(conn) || !token.ok) return;
-      await conn.engine?.syncNow();
+      try {
+        const conn = current;
+        if (!conn) return;
+        const token = await conn.auth.getToken(true);
+        if (superseded(conn) || !token.ok) return;
+        await conn.engine?.syncNow();
+      } catch (error) {
+        swallow("reauth", error);
+      }
     },
     async applyChoice(choice, onStarted) {
       // Act only on a choice the live plan actually offers. A tap carries a value rendered
@@ -534,6 +585,8 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       const endsAtStart = userEnds;
       try {
         await applyAndFinalize(conn, choice, endsAtStart);
+      } catch (error) {
+        swallow("applyChoice", error);
       } finally {
         applying = false;
         // `applying` just left the one window `afterLocalStateChange` suppresses drops in.
@@ -561,11 +614,34 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       stage = IDLE;
       publish();
     },
-    // Every remaining method is added by Tasks 6 and 8. Until then they must exist and
-    // be typed, so the interface compiles:
-    syncNow() {},
-    resolveUseLocal() {},
-    resolveUseRemote() {},
-    dispose() {},
+    syncNow() {
+      current?.engine?.syncNow().catch((error: unknown) => swallow("syncNow", error));
+    },
+    resolveUseLocal() {
+      current?.engine
+        ?.resolveUseLocal()
+        .catch((error: unknown) => swallow("resolveUseLocal", error));
+    },
+    resolveUseRemote() {
+      current?.engine
+        ?.resolveUseRemote()
+        .catch((error: unknown) => swallow("resolveUseRemote", error));
+    },
+    dispose() {
+      listeners.clear();
+      unsubscribeSignal();
+      // Remove exactly what construction added. Left behind, a `visibilitychange`
+      // listener keeps this closure — and the released connection it still reaches
+      // through `current` at the moment it fires — alive past unmount.
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", handleOnline);
+      }
+      if (current) {
+        void releaseConnection(current).catch((error: unknown) => swallow("dispose", error));
+      }
+    },
   };
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSyncSession, type ConnectionIO } from "../../src/app/sync/sync-session";
 import {
   createFakeDrive,
@@ -9,13 +9,15 @@ import {
 } from "../helpers/sync-harness";
 import { createMemoryRepository } from "../../src/adapters/memory-repository";
 import { encodeEnvelope } from "../../src/adapters/sync-envelope";
-import type { SyncMeta } from "../../src/adapters/sync-meta-store";
+import { EMPTY_SYNC_META, type SyncMeta, type SyncMetaStore } from "../../src/adapters/sync-meta-store";
+import type { GoogleAuth } from "../../src/adapters/google-drive-sync";
+import type { SyncStorePort } from "../../src/ports/sync-store";
 import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import type { Book } from "../../src/kernel/types";
 import { err, ok, type Result } from "../../src/kernel/result";
-import { createSyncEngine } from "../../src/service/sync-engine";
+import { createSyncEngine, type SyncEngine } from "../../src/service/sync-engine";
 import { NOW, unwrap } from "../helpers";
 
 /** A book with no user data: `holdsNoUserData` answers true, so `LocalState` is "empty". */
@@ -736,5 +738,273 @@ describe("sync session: the book moving underneath", () => {
     expect(session.getSnapshot().activity.blocking).toBe(true);
     session.endErase();
     expect(session.getSnapshot().activity.blocking).toBe(false);
+  });
+});
+
+describe("sync session: the rest of the surface", () => {
+  it("reauth takes an interactive token and syncs on success", async () => {
+    const { session, auth } = await connectedSession();
+    const running = session.reauth();
+    await auth.tokenGate.settle(ok("token-2"));
+    await running;
+    expect(auth.tokenGate.calls).toBeGreaterThan(0);
+  });
+
+  it("reauth on a disconnected session does nothing and does not throw", async () => {
+    const { session } = makeSession();
+    await expect(session.reauth()).resolves.toBeUndefined();
+  });
+
+  it("dispose releases the connection and stops notifying", async () => {
+    const { session } = await connectedSession();
+    let notified = 0;
+    session.subscribe(() => { notified += 1; });
+    session.dispose();
+    session.beginErase();
+    expect(notified).toBe(0);
+  });
+
+  it("no method rejects, whatever the ports do", async () => {
+    // The class of bug that produced "an unhandled rejection in an app with no error
+    // boundary": applyChoice is invoked as `void sync.applyChoice(…)`, so anything thrown
+    // inside it reaches nobody.
+    const throwing = { async getToken() { throw new Error("boom"); },
+                       async revoke() { throw new Error("boom"); } };
+    const { session } = makeSession({
+      createAuth: () => throwing,
+      metaStore: { async load() { throw new Error("boom"); },
+                   async save() { throw new Error("boom"); } },
+      fetchAccountEmail: async () => { throw new Error("boom"); },
+    });
+    session.setBook(realBook());
+    await expect(session.connect()).resolves.toBeUndefined();
+    await expect(session.reconnect()).resolves.toBeUndefined();
+    await expect(session.applyChoice("merge")).resolves.toBeUndefined();
+    await expect(session.disconnect()).resolves.toBeUndefined();
+    await expect(session.reauth()).resolves.toBeUndefined();
+    expect(session.getSnapshot().connected).toBe(false);
+  });
+});
+
+/**
+ * The brief's own "no method rejects" test breaks every port at once. That is exactly
+ * what the task brief warns against as a weak proof: with `auth.getToken` throwing
+ * immediately, `runConnect` never gets far enough to reach `metaStore.save`,
+ * `fetchAccountEmail`, or `auth.revoke` at all — so a single combined run can pass even
+ * if the catches around *those* calls were never written. This suite makes each port
+ * fail on its own, with the rest of the ports working normally, so every method's own
+ * catch has to earn its pass individually. `emptyBook()` + a seeded `repo`, not
+ * `realBook()` with nothing seeded: that is what lets `applyFirstConnect` actually
+ * succeed and the flow reach `finalize` (and, through a second `reconnect()`, `teardown`)
+ * instead of dying early on `BOOK_INVALID` regardless of which port is broken.
+ */
+describe("sync session: port-failure sweep", () => {
+  const boom = new Error("boom");
+
+  type BrokenPort =
+    | "auth.getToken"
+    | "auth.revoke"
+    | "metaStore.load"
+    | "metaStore.save"
+    | "fetchAccountEmail"
+    | "store";
+
+  async function makeBrokenSession(broken: BrokenPort) {
+    const auth: GoogleAuth = {
+      async getToken() {
+        if (broken === "auth.getToken") throw boom;
+        return ok("token");
+      },
+      async revoke() {
+        if (broken === "auth.revoke") throw boom;
+      },
+    };
+    const metaStore: SyncMetaStore = {
+      async load() {
+        if (broken === "metaStore.load") throw boom;
+        return { ...EMPTY_SYNC_META };
+      },
+      async save() {
+        if (broken === "metaStore.save") throw boom;
+      },
+    };
+    const fetchAccountEmail = async () => {
+      if (broken === "fetchAccountEmail") throw boom;
+      return ok("someone@example.com");
+    };
+    const brokenStore: SyncStorePort = {
+      async probe() { throw boom; },
+      async read() { throw boom; },
+      async write() { throw boom; },
+    };
+    const drive = createFakeDrive();
+    const h = makeSession({
+      createAuth: () => auth,
+      createStore: (io: ConnectionIO) => (broken === "store" ? brokenStore : drive.storeFor(io)),
+      metaStore,
+      fetchAccountEmail,
+    });
+    const book = emptyBook();
+    await h.repo.save(book);
+    h.session.setBook(book);
+    return h;
+  }
+
+  it.each<BrokenPort>([
+    "auth.getToken",
+    "auth.revoke",
+    "metaStore.load",
+    "metaStore.save",
+    "fetchAccountEmail",
+    "store",
+  ])("no method rejects when only %s throws", async (broken) => {
+    const { session } = await makeBrokenSession(broken);
+    await expect(session.connect(), broken).resolves.toBeUndefined();
+    await expect(session.reconnect(), broken).resolves.toBeUndefined();
+    await expect(session.applyChoice("merge"), broken).resolves.toBeUndefined();
+    await expect(session.disconnect(), broken).resolves.toBeUndefined();
+    await expect(session.reauth(), broken).resolves.toBeUndefined();
+  });
+
+  // The gap the six rows above cannot close on their own: with an empty local book,
+  // `firstConnectOptions` auto-applies on the first connect (no `choosing` stage), and
+  // `applyChoice("merge")` is therefore always refused by its own `isChoiceOffered` guard
+  // before it ever touches `applyAndFinalize` — so `applyChoice`'s *own* try/catch, as
+  // opposed to `connect`'s, is never actually exercised above. This test reaches
+  // `choosing` first (real local + a seeded remote, `choosingSession()`'s own shape) and
+  // then taps an offered choice whose `finalize` throws, which is the only way to put a
+  // throw inside `applyChoice`'s own try block rather than `runConnect`'s.
+  it("applyChoice's own catch: resolves even when finalize's account-email fetch throws mid-apply", async () => {
+    const { session, auth, drive, repo } = makeSession({
+      fetchAccountEmail: async () => {
+        throw boom;
+      },
+    });
+    drive.files.set("file-remote", remotePayload());
+    const book = emptyBook();
+    await repo.save(book);
+    session.setBook(book);
+    const connecting = session.connect();
+    await auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    expect(session.getSnapshot().stage.kind).toBe("choosing");
+    await expect(session.applyChoice("useRemote")).resolves.toBeUndefined();
+    expect(session.getSnapshot().connected).toBe(false);
+  });
+
+  // A gap none of the rows above reach: `armEngine`'s `onStateChanged` callback fires a
+  // fire-and-forget `metaStore.save({ lastSyncAt })` whenever a sync cycle finishes, from
+  // deep inside the engine — not from any awaited chain a public method's own try/catch
+  // could see. A `metaStore` that only fails *that* call (and succeeds for the writes
+  // `connect`/`finalize` make on the way there) is what is needed to reach it at all.
+  it("does not produce an unhandled rejection when the post-sync lastSyncAt write fails", async () => {
+    const metaStore: SyncMetaStore = {
+      async load() {
+        return { ...EMPTY_SYNC_META };
+      },
+      async save(patch) {
+        if ("lastSyncAt" in patch) throw boom;
+      },
+    };
+    const { session, auth, repo } = makeSession({ metaStore });
+    const book = emptyBook();
+    await repo.save(book);
+    session.setBook(book);
+    const connecting = session.connect();
+    await auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    expect(session.getSnapshot().connected).toBe(true);
+    // `finalize`'s own fire-and-forget `syncNow()` already ran a full cycle against the
+    // now-broken `metaStore.save` by this point; a second, explicit `syncNow()` exercises
+    // the same path again. Nothing here asserts on `state` — the point is that vitest's
+    // own "Unhandled Rejection" detector (which the earlier RED run in this task's report
+    // demonstrated is real, not hypothetical) stays silent.
+    await flush();
+    session.syncNow();
+    await flush();
+  });
+});
+
+describe("sync session: window and signal wiring", () => {
+  it("dispose removes the visibilitychange and online listeners construction added", () => {
+    // `environment: "node"` means `document`/`window` do not exist unless a test defines
+    // them — which is also why construction guards on `typeof document`/`typeof window`
+    // in the first place. Stubbing minimal fakes here, for this test only, is what lets
+    // "dispose removes what it added" be checked directly instead of only inferred from
+    // "no crash under node".
+    const docListeners = new Map<string, () => void>();
+    const winListeners = new Map<string, () => void>();
+    const fakeDocument = {
+      visibilityState: "visible",
+      addEventListener: (type: string, fn: () => void) => docListeners.set(type, fn),
+      removeEventListener: (type: string, fn: () => void) => {
+        if (docListeners.get(type) === fn) docListeners.delete(type);
+      },
+    };
+    const fakeWindow = {
+      addEventListener: (type: string, fn: () => void) => winListeners.set(type, fn),
+      removeEventListener: (type: string, fn: () => void) => {
+        if (winListeners.get(type) === fn) winListeners.delete(type);
+      },
+    };
+    vi.stubGlobal("document", fakeDocument);
+    vi.stubGlobal("window", fakeWindow);
+    try {
+      const { session } = makeSession();
+      expect(docListeners.has("visibilitychange")).toBe(true);
+      expect(winListeners.has("online")).toBe(true);
+      session.dispose();
+      expect(docListeners.has("visibilitychange")).toBe(false);
+      expect(winListeners.has("online")).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("syncNow, resolveUseLocal and resolveUseRemote each reach the live connection's engine", async () => {
+    // A spy engine, not the real `createSyncEngine`: the real one's `getSnapshot().state`
+    // turned out not to be a usable oracle here — `armEngine`'s `onStateChanged` updates
+    // the closed-over `engineState` variable directly and never calls `publish()`, so the
+    // session's cached snapshot does not observe a sync cycle finishing on its own (only a
+    // later, unrelated `publish()` — e.g. `beginErase()` — makes it catch up). That is a
+    // real gap, but in `armEngine`, which this task consumes rather than recreates; flagged
+    // separately rather than patched here. A spy sidesteps it entirely and asserts the one
+    // thing these three methods actually promise: reaching `current.engine`.
+    const calls: string[] = [];
+    const fakeEngine: SyncEngine = {
+      async syncNow() {
+        calls.push("syncNow");
+      },
+      notifyLocalChange() {},
+      async resolveUseLocal() {
+        calls.push("resolveUseLocal");
+      },
+      async resolveUseRemote() {
+        calls.push("resolveUseRemote");
+      },
+      getState: () => ({ kind: "idle", lastSyncAt: null }),
+      dispose() {},
+    };
+    const { session, auth, repo } = makeSession({ createEngine: () => fakeEngine });
+    const book = emptyBook();
+    await repo.save(book);
+    session.setBook(book);
+    const connecting = session.connect();
+    await auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    await flush(); // let finalize's own fire-and-forget syncNow() land first
+    calls.length = 0;
+    session.syncNow();
+    session.resolveUseLocal();
+    session.resolveUseRemote();
+    await flush();
+    expect(calls).toEqual(["syncNow", "resolveUseLocal", "resolveUseRemote"]);
+  });
+
+  it("syncNow, resolveUseLocal and resolveUseRemote on a disconnected session do nothing", () => {
+    const { session } = makeSession();
+    expect(() => session.syncNow()).not.toThrow();
+    expect(() => session.resolveUseLocal()).not.toThrow();
+    expect(() => session.resolveUseRemote()).not.toThrow();
   });
 });

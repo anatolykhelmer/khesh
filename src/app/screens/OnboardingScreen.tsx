@@ -5,6 +5,7 @@ import type { AppLanguage } from "../i18n";
 import { setLanguage } from "../i18n";
 import { useLedger } from "../ledger-context";
 import {
+  applyHomeCurrency,
   applyOption,
   EMPTY_ANSWERS,
   nextStep,
@@ -73,6 +74,16 @@ export function OnboardingScreen() {
     setLanguage(next);
   }
 
+  // The home currency is an input to the question tree, not an answer in it: the
+  // other-currency question offers every currency but this one. Changing it here is the
+  // one way that input can move under answers already given, so the answers are re-settled
+  // against the new home (a foreign-currency account that just became the home currency is
+  // re-chosen) instead of being left to contradict it.
+  function chooseCurrency(next: CurrencyCode) {
+    setCurrency(next);
+    setAnswers((a) => applyHomeCurrency(a, next));
+  }
+
   function goTo(next: Step) {
     setStep(next);
     setFurthest((f) => Math.max(f, SECTIONS.indexOf(sectionOf(next))));
@@ -102,7 +113,7 @@ export function OnboardingScreen() {
           saving={saving}
           importing={importing}
           onLanguage={chooseLanguage}
-          onCurrency={setCurrency}
+          onCurrency={chooseCurrency}
           onImporting={setImporting}
           onNext={() => goTo(nextStep("setup", answers))}
         />
@@ -121,7 +132,7 @@ export function OnboardingScreen() {
           homeCurrency={currency}
           busy={busy}
           canGoBack
-          onOption={(option) => setAnswers((a) => applyOption(a, question.id, option))}
+          onOption={(option) => setAnswers((a) => applyOption(a, question.id, option, currency))}
           onBack={() => setStep(previousStep(question.id, answers))}
           onNext={() => goTo(nextStep(question.id, answers))}
         />

@@ -68,11 +68,11 @@ describe("LedgerApp boot + createHousehold", () => {
     const repo = createMemoryRepository(null);
     const commits: number[] = [];
     const app = createLedgerApp(repo, { afterCommit: (b) => commits.push(b.accounts.length) });
-    let answers = applyOption(EMPTY_ANSWERS, "household", "family");
-    answers = applyOption(answers, "childAges", "school");
-    answers = applyOption(answers, "money", "bank");
-    answers = applyOption(answers, "money", "card");
-    answers = applyOption(answers, "cardCount", "2");
+    let answers = applyOption(EMPTY_ANSWERS, "household", "family", "ILS");
+    answers = applyOption(answers, "childAges", "school", "ILS");
+    answers = applyOption(answers, "money", "bank", "ILS");
+    answers = applyOption(answers, "money", "card", "ILS");
+    answers = applyOption(answers, "cardCount", "2", "ILS");
     const plan = planStarterBook(answers, "ILS");
 
     const book = unwrap(await app.createHousehold("ILS", plan));
@@ -103,7 +103,7 @@ describe("LedgerApp boot + createHousehold", () => {
   it("createHousehold resolves plan names in the current language", async () => {
     await i18n.changeLanguage("he");
     const app = createLedgerApp(createMemoryRepository(null));
-    const answers = applyOption(applyOption(EMPTY_ANSWERS, "household", "solo"), "money", "cash");
+    const answers = applyOption(applyOption(EMPTY_ANSWERS, "household", "solo", "ILS"), "money", "cash", "ILS");
     const book = unwrap(await app.createHousehold("ILS", planStarterBook(answers, "ILS")));
     expect(book.accounts.some((a) => a.name === i18n.t("starter.accounts.cash"))).toBe(true);
     expect(book.accounts.some((a) => a.name === "Cash")).toBe(false);
@@ -115,9 +115,9 @@ describe("LedgerApp boot + createHousehold", () => {
   // than one credit card could not be created at all. This proves the interpolated
   // strings now resolve to distinct names for three cards.
   it("createHousehold creates three credit cards with three distinct names", async () => {
-    let answers = applyOption(EMPTY_ANSWERS, "household", "solo");
-    answers = applyOption(answers, "money", "card");
-    answers = applyOption(answers, "cardCount", "3");
+    let answers = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    answers = applyOption(answers, "money", "card", "ILS");
+    answers = applyOption(answers, "cardCount", "3", "ILS");
     const app = createLedgerApp(createMemoryRepository(null));
     const book = unwrap(await app.createHousehold("ILS", planStarterBook(answers, "ILS")));
     const cards = book.accounts.filter((a) => a.type === "liability" && !a.isPlaceholder);

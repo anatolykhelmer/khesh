@@ -192,11 +192,39 @@ function toggle<T extends string>(list: T[], item: T): T[] {
 }
 
 /**
- * Apply one tap on one option. "many" questions toggle; "one" questions replace. Answers
- * to questions that are no longer visible afterwards are cleared, so a follow-up never
- * carries a stale answer into the plan (untick "own car" and `carLoan` goes back to null).
+ * Apply one tap on one option. "many" questions toggle; "one" questions replace. The
+ * result is settled (see `settle`), so a follow-up never carries a stale answer into the
+ * plan (untick "own car" and `carLoan` goes back to null) and never stays unanswered
+ * either (tick "credit card" and `cardCount` is already 1).
+ *
+ * `homeCurrency` is not an answer but it is an input to the tree: `fxCurrency` offers
+ * every currency except that one. It is threaded in so that settling can both re-check a
+ * stored `fxCurrency` against it and seed a fresh one from the options it really offers.
  */
-export function applyOption(a: Answers, id: QuestionId, option: string): Answers {
+export function applyOption(
+  a: Answers,
+  id: QuestionId,
+  option: string,
+  homeCurrency: CurrencyCode,
+): Answers {
+  return settle(setAnswer(a, id, option), homeCurrency);
+}
+
+/**
+ * Re-settle answers that were settled against a different home currency. The home
+ * currency is chosen on the wizard's first step but stays editable afterwards (jump back
+ * to the Language section from the summary), so the screen calls this whenever it
+ * changes: a stored `fxCurrency` that is now the home currency is dropped and re-seeded
+ * from what `fxCurrency` offers under the new home, which is why "USD account in a USD
+ * book" is not a state this module can hand to the planner.
+ */
+export function applyHomeCurrency(a: Answers, homeCurrency: CurrencyCode): Answers {
+  return settle(a, homeCurrency);
+}
+
+/** One tap written into `Answers`, before settling. Seeding reuses it so that an option
+ * id becomes a stored value in exactly one place, whoever chose the option. */
+function setAnswer(a: Answers, id: QuestionId, option: string): Answers {
   let next: Answers;
   switch (id) {
     case "household": {
@@ -217,17 +245,8 @@ export function applyOption(a: Answers, id: QuestionId, option: string): Answers
     case "fxCurrency": next = { ...a, fxCurrency: option }; break;
     case "extras": next = { ...a, extras: toggle(a.extras, option as Extra) }; break;
   }
-  return pruneAnswers(next);
+  return next;
 }
-
-/**
- * Home currency is never part of `Answers` and `applyOption` is never given one, so this
- * pass can't re-check a stored `fxCurrency` against the real home. Only `fxCurrency`'s own
- * `options()` looks at its `homeCurrency` argument at all, and it only ever *excludes* that
- * one currency from `CURRENCIES` — passing a value that is never a real currency code makes
- * that exclusion a no-op, so pruning can't contradict a choice it has no way to re-check.
- */
-const NOT_A_REAL_CURRENCY: CurrencyCode = "";
 
 /**
  * The option ids a question currently allows, or none at all once the question itself is
@@ -236,31 +255,57 @@ const NOT_A_REAL_CURRENCY: CurrencyCode = "";
  * question is still visible but no longer offers that particular value (income's
  * `"salary2"` once `household` moves away from a multi-earner household, for example).
  */
-function currentlyAllowed(q: Question, a: Answers): ReadonlySet<string> {
+function currentlyAllowed(q: Question, a: Answers, homeCurrency: CurrencyCode): ReadonlySet<string> {
   if (!q.visibleWhen(a)) return new Set();
-  return new Set(q.options(a, NOT_A_REAL_CURRENCY));
+  return new Set(q.options(a, homeCurrency));
 }
 
 /**
- * Restore the invariant that every answer stored in `Answers` is either empty or a value
- * its owning question currently allows. An array answer keeps only the entries still
- * allowed; a scalar answer (a "one" question, a count, a currency, or a yes/no stored as a
- * boolean) is cleared the moment its one stored value falls outside the question's current
- * options. A yes/no answer is compared through the same boolean<->"yes"/"no" mapping
- * `selectedOptions` uses, never the boolean against the option string directly, so an
- * answered follow-up is never mistaken for an unanswered one.
+ * A question already visible with nothing answered is one the wizard opens on: only the
+ * user can answer it, and seeding it would put a household (and a whole plan behind it)
+ * on screen before the first tap. Every other question became visible *because of* an
+ * answer, which is what makes seeding it honest — the user turned on the option that
+ * revealed it. Derived from the tree rather than a list of ids, so a question that stops
+ * being conditional stops being seeded without anyone remembering to say so.
+ */
+function isFollowUp(q: Question): boolean {
+  return !q.visibleWhen(EMPTY_ANSWERS);
+}
+
+/**
+ * Restore two invariants over the whole answer set at once, because each can break the
+ * other and neither is stable on its own.
+ *
+ * Pruning: every answer stored in `Answers` is either empty or a value its owning question
+ * currently allows. An array answer keeps only the entries still allowed; a scalar answer
+ * (a "one" question, a count, a currency, or a yes/no stored as a boolean) is cleared the
+ * moment its one stored value falls outside the question's current options. A yes/no
+ * answer is compared through the same boolean<->"yes"/"no" mapping `selectedOptions` uses,
+ * never the boolean against the option string directly, so an answered follow-up is never
+ * mistaken for an unanswered one.
+ *
+ * Seeding: every visible single-select follow-up has an answer — its question's own first
+ * offered option, taken from `options()` so the seed cannot drift from the list the screen
+ * renders. This is the invariant the planner relies on: it reads `a.cardCount !== null`
+ * and `a.fxCurrency !== null`, and a visible question with no answer is exactly how a
+ * ticked "credit card" used to create nothing when the user jumped past its follow-up
+ * instead of walking through it. Holding it here rather than gating navigation means it
+ * holds for *every* route through the wizard, including ones the screen has yet to invent.
  *
  * Runs to a fixpoint rather than one sweep over `QUESTIONS`, so nothing here depends on
  * prerequisites being listed before their dependents: pruning one answer can change what a
  * later question allows (clearing `income` down to no "freelance" hides `trackBusiness`
- * too), and the loop keeps going until a full pass changes nothing.
+ * too) and seeding one can reveal the next (`housing` seeds "rent", which reveals
+ * `buildingFees`), and the loop keeps going until a full pass changes nothing. It
+ * terminates because the only answer whose value narrows another question's options is
+ * `household`, and `household` is never seeded.
  */
-function pruneAnswers(a: Answers): Answers {
+function settle(a: Answers, homeCurrency: CurrencyCode): Answers {
   let out = a;
   for (let changed = true; changed; ) {
     changed = false;
     for (const q of QUESTIONS) {
-      const allowed = currentlyAllowed(q, out);
+      const allowed = currentlyAllowed(q, out, homeCurrency);
       const stored = out[q.id];
       if (Array.isArray(stored)) {
         const kept = (stored as string[]).filter((v) => allowed.has(v));
@@ -270,10 +315,18 @@ function pruneAnswers(a: Answers): Answers {
         }
         continue;
       }
-      if (stored === null) continue;
-      const asOption = typeof stored === "boolean" ? (stored ? "yes" : "no") : String(stored);
-      if (!allowed.has(asOption)) {
-        out = { ...out, [q.id]: null } as Answers;
+      if (stored !== null) {
+        const asOption = typeof stored === "boolean" ? (stored ? "yes" : "no") : String(stored);
+        if (!allowed.has(asOption)) {
+          out = { ...out, [q.id]: null } as Answers;
+          changed = true;
+        }
+        continue;
+      }
+      if (q.kind !== "one" || !isFollowUp(q)) continue;
+      const [first] = q.options(out, homeCurrency);
+      if (allowed.size > 0 && first !== undefined) {
+        out = setAnswer(out, q.id, first);
         changed = true;
       }
     }

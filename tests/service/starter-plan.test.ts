@@ -35,24 +35,33 @@ function realize(plan: readonly StarterAccount[], home: string) {
 }
 
 /** Random answers built only through applyOption, so they are always answers the wizard
- * could actually produce (hidden follow-ups cleared, salary2 only when offered). */
-const arbAnswers: fc.Arbitrary<Answers> = fc
-  .array(fc.tuple(fc.nat(QUESTIONS.length - 1), fc.nat(9)), { maxLength: 40 })
-  .map((taps) => {
-    let a = EMPTY_ANSWERS;
-    for (const [qi, oi] of taps) {
-      const q = QUESTIONS[qi];
-      if (!q.visibleWhen(a)) continue;
-      const options = q.options(a, "ILS");
-      a = applyOption(a, q.id, options[oi % options.length]);
-    }
-    return a;
-  });
+ * could actually produce (hidden follow-ups cleared, salary2 only when offered). Built
+ * against the same home currency the plan is then made in: the home currency is an input
+ * to the question tree, and answers settled against a different one are not a state the
+ * wizard can be in. */
+function arbAnswersFor(home: string): fc.Arbitrary<Answers> {
+  return fc
+    .array(fc.tuple(fc.nat(QUESTIONS.length - 1), fc.nat(9)), { maxLength: 40 })
+    .map((taps) => {
+      let a = EMPTY_ANSWERS;
+      for (const [qi, oi] of taps) {
+        const q = QUESTIONS[qi];
+        if (!q.visibleWhen(a)) continue;
+        const options = q.options(a, home);
+        a = applyOption(a, q.id, options[oi % options.length], home);
+      }
+      return a;
+    });
+}
+
+const arbHomeAndAnswers: fc.Arbitrary<[string, Answers]> = fc
+  .constantFrom("ILS", "USD", "EUR")
+  .chain((home) => fc.tuple(fc.constant(home), arbAnswersFor(home)));
 
 describe("planStarterBook", () => {
   it("is the four roots when nothing is answered or the household is skipped", () => {
     expect(planStarterBook(EMPTY_ANSWERS, "ILS")).toEqual(rootsPlan("ILS"));
-    expect(planStarterBook(applyOption(EMPTY_ANSWERS, "household", "skip"), "ILS")).toEqual(rootsPlan("ILS"));
+    expect(planStarterBook(applyOption(EMPTY_ANSWERS, "household", "skip", "ILS"), "ILS")).toEqual(rootsPlan("ILS"));
     const book = realize(rootsPlan("EUR"), "EUR");
     expect(book.accounts).toHaveLength(4);
     expect(book.accounts.every((a) => a.isPlaceholder && a.currency === "EUR")).toBe(true);
@@ -60,7 +69,7 @@ describe("planStarterBook", () => {
 
   it("always realizes into a valid book with unique siblings and parents first", () => {
     fc.assert(
-      fc.property(arbAnswers, fc.constantFrom("ILS", "USD", "EUR"), (a, home) => {
+      fc.property(arbHomeAndAnswers, ([home, a]) => {
         const plan = planStarterBook(a, home);
         const keys = new Set<string>();
         for (const item of plan) {
@@ -71,9 +80,29 @@ describe("planStarterBook", () => {
         const book = realize(plan, home);
         expect(validateBook(book).ok).toBe(true);
         expect(book.accounts.filter((x) => x.parentId === null)).toHaveLength(4);
+        // "Another currency" means another one: an account whose currency is the book's
+        // own would render with its suffix suppressed and be indistinguishable from the
+        // home-currency accounts around it.
+        const fx = plan.find((p) => p.key === "fx");
+        if (fx !== undefined) expect(fx.currency).not.toBe(home);
       }),
       { numRuns: 300 },
     );
+  });
+
+  /** The whole point of the wizard: what the user ticked becomes an account. A ticked
+   * option whose follow-up was never walked through (a progress-bar jump straight to the
+   * summary) used to plan nothing at all, because the planner reads the follow-up's
+   * answer and the follow-up had none. */
+  it("ticking a money place plans its accounts without visiting the follow-up", () => {
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "money", "card", "ILS");
+    a = applyOption(a, "money", "fx", "ILS");
+    const plan = planStarterBook(a, "ILS");
+    expect(names(plan, "liabilities")).toContain("starter.accounts.creditCard");
+    const fx = plan.find((p) => p.key === "fx");
+    expect(fx, "a foreign-currency account was ticked but not planned").toBeDefined();
+    expect(fx!.currency).not.toBe("ILS");
   });
 
   function names(plan: StarterAccount[], parentKey: string | null): string[] {
@@ -81,8 +110,8 @@ describe("planStarterBook", () => {
   }
 
   it("a family with school-age children gets a Children group with School and Activities", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "family");
-    a = applyOption(a, "childAges", "school");
+    let a = applyOption(EMPTY_ANSWERS, "household", "family", "ILS");
+    a = applyOption(a, "childAges", "school", "ILS");
     const plan = planStarterBook(a, "ILS");
     expect(names(plan, "children")).toEqual([
       "starter.accounts.school",
@@ -93,9 +122,9 @@ describe("planStarterBook", () => {
   });
 
   it("three credit cards are three numbered liabilities", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "solo");
-    a = applyOption(a, "money", "card");
-    a = applyOption(a, "cardCount", "3");
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "money", "card", "ILS");
+    a = applyOption(a, "cardCount", "3", "ILS");
     const cards = planStarterBook(a, "ILS").filter((p) => p.parentKey === "liabilities");
     expect(cards.map((p) => [p.nameKey, p.nameArgs])).toEqual([
       ["starter.accounts.creditCard", undefined],
@@ -106,51 +135,55 @@ describe("planStarterBook", () => {
   });
 
   it("fuel appears once when both an own and a leased car are chosen", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "solo");
-    a = applyOption(a, "transport", "car");
-    a = applyOption(a, "transport", "lease");
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "transport", "car", "ILS");
+    a = applyOption(a, "transport", "lease", "ILS");
     const car = names(planStarterBook(a, "ILS"), "car");
     expect(car.filter((n) => n === "starter.accounts.fuel")).toHaveLength(1);
     expect(car).toContain("starter.accounts.lease");
   });
 
   it("mortgage is a liability plus an interest expense under Housing", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "couple");
-    a = applyOption(a, "housing", "mortgage");
+    let a = applyOption(EMPTY_ANSWERS, "household", "couple", "ILS");
+    a = applyOption(a, "housing", "mortgage", "ILS");
     const plan = planStarterBook(a, "ILS");
     expect(names(plan, "liabilities")).toContain("starter.accounts.mortgage");
+    // `buildingFees` is the follow-up "mortgage" reveals, so answering housing seeds it
+    // with its first option ("yes") and the line is here without a second tap. Untouched
+    // in the assertion below on purpose: it is what the user would see on the summary.
     expect(names(plan, "housing")).toEqual([
       "starter.accounts.mortgageInterest",
       "starter.accounts.utilities",
       "starter.accounts.homeRepairs",
+      "starter.accounts.buildingFees",
     ]);
   });
 
   it("living with family creates no housing group", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "solo");
-    a = applyOption(a, "housing", "family");
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "housing", "family", "ILS");
     expect(planStarterBook(a, "ILS").some((p) => p.key === "housing")).toBe(false);
   });
 
   it("an account in another currency carries that currency", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "solo");
-    a = applyOption(a, "money", "fx");
-    a = applyOption(a, "fxCurrency", "USD");
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "money", "fx", "ILS");
+    a = applyOption(a, "fxCurrency", "USD", "ILS");
     const fx = planStarterBook(a, "ILS").find((p) => p.key === "fx")!;
     expect(fx).toMatchObject({ parentKey: "assets", currency: "USD", nameKey: "starter.accounts.fxAccount", nameArgs: { currency: "USD" } });
   });
 
   it("groceries and other are always present for any real household", () => {
     for (const h of ["solo", "couple", "family"] as const) {
-      const plan = planStarterBook(applyOption(EMPTY_ANSWERS, "household", h), "ILS");
+      const plan = planStarterBook(applyOption(EMPTY_ANSWERS, "household", h, "ILS"), "ILS");
       expect(names(plan, "expenses")).toContain("starter.accounts.groceries");
       expect(names(plan, "expenses")).toContain("starter.accounts.other");
     }
   });
 
   it("planTree nests children under parents in plan order", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "solo");
-    a = applyOption(a, "transport", "car");
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "transport", "car", "ILS");
     const tree = planTree(planStarterBook(a, "ILS"));
     expect(tree.map((n) => n.key)).toEqual(["assets", "liabilities", "income", "expenses"]);
     const car = tree[3].children.find((n) => n.key === "car")!;
@@ -166,7 +199,7 @@ describe("planStarterBook", () => {
     let next = a;
     const q = QUESTIONS.find((x) => x.id === id)!;
     for (const option of q.options(next, "ILS")) {
-      if (!selectedOptions(next, id).includes(option)) next = applyOption(next, id, option);
+      if (!selectedOptions(next, id).includes(option)) next = applyOption(next, id, option, "ILS");
     }
     return next;
   }
@@ -180,20 +213,20 @@ describe("planStarterBook", () => {
     // "many" questions (income, transport, money, extras) are derived via `tapAllOptions` below
     // instead, because their unions could grow and a hardcoded list of "every current member"
     // would not tap a future new member.
-    let a = applyOption(EMPTY_ANSWERS, "household", "family");
-    a = applyOption(a, "childAges", "under3");
-    a = applyOption(a, "childAges", "school");
-    a = applyOption(a, "childAges", "student");
+    let a = applyOption(EMPTY_ANSWERS, "household", "family", "ILS");
+    a = applyOption(a, "childAges", "under3", "ILS");
+    a = applyOption(a, "childAges", "school", "ILS");
+    a = applyOption(a, "childAges", "student", "ILS");
     a = tapAllOptions(a, "income");
-    a = applyOption(a, "trackBusiness", "yes");
-    a = applyOption(a, "housing", "mortgage");
-    a = applyOption(a, "buildingFees", "yes");
+    a = applyOption(a, "trackBusiness", "yes", "ILS");
+    a = applyOption(a, "housing", "mortgage", "ILS");
+    a = applyOption(a, "buildingFees", "yes", "ILS");
     a = tapAllOptions(a, "transport");
-    a = applyOption(a, "carLoan", "yes");
+    a = applyOption(a, "carLoan", "yes", "ILS");
     a = tapAllOptions(a, "money");
-    a = applyOption(a, "secondBank", "yes");
-    a = applyOption(a, "cardCount", "3");
-    a = applyOption(a, "fxCurrency", "USD");
+    a = applyOption(a, "secondBank", "yes", "ILS");
+    a = applyOption(a, "cardCount", "3", "ILS");
+    a = applyOption(a, "fxCurrency", "USD", "ILS");
     a = tapAllOptions(a, "extras");
 
     const plan = planStarterBook(a, "ILS");

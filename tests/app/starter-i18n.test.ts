@@ -22,7 +22,7 @@ describe("starter wizard strings", () => {
     for (const q of QUESTIONS) {
       expect(typeof lookup(`onboarding.wizard.q.${q.id}.title`), q.id).toBe("string");
       // Options may depend on answers; union them over a few representative states.
-      const states: Answers[] = ["solo", "couple", "family"].map((h) => applyOption(EMPTY_ANSWERS, "household", h));
+      const states: Answers[] = ["solo", "couple", "family"].map((h) => applyOption(EMPTY_ANSWERS, "household", h, "ILS"));
       for (const a of states) {
         for (const o of q.options(a, "ILS")) {
           if (CURRENCY_CODES.has(o)) continue;
@@ -38,11 +38,11 @@ describe("starter wizard strings", () => {
 
   it("every account name the planner can emit has an English string", () => {
     // The widest plan: every 'many' option on, every follow-up yes, three cards, USD account.
-    let a = applyOption(EMPTY_ANSWERS, "household", "family");
+    let a = applyOption(EMPTY_ANSWERS, "household", "family", "ILS");
     for (const q of QUESTIONS) {
       if (!q.visibleWhen(a) || q.kind !== "many") continue;
       for (const o of q.options(a, "ILS")) {
-        if (!selectedOptions(a, q.id).includes(o)) a = applyOption(a, q.id, o);
+        if (!selectedOptions(a, q.id).includes(o)) a = applyOption(a, q.id, o, "ILS");
       }
     }
     for (const q of QUESTIONS) {
@@ -50,14 +50,14 @@ describe("starter wizard strings", () => {
       const opts = q.options(a, "ILS");
       // "yes" for every follow-up, three cards, a mortgage, the first foreign currency.
       const pick = q.id === "cardCount" ? "3" : q.id === "housing" ? "mortgage" : opts[0];
-      a = applyOption(a, q.id, pick);
+      a = applyOption(a, q.id, pick, "ILS");
     }
     // Also the single-leg variants the widest plan cannot show at the same time.
     const variants = [
       a,
-      applyOption(applyOption(EMPTY_ANSWERS, "household", "solo"), "housing", "rent"),
-      applyOption(applyOption(EMPTY_ANSWERS, "household", "solo"), "housing", "mortgage"),
-      applyOption(applyOption(EMPTY_ANSWERS, "household", "solo"), "housing", "own"),
+      applyOption(applyOption(EMPTY_ANSWERS, "household", "solo", "ILS"), "housing", "rent", "ILS"),
+      applyOption(applyOption(EMPTY_ANSWERS, "household", "solo", "ILS"), "housing", "mortgage", "ILS"),
+      applyOption(applyOption(EMPTY_ANSWERS, "household", "solo", "ILS"), "housing", "own", "ILS"),
     ];
     for (const v of variants) {
       for (const item of planStarterBook(v, "ILS")) {

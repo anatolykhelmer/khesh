@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { CurrencyCode } from "../../src/kernel";
+import { CURRENCIES } from "../../src/app/currencies";
 import {
+  applyHomeCurrency,
   applyOption,
   EMPTY_ANSWERS,
   nextStep,
@@ -23,8 +26,8 @@ import {
  */
 const HOUSEHOLDS = ["solo", "couple", "family", "skip"] as const;
 
-function householdBase(h: (typeof HOUSEHOLDS)[number]): Answers {
-  return applyOption(EMPTY_ANSWERS, "household", h);
+function householdBase(h: (typeof HOUSEHOLDS)[number], home: CurrencyCode): Answers {
+  return applyOption(EMPTY_ANSWERS, "household", h, home);
 }
 
 function addUnique(states: Answers[], seen: Set<string>, a: Answers): void {
@@ -34,52 +37,65 @@ function addUnique(states: Answers[], seen: Set<string>, a: Answers): void {
   states.push(a);
 }
 
-function representativeStates(): Answers[] {
+function representativeStates(home: CurrencyCode = "ILS"): Answers[] {
   const states: Answers[] = [];
   const seen = new Set<string>();
 
   for (const h of HOUSEHOLDS) {
-    const base = householdBase(h);
+    const base = householdBase(h, home);
     addUnique(states, seen, base); // none of any question's options applied
     for (const q of QUESTIONS) {
-      const options = q.options(base, "ILS");
+      const options = q.options(base, home);
       for (const option of options) {
-        addUnique(states, seen, applyOption(base, q.id, option)); // one option alone
+        addUnique(states, seen, applyOption(base, q.id, option, home)); // one option alone
       }
       let allApplied = base;
-      for (const option of options) allApplied = applyOption(allApplied, q.id, option);
+      for (const option of options) allApplied = applyOption(allApplied, q.id, option, home);
       addUnique(states, seen, allApplied); // every option of this question
     }
   }
 
   // Hand-built states that chain a follow-up onto its trigger, so questions gated on a
   // second answer (not just the household) are exercised too.
-  const solo = householdBase("solo");
-  const family = householdBase("family");
+  const solo = householdBase("solo", home);
+  const family = householdBase("family", home);
   const deep: Answers[] = [
-    ...(["under3", "school", "student"] as const).map((age) => applyOption(family, "childAges", age)),
+    ...(["under3", "school", "student"] as const).map((age) => applyOption(family, "childAges", age, home)),
     ...(["yes", "no"] as const).map((yn) =>
-      applyOption(applyOption(solo, "income", "freelance"), "trackBusiness", yn),
+      applyOption(applyOption(solo, "income", "freelance", home), "trackBusiness", yn, home),
     ),
     ...(["yes", "no"] as const).map((yn) =>
-      applyOption(applyOption(solo, "transport", "car"), "carLoan", yn),
+      applyOption(applyOption(solo, "transport", "car", home), "carLoan", yn, home),
     ),
     ...(["yes", "no"] as const).map((yn) =>
-      applyOption(applyOption(solo, "money", "bank"), "secondBank", yn),
+      applyOption(applyOption(solo, "money", "bank", home), "secondBank", yn, home),
     ),
     ...(["1", "2", "3"] as const).map((count) =>
-      applyOption(applyOption(solo, "money", "card"), "cardCount", count),
+      applyOption(applyOption(solo, "money", "card", home), "cardCount", count, home),
     ),
-    ...(["USD", "EUR"] as const).map((currency) =>
-      applyOption(applyOption(solo, "money", "fx"), "fxCurrency", currency),
+    ...CURRENCIES.filter((c) => c !== home).map((currency) =>
+      applyOption(applyOption(solo, "money", "fx", home), "fxCurrency", currency, home),
     ),
     ...(["rent", "mortgage", "own", "family"] as const).flatMap((housing) =>
-      (["yes", "no"] as const).map((yn) => applyOption(applyOption(solo, "housing", housing), "buildingFees", yn)),
+      (["yes", "no"] as const).map((yn) => applyOption(applyOption(solo, "housing", housing, home), "buildingFees", yn, home)),
     ),
   ];
   for (const a of deep) addUnique(states, seen, a);
 
   return states;
+}
+
+/**
+ * Every representative state built under a *different* home currency, re-settled against
+ * this one. The home currency is an input to the tree that is not an answer in it — the
+ * other-currency question offers every currency but this one — and it stays editable after
+ * the answers are given, so this is the shape of state the wizard reaches when the user
+ * jumps back to the first step and changes the book's currency.
+ */
+function currencySwitchedStates(home: CurrencyCode): Answers[] {
+  return CURRENCIES.filter((c) => c !== home).flatMap((other) =>
+    representativeStates(other).map((a) => applyHomeCurrency(a, home)),
+  );
 }
 
 describe("questionnaire", () => {
@@ -98,7 +114,7 @@ describe("questionnaire", () => {
   });
 
   it("skip jumps straight from household to summary", () => {
-    const a = applyOption(EMPTY_ANSWERS, "household", "skip");
+    const a = applyOption(EMPTY_ANSWERS, "household", "skip", "ILS");
     expect(nextStep("household", a)).toBe("summary");
     expect(visibleSteps(a)).toEqual(["setup", "household", "summary"]);
   });
@@ -115,7 +131,7 @@ describe("questionnaire", () => {
         if (!q.visibleWhen(a)) continue;
         for (const option of q.options(a, "ILS")) {
           if (selectedOptions(a, q.id).includes(option)) continue;
-          expect(applyOption(a, q.id, option), `${q.id}/${option}`).not.toEqual(a);
+          expect(applyOption(a, q.id, option, "ILS"), `${q.id}/${option}`).not.toEqual(a);
         }
       }
     }
@@ -134,16 +150,16 @@ describe("questionnaire", () => {
   });
 
   it("second salary is offered only to couples and families", () => {
-    const solo = applyOption(EMPTY_ANSWERS, "household", "solo");
-    const couple = applyOption(EMPTY_ANSWERS, "household", "couple");
+    const solo = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    const couple = applyOption(EMPTY_ANSWERS, "household", "couple", "ILS");
     const q = QUESTIONS.find((x) => x.id === "income")!;
     expect(q.options(solo, "ILS")).not.toContain("salary2");
     expect(q.options(couple, "ILS")).toContain("salary2");
   });
 
   it("the other-currency question offers every currency but the home one", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "solo");
-    a = applyOption(a, "money", "fx");
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "money", "fx", "ILS");
     const q = QUESTIONS.find((x) => x.id === "fxCurrency")!;
     expect(q.visibleWhen(a)).toBe(true);
     expect(q.options(a, "ILS")).toEqual(["USD", "EUR"]);
@@ -151,56 +167,56 @@ describe("questionnaire", () => {
   });
 
   it("choosing a household pre-checks that household's extras", () => {
-    const solo = applyOption(EMPTY_ANSWERS, "household", "solo");
+    const solo = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
     expect(selectedOptions(solo, "extras")).toEqual(["health", "phone", "leisure"]);
-    const family = applyOption(EMPTY_ANSWERS, "household", "family");
+    const family = applyOption(EMPTY_ANSWERS, "household", "family", "ILS");
     expect(selectedOptions(family, "extras")).toEqual([
       "health", "phone", "leisure", "clothing", "travel", "gifts",
     ]);
   });
 
   it("a 'many' option toggles; a 'one' option replaces; yes/no and counts round-trip", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "solo");
-    a = applyOption(a, "money", "cash");
-    a = applyOption(a, "money", "card");
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "money", "cash", "ILS");
+    a = applyOption(a, "money", "card", "ILS");
     expect(selectedOptions(a, "money")).toEqual(["cash", "card"]);
-    a = applyOption(a, "money", "cash");
+    a = applyOption(a, "money", "cash", "ILS");
     expect(selectedOptions(a, "money")).toEqual(["card"]);
-    a = applyOption(a, "cardCount", "2");
+    a = applyOption(a, "cardCount", "2", "ILS");
     expect(a.cardCount).toBe(2);
     expect(selectedOptions(a, "cardCount")).toEqual(["2"]);
-    a = applyOption(a, "housing", "rent");
-    a = applyOption(a, "buildingFees", "yes");
+    a = applyOption(a, "housing", "rent", "ILS");
+    a = applyOption(a, "buildingFees", "yes", "ILS");
     expect(a.buildingFees).toBe(true);
-    a = applyOption(a, "buildingFees", "no");
+    a = applyOption(a, "buildingFees", "no", "ILS");
     expect(a.buildingFees).toBe(false);
     expect(selectedOptions(a, "buildingFees")).toEqual(["no"]);
   });
 
   it("dropping an answer hides its follow-up and clears it", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "solo");
-    a = applyOption(a, "transport", "car");
-    a = applyOption(a, "carLoan", "yes");
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "transport", "car", "ILS");
+    a = applyOption(a, "carLoan", "yes", "ILS");
     expect(visibleSteps(a)).toContain("carLoan");
-    a = applyOption(a, "transport", "car");
+    a = applyOption(a, "transport", "car", "ILS");
     expect(visibleSteps(a)).not.toContain("carLoan");
     expect(a.carLoan).toBeNull();
   });
 
   it("changing household away from a multi-earner household drops salary2 from income", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "couple");
-    a = applyOption(a, "income", "salary2");
+    let a = applyOption(EMPTY_ANSWERS, "household", "couple", "ILS");
+    a = applyOption(a, "income", "salary2", "ILS");
     expect(a.income).toContain("salary2");
-    a = applyOption(a, "household", "solo");
+    a = applyOption(a, "household", "solo", "ILS");
     expect(a.income).not.toContain("salary2");
   });
 
   it("changing an unrelated answer does not clear an already-answered yes/no follow-up", () => {
-    let a = applyOption(EMPTY_ANSWERS, "household", "solo");
-    a = applyOption(a, "transport", "car");
-    a = applyOption(a, "carLoan", "yes");
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "transport", "car", "ILS");
+    a = applyOption(a, "carLoan", "yes", "ILS");
     expect(a.carLoan).toBe(true);
-    a = applyOption(a, "extras", "sport"); // unrelated: does not affect carLoan's visibility or options
+    a = applyOption(a, "extras", "sport", "ILS"); // unrelated: does not affect carLoan's visibility or options
     expect(a.carLoan).toBe(true);
     expect(selectedOptions(a, "carLoan")).toEqual(["yes"]);
   });
@@ -211,38 +227,38 @@ describe("questionnaire", () => {
     // its own question's current options while the question stays visible (the reported
     // bug: household=couple, income=salary2, then household=solo).
     const householdSwitchedStates = (): Answers[] => {
-      let a1 = applyOption(EMPTY_ANSWERS, "household", "couple");
-      a1 = applyOption(a1, "income", "salary2");
-      a1 = applyOption(a1, "household", "solo");
+      let a1 = applyOption(EMPTY_ANSWERS, "household", "couple", "ILS");
+      a1 = applyOption(a1, "income", "salary2", "ILS");
+      a1 = applyOption(a1, "household", "solo", "ILS");
 
-      let a2 = applyOption(EMPTY_ANSWERS, "household", "family");
-      a2 = applyOption(a2, "childAges", "under3");
-      a2 = applyOption(a2, "household", "solo");
+      let a2 = applyOption(EMPTY_ANSWERS, "household", "family", "ILS");
+      a2 = applyOption(a2, "childAges", "under3", "ILS");
+      a2 = applyOption(a2, "household", "solo", "ILS");
 
-      let a3 = applyOption(EMPTY_ANSWERS, "household", "solo");
-      a3 = applyOption(a3, "income", "freelance");
-      a3 = applyOption(a3, "trackBusiness", "yes");
-      a3 = applyOption(a3, "household", "couple");
+      let a3 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+      a3 = applyOption(a3, "income", "freelance", "ILS");
+      a3 = applyOption(a3, "trackBusiness", "yes", "ILS");
+      a3 = applyOption(a3, "household", "couple", "ILS");
 
-      let a4 = applyOption(EMPTY_ANSWERS, "household", "solo");
-      a4 = applyOption(a4, "transport", "car");
-      a4 = applyOption(a4, "carLoan", "yes");
-      a4 = applyOption(a4, "household", "family");
+      let a4 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+      a4 = applyOption(a4, "transport", "car", "ILS");
+      a4 = applyOption(a4, "carLoan", "yes", "ILS");
+      a4 = applyOption(a4, "household", "family", "ILS");
 
-      let a5 = applyOption(EMPTY_ANSWERS, "household", "solo");
-      a5 = applyOption(a5, "money", "bank");
-      a5 = applyOption(a5, "secondBank", "yes");
-      a5 = applyOption(a5, "household", "couple");
+      let a5 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+      a5 = applyOption(a5, "money", "bank", "ILS");
+      a5 = applyOption(a5, "secondBank", "yes", "ILS");
+      a5 = applyOption(a5, "household", "couple", "ILS");
 
-      let a6 = applyOption(EMPTY_ANSWERS, "household", "solo");
-      a6 = applyOption(a6, "money", "card");
-      a6 = applyOption(a6, "cardCount", "2");
-      a6 = applyOption(a6, "household", "family");
+      let a6 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+      a6 = applyOption(a6, "money", "card", "ILS");
+      a6 = applyOption(a6, "cardCount", "2", "ILS");
+      a6 = applyOption(a6, "household", "family", "ILS");
 
-      let a7 = applyOption(EMPTY_ANSWERS, "household", "solo");
-      a7 = applyOption(a7, "money", "fx");
-      a7 = applyOption(a7, "fxCurrency", "USD");
-      a7 = applyOption(a7, "household", "couple");
+      let a7 = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+      a7 = applyOption(a7, "money", "fx", "ILS");
+      a7 = applyOption(a7, "fxCurrency", "USD", "ILS");
+      a7 = applyOption(a7, "household", "couple", "ILS");
 
       return [a1, a2, a3, a4, a5, a6, a7];
     };
@@ -256,5 +272,78 @@ describe("questionnaire", () => {
         }
       }
     }
+  });
+
+  /**
+   * The two invariants `applyOption` and `applyHomeCurrency` settle to, asserted directly
+   * over every reachable state this file can build, under every home currency the app
+   * offers. The planner reads answers as `a.cardCount !== null` / `a.fxCurrency !== null`
+   * and the screen renders `selectedOptions` against `options()`: the first invariant is
+   * what keeps the planner from dropping something the user ticked, the second what keeps
+   * the screen from showing a question with nothing selected while Next stays enabled.
+   * Neither is gated on how the user got there, which is the point — the bug both of these
+   * replace was reachable only off the linear path, through a progress-bar jump.
+   */
+  it("every visible single-select question has an answer, under every home currency", () => {
+    for (const home of CURRENCIES) {
+      for (const a of [...representativeStates(home), ...currencySwitchedStates(home)]) {
+        for (const q of QUESTIONS) {
+          if (!q.visibleWhen(a) || q.kind !== "one") continue;
+          expect(selectedOptions(a, q.id), `home ${home}: ${q.id} is visible and unanswered`)
+            .toHaveLength(1);
+        }
+      }
+    }
+  });
+
+  it("no stored answer is absent from its question's options, under every home currency", () => {
+    for (const home of CURRENCIES) {
+      for (const a of [...representativeStates(home), ...currencySwitchedStates(home)]) {
+        for (const q of QUESTIONS) {
+          if (!q.visibleWhen(a)) continue;
+          const offered = q.options(a, home);
+          for (const selected of selectedOptions(a, q.id)) {
+            expect(offered, `home ${home}: ${q.id}=${selected}`).toContain(selected);
+          }
+        }
+      }
+    }
+  });
+
+  it("ticking a credit card answers the card count on the spot", () => {
+    // The reported path: walk to the summary, tap "Accounts" in the progress bar, tick
+    // "Credit card", then tap "Summary". `cardCount` is visible but was never walked
+    // through, and the planner's `a.cardCount !== null` then created no card at all — a
+    // user who said they have a credit card got none. Seeding makes the jump and the walk
+    // agree, without either of them having to know about the other.
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "money", "card", "ILS");
+    expect(visibleSteps(a)).toContain("cardCount");
+    expect(a.cardCount).toBe(1);
+    // The seed is the question's own first option rather than a value written here, so it
+    // cannot drift from the list the screen renders.
+    const cardCount = QUESTIONS.find((q) => q.id === "cardCount")!;
+    expect(selectedOptions(a, "cardCount")).toEqual([cardCount.options(a, "ILS")[0]]);
+    // Unticking the card puts it back to unanswered, so nothing stale reaches the planner.
+    expect(applyOption(a, "money", "card", "ILS").cardCount).toBeNull();
+  });
+
+  it("changing the home currency re-chooses a foreign-currency account that would collide", () => {
+    // The other reported path: choose a USD account, then jump back to the first step and
+    // make the book itself USD. The answer must not survive as "a USD account in a USD
+    // book" (the planner would emit one, and the summary hides the suffix that would show
+    // it), and it must not be left null either, or the account the user asked for vanishes.
+    let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
+    a = applyOption(a, "money", "fx", "ILS");
+    a = applyOption(a, "fxCurrency", "USD", "ILS");
+    expect(a.fxCurrency).toBe("USD");
+
+    const switched = applyHomeCurrency(a, "USD");
+    expect(switched.fxCurrency).not.toBe("USD");
+    expect(switched.fxCurrency).not.toBeNull();
+    const fx = QUESTIONS.find((q) => q.id === "fxCurrency")!;
+    expect(fx.options(switched, "USD")).toContain(switched.fxCurrency);
+    // A currency change that does not collide leaves the user's choice alone.
+    expect(applyHomeCurrency(a, "EUR").fxCurrency).toBe("USD");
   });
 });

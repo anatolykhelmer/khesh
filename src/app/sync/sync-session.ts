@@ -215,13 +215,25 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
   }
 
   /**
-   * Let go of everything `conn` holds against Drive. Releasing and nothing else: it writes
-   * no connection state and takes no view on why.
+   * Let go of everything `conn` can still *act* through: its engine, its standing as the
+   * session's current connection, its token. Releasing and nothing else: it writes no
+   * connection state and takes no view on why.
    *
    * Everything dangerous goes synchronously ahead of the await — a disposed engine is the
    * difference between "this tab may still write the old book to Drive" and "it may not",
    * and `revoke()` is a network round trip with no timeout of its own. Idempotent, so
    * running it against an already-released connection costs nothing.
+   *
+   * **Two file ids are deliberately left alone**, and the old `forgetFile()` cleared both.
+   * `conn.fileId` stays because that is BL-053 itself: a write that grabbed this store
+   * before the teardown must keep reading the id this connection actually holds, or it
+   * takes the create-a-new-file path and duplicates the user's book. The *persisted* id in
+   * `SyncMeta` stays for a plainer reason — it is an address, not a claim of liveness.
+   * `connected: false`, written by `teardown` in the same record, is what says the
+   * connection is over, and `resumeStoredConnection` adopts nothing without it. Keeping the
+   * address means the next connect addresses the same Drive file directly instead of
+   * re-deriving it from a name search. The one flow that wants it gone clears it itself,
+   * because there forgetting is the point: `reconnect`, recovering from `SYNC_FILE_MISSING`.
    */
   async function releaseConnection(conn: Connection): Promise<void> {
     if (conn.released) return;
@@ -257,12 +269,22 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
    */
   function applyStalenessGate(): void {
     const next = afterLocalStateChange(stage, localState(), applying);
-    if (next === stage) return;
-    stage = next;
     // While the plan is dropped there is no error in state: the neutral sentence is the
     // whole explanation, and the error that would sit under it is a failed apply from the
     // plan being dropped, which is now moot.
+    //
+    // Keyed on the resulting stage being `dropped`, and placed *above* the early return —
+    // not on this call having been the thing that dropped it. `visibleError` only hides the
+    // error; the clear is what stops it coming back the moment something moves the stage
+    // off `dropped` without touching it. A `DROPPED` written elsewhere reaches this
+    // function as a no-op transition (`afterLocalStateChange` passes a non-`choosing` stage
+    // straight through), so an early return above the clear is exactly how the old provider
+    // left the error set — the arrangement its own doc then claimed it did not have.
     if (next.kind === "dropped") lastError = null;
+    // No publish on this branch even when the clear above fired: `visibleError` already
+    // answered `null` for a dropped stage, so every field of the snapshot is unchanged.
+    if (next === stage) return;
+    stage = next;
     publish();
   }
 
@@ -298,15 +320,24 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
   }
 
   async function runConnect(): Promise<void> {
-    // `disconnecting`, not just `connecting`/`applying`: a `disconnect()` already under way
-    // bumps `userEnds` synchronously, ahead of anything this function could capture — there
-    // is no await between that bump and this line, so an `endsAtStart` snapshot taken here
-    // would just re-read the already-bumped value and a same-value check on it could never
-    // fire. Refusing to start at all while `disconnecting` is what actually keeps the user
-    // from paying for an OAuth popup on a connect an erase has already overtaken (defect 2);
-    // the check that used to sit after `openConnection()`, comparing `userEnds` against a
-    // baseline captured one synchronous line above it, could not have done that job.
-    if (connecting || applying || disconnecting) return;
+    // `disconnecting` and `erasing`, not just `connecting`/`applying`. A `disconnect()`
+    // already under way bumps `userEnds` synchronously, ahead of anything this function
+    // could capture *when `connect()` is the caller* — there is no await between that bump
+    // and this line on that route, so an `endsAtStart` snapshot taken here would re-read
+    // the already-bumped value and a same-value check on it could never fire. Refusing to
+    // start at all while `disconnecting` is what actually keeps the user from paying for an
+    // OAuth popup on a connect an erase has already overtaken (defect 2).
+    //
+    // That "no await before this line" argument is about `connect()` alone. `reconnect()`
+    // awaits a `metaStore.save` before it calls this function, so a whole teardown can
+    // start *and finish* inside its window and be gone by the time this guard runs — which
+    // is why `reconnect` captures `userEnds` at its own true start and bails on the far
+    // side of that save, rather than leaving the question to this line.
+    //
+    // `erasing` is here so the refusal is structural. It is the reason the erase became
+    // session state at all: every screen reads it back as `activity.blocking`, and this is
+    // the half that does not depend on every future screen remembering to.
+    if (connecting || applying || disconnecting || erasing) return;
     connecting = true;
     lastError = null;
     // The notice asked for this tap and the button beside it is already disabled, so the
@@ -349,17 +380,45 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     disconnecting = true;
     publish();
     try {
-      if (conn) await releaseConnection(conn);
-      await ports.metaStore.save({ connected: false, accountEmail: null, lastSyncAt: null });
+      // Both awaits below are round trips that can reject — `revoke()` over the network,
+      // `save` into IndexedDB — and neither may strand the tail. A teardown that gave up at
+      // its first statement left the app showing "Synced" over a released connection *and*
+      // a persisted record still saying connected, which the next boot resumes: a
+      // connection whose token was never revoked. Each failure is recorded and the tail
+      // runs regardless, which is what makes "the snapshot settles into a coherent state"
+      // a property of this function rather than of which port happened to work.
+      if (conn) {
+        try {
+          await releaseConnection(conn);
+        } catch (error) {
+          swallow("teardown: release", error);
+        }
+      }
+      try {
+        // `fileId` is deliberately not cleared here; see `releaseConnection`'s own note.
+        await ports.metaStore.save({ connected: false, accountEmail: null, lastSyncAt: null });
+      } catch (error) {
+        swallow("teardown: meta", error);
+      }
       connected = false;
       email = null;
       engineState = null;
       stage = afterTeardown(stage, intent);
-      // `userAction` only. The flow the user ended can leave an error belonging to a screen
-      // they are leaving. Not on the `bookVanished` arm: there the same clear swallowed the
-      // sign-in error of a Connect made *during* the teardown window, which is the "Connect
-      // looks like it did nothing" BL-050 exists to remove.
-      if (intent.cause === "userAction") lastError = null;
+      // Two clears, one rule each.
+      //
+      // `userAction`: the flow the user ended can leave an error belonging to a screen they
+      // are leaving.
+      //
+      // A resulting stage of `dropped`: the same rule `applyStalenessGate` applies, and the
+      // reason it has to be applied here too is that this is the other place `DROPPED` gets
+      // written. Keyed on the *outcome*, not on the cause — which is precisely what keeps
+      // the BL-050 case the old `bookVanished` blanket clear broke. A Connect made during
+      // the teardown window sets `stage = IDLE` at its own start, so `afterTeardown` no
+      // longer finds `stage === intent.startedFrom` and answers `idle`, not `dropped`: this
+      // clear does not fire and that connect's sign-in error survives, which is the whole
+      // of "Connect looks like it did nothing". It fires only when this teardown really did
+      // write the drop notice, and then the notice is the whole explanation.
+      if (intent.cause === "userAction" || stage.kind === "dropped") lastError = null;
     } finally {
       disconnecting = false;
       publish();
@@ -440,24 +499,40 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     // connection is supposed to render.
     const accountEmail = emailResult.ok ? emailResult.value : null;
     await ports.metaStore.save({ connected: true, accountEmail });
+    // The one write below that the rollback's own `teardown` cannot undo for itself.
+    // `connected`, `email` and `engineState` it overwrites unconditionally; `stage` it
+    // *reads* — `afterTeardown` answers from the stage it finds — so the `IDLE` on the next
+    // line would be the answer, and a `dropped` a concurrent teardown had already written
+    // would be silently swallowed by this claim. That is BL-050 reopened through the
+    // rollback: the user lands on onboarding with no notice, and Connect looks like it did
+    // nothing. Captured here and put back below.
+    const stageBeforeClaim = stage;
     connected = true;
     email = accountEmail;
     stage = IDLE;
-    armEngine(conn);
     publish();
     // The rollback. Everything above is what a teardown would otherwise have to undo, and
     // could not, because it had already answered "proceed" and gone home.
     if (superseded(conn) || userEnds !== endsAtStart) {
+      stage = stageBeforeClaim;
       // Which teardown to record matters. `userAction` would bump `userEnds` and veto the
       // Connect the drop notice is about to ask for, so a supersession that was not the
-      // user's is rolled back as what it was.
+      // user's is rolled back as what it was. Restoring `stage` above is what lets
+      // `afterTeardown` answer the question it is actually being asked: `dropped` passes
+      // through unchanged, and a `choosing` this claim clobbered before any teardown had
+      // landed still matches `startedFrom` by identity and becomes `dropped` here.
       await teardown(
         userEnds !== endsAtStart
           ? { cause: "userAction" }
-          : { cause: "bookVanished", startedFrom: stage },
+          : { cause: "bookVanished", startedFrom: stageBeforeClaim },
       );
       return;
     }
+    // Armed only past the rollback. On that path `releaseConnection` has already nulled
+    // `conn.engine` and dropped `conn` as `current`, so the teardown above releases
+    // whatever is current — no longer `conn` — and an engine created before the check would
+    // be one nothing ever disposes. Measured as 1 created, 0 disposed.
+    armEngine(conn);
     conn.engine?.syncNow().catch((error: unknown) => swallow("finalize", error));
   }
 
@@ -519,12 +594,16 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
         // The intent carries *this* stage, so the plan the teardown announces as dropped is
         // the one it was called about rather than whichever is current when its awaits land.
         const startedFrom = stage;
-        void teardown({ cause: "bookVanished", startedFrom }).catch(() => {
-          // `releaseConnection` disposes the engine synchronously ahead of every await, so
-          // the one danger this path exists to close is already shut by the time anything
-          // here could reject. What is left is this session's own view not catching up —
-          // and there is no user action to attach an error to: the book is null.
-        });
+        // Nothing awaits this, so it needs a catch — and the module's rule is that no catch
+        // is silent. `teardown` now wraps both of its own round trips, so a port failure
+        // reaches this line as a logged failure and a coherent snapshot rather than as a
+        // rejection; what could still land here is a defect in the session's own tail. The
+        // previous justification for swallowing it silently covered only
+        // `releaseConnection`'s synchronous prefix, and said nothing about the meta write
+        // one line below it, which can reject too.
+        void teardown({ cause: "bookVanished", startedFrom }).catch((error: unknown) =>
+          swallow("setBook", error),
+        );
         return;
       }
       applyStalenessGate();
@@ -534,13 +613,24 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     async reconnect() {
       if (connecting || applying) return;
       try {
-        // One operation with one capture at its true start. The provider's old `reconnect`
-        // had to read the erase counter *before* `forgetFile()` and thread it into
-        // `connect()`, because that IndexedDB write was a window an erase could begin in
-        // and a read at the top of `connect` would have seen the bumped value and waved it
-        // through. Inside the session there is no gap to thread across.
+        // One operation with one capture at its true start — and this is that capture.
+        // `runConnect`'s own is taken after the `metaStore.save` below, which is a real
+        // window: the guard above catches a teardown already in flight, not one that starts
+        // *and finishes* inside this write. Without this the user would pay for an OAuth
+        // popup on a reconnect an erase had already overtaken, which is the very thing
+        // defect 2 closed on the other route in.
+        const endsAtStart = userEnds;
+        // The one remaining write to a connection another flow may still hold, and the
+        // exact mechanism BL-053 exists to rule out — allowed only here, and only because
+        // it is what the caller is asking for. `reconnect` has one call site, the
+        // `SYNC_FILE_MISSING` row: the cached id names a Drive file that is gone, so
+        // "forget the id and let the next write create a file" *is* the recovery. Every
+        // other flow abandons the connection instead of emptying it, because there the
+        // emptied field is what a doomed in-flight write reads to decide whether to
+        // duplicate the user's book.
         if (current) current.fileId = null;
         await ports.metaStore.save({ fileId: null });
+        if (userEnds !== endsAtStart) return;
         await runConnect();
       } catch (error) {
         swallow("reconnect", error);

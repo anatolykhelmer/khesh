@@ -20,7 +20,6 @@ export function QuestionStep({
   answers,
   homeCurrency,
   busy,
-  canGoBack,
   onOption,
   onBack,
   onNext,
@@ -29,7 +28,6 @@ export function QuestionStep({
   answers: Answers;
   homeCurrency: CurrencyCode;
   busy: boolean;
-  canGoBack: boolean;
   onOption: (option: string) => void;
   onBack: () => void;
   onNext: () => void;
@@ -68,7 +66,7 @@ export function QuestionStep({
         })}
       </div>
       <div className="wizard-nav">
-        <button type="button" className="secondary" disabled={busy || !canGoBack} onClick={onBack}>
+        <button type="button" className="secondary" disabled={busy} onClick={onBack}>
           {t("onboarding.wizard.back")}
         </button>
         <button type="button" className="primary" disabled={busy || !canProceed} onClick={onNext}>

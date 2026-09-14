@@ -131,7 +131,6 @@ export function OnboardingScreen() {
           answers={answers}
           homeCurrency={currency}
           busy={busy}
-          canGoBack
           onOption={(option) => setAnswers((a) => applyOption(a, question.id, option, currency))}
           onBack={() => setStep(previousStep(question.id, answers))}
           onNext={() => goTo(nextStep(question.id, answers))}

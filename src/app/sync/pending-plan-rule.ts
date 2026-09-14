@@ -195,11 +195,16 @@ export function afterTeardown(stage: ConnectStage, intent: TeardownIntent): Conn
  *   with this paragraph asserting the guarantee both times; the second one is why the
  *   wording above is about where the code is rather than about what it intends.
  * - `teardown`, after `afterTeardown` has answered — keyed on that answer being `dropped`,
- *   never on the cause. That distinction is load-bearing: a Connect made *during* a
- *   teardown window sets the stage itself, so `afterTeardown` no longer recognises the
- *   plan it started from and answers `idle`, the clear does not fire, and that connect's
- *   own sign-in error survives to be shown. A clear keyed on `cause === "bookVanished"`
- *   swallowed it, which is the whole of "Connect looks like it did nothing" (BL-050).
+ *   never on the cause. The two answer different questions: the cause says why the teardown
+ *   started, the answer says what is on screen when it ends. `dropped` is the one stage
+ *   where the notice is the whole explanation and a red line beneath it would break the
+ *   colour rule; every other answer is a stage that shows errors, `idle` above all, where a
+ *   failure is the only thing the user has to go on. A clear keyed on
+ *   `cause === "bookVanished"` swallowed it there too, which is the whole of "Connect looks
+ *   like it did nothing" (BL-050). The two keys diverge whenever something moves the stage
+ *   off `startedFrom` inside the teardown's own awaits — today only `cancelConnect()`,
+ *   which is unguarded; `runConnect` is refused while `disconnecting`, and `applyChoice`
+ *   stops at the `current` that `releaseConnection` has already nulled.
  *
  * Only `dropped` suppresses. A `choosing` screen shows its apply failures — the choices
  * are still live and the user can retry one — and `idle` is the plain Connect row, where a

@@ -441,13 +441,27 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       //
       // A resulting stage of `dropped`: the same rule `applyStalenessGate` applies, and the
       // reason it has to be applied here too is that this is the other place `DROPPED` gets
-      // written. Keyed on the *outcome*, not on the cause — which is precisely what keeps
-      // the BL-050 case the old `bookVanished` blanket clear broke. A Connect made during
-      // the teardown window sets `stage = IDLE` at its own start, so `afterTeardown` no
-      // longer finds `stage === intent.startedFrom` and answers `idle`, not `dropped`: this
-      // clear does not fire and that connect's sign-in error survives, which is the whole
-      // of "Connect looks like it did nothing". It fires only when this teardown really did
-      // write the drop notice, and then the notice is the whole explanation.
+      // written.
+      //
+      // Keyed on the *outcome*, not on the cause, because the two answer different
+      // questions. The cause says why this teardown started; the clear is about what is on
+      // screen when it ends, and `afterTeardown` is what decides that. It says `dropped`
+      // only when this teardown actually wrote the notice — exactly the stage where the
+      // notice is the whole explanation and a red line beneath it would break the one
+      // meaning colour carries in this app (`components.css`). Every other answer is a
+      // stage that *shows* errors: `idle` is the plain Connect row, where a failure is the
+      // only thing the user has to go on. A clear keyed on `cause === "bookVanished"` wiped
+      // it there too, which is the "Connect looks like it did nothing" BL-050 removes.
+      //
+      // The two keys diverge only when something moves `stage` off `intent.startedFrom`
+      // inside this function's awaits, so `afterTeardown` no longer recognises the plan and
+      // answers `idle`. One writer can: `cancelConnect()`, which has no guard at all.
+      // `runConnect` — so both `connect()` and `reconnect()` — is refused outright while
+      // `disconnecting`, and `applyChoice` gets no further than its `current` check, since
+      // `releaseConnection` nulls `current` synchronously ahead of every await above. Note
+      // that second one is closed by that ordering and not by a guard of its own: narrow,
+      // and narrow because of code elsewhere, which is the reason to key this line on the
+      // outcome it is actually about rather than on a cause that merely correlates with it.
       if (intent.cause === "userAction" || stage.kind === "dropped") lastError = null;
     } finally {
       disconnecting = false;

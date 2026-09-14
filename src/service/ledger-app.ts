@@ -427,6 +427,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
           id: input.accountId,
         });
       }
+      const hadEntry = book.journal.some((e) => e.id === `opening:${input.accountId}`);
       const recorded = recordOpeningBalance(
         book,
         {
@@ -438,6 +439,10 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         nowIso(),
       );
       if (!recorded.ok) return recorded;
+      // amount 0 with no prior entry is the kernel's own no-op (it clones the book
+      // unchanged) — skip the commit so clearing a balance that was never set doesn't
+      // still persist and fire afterCommit/sync for nothing.
+      if (input.amount === 0 && !hadEntry) return ok(book);
       return commit(recorded.value);
     },
 
@@ -445,7 +450,9 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       book: Book,
       accountId: string,
     ): { amount: MinorUnits; date: string } | undefined {
-      const entry = book.journal.find((e) => e.id === `opening:${accountId}`);
+      const entry = book.journal.find(
+        (e) => e.id === `opening:${accountId}` && e.kind === "opening",
+      );
       if (!entry) return undefined;
       const posting = entry.postings.find((p) => p.accountId === accountId);
       if (!posting) return undefined;

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createMemoryRepository } from "../../src/adapters/memory-repository";
 import { createLedgerApp } from "../../src/service/ledger-app";
 import type { Book } from "../../src/kernel";
-import { unwrap, unwrapErr } from "../helpers";
+import { NOW, unwrap, unwrapErr } from "../helpers";
 
 async function seeded() {
   const repo = createMemoryRepository(null);
@@ -40,6 +40,29 @@ describe("LedgerApp openingBalanceOf", () => {
       amount: 5000,
       date: "2026-08-01",
     });
+  });
+
+  it("ignores an entry whose id collides with the opening-entry convention but isn't one", async () => {
+    const { app, book, assets } = await seeded();
+    const next = unwrap(
+      await app.addAccount(book, { parentId: assets.id, name: "Cash", isPlaceholder: false }),
+    );
+    const cash = byName(next, "Cash").id;
+    const corrupted: Book = {
+      ...next,
+      journal: [
+        ...next.journal,
+        {
+          id: `opening:${cash}`,
+          date: "2026-08-01",
+          description: "not actually an opening entry",
+          kind: "standard",
+          postings: [{ accountId: cash, side: "debit", amount: 999 }],
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    };
+    expect(app.openingBalanceOf(corrupted, cash)).toBeUndefined();
   });
 });
 
@@ -104,6 +127,25 @@ describe("LedgerApp setOpeningBalance", () => {
       await app.setOpeningBalance(next, { accountId: cash, amount: 0, date: "2026-08-01" }),
     );
     expect(after.journal.some((e) => e.id === `opening:${cash}`)).toBe(false);
+  });
+
+  it("does not persist or fire afterCommit for a no-op clear", async () => {
+    const repo = createMemoryRepository(null);
+    const commits: Book[] = [];
+    const app = createLedgerApp(repo, { now: () => NOW, afterCommit: (b) => commits.push(b) });
+    const book = unwrap(await app.createHousehold("USD"));
+    const assets = book.accounts.find((a) => a.name === "Assets")!;
+    const next = unwrap(
+      await app.addAccount(book, { parentId: assets.id, name: "Cash", isPlaceholder: false }),
+    );
+    const cash = byName(next, "Cash").id;
+    commits.length = 0;
+
+    const after = unwrap(
+      await app.setOpeningBalance(next, { accountId: cash, amount: 0, date: "2026-08-01" }),
+    );
+    expect(after).toBe(next);
+    expect(commits).toHaveLength(0);
   });
 
   it("rejects a placeholder account", async () => {

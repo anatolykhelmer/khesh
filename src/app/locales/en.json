@@ -214,7 +214,8 @@
     "dateLabel": "Date",
     "amountLabel": "Amount",
     "save": "Save",
-    "notAvailable": "Opening balance isn't available for this account."
+    "notAvailable": "Opening balance isn't available for this account.",
+    "clearHint": "Leave blank to remove the opening balance."
   },
   "journal": {
     "title": "Journal",

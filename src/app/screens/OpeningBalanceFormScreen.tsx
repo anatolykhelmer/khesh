@@ -97,6 +97,7 @@ export function OpeningBalanceFormScreen() {
               onChange={(e) => setAmount(e.target.value)}
             />
           </label>
+          {existing ? <p className="muted">{t("openingBalanceForm.clearHint")}</p> : null}
         </div>
         <button type="submit" className="primary" disabled={busy}>
           {t("openingBalanceForm.save")}

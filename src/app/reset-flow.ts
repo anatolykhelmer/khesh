@@ -55,7 +55,10 @@ export type ResetDeps = {
  * again. `beginErase()`/`endErase()` bracket the whole of this function for exactly that
  * reason: `erasing` reaches every screen through the sync snapshot itself, not through a
  * prop threaded down from this function's one caller, and the `finally` is what keeps a
- * failed `resetAll` from leaving it stuck on.
+ * failed `resetAll` from leaving it stuck on. That bracket is the guard, not decoration —
+ * `ConnectDrive`, `SyncSection` and `DangerZone` all read it back as `activity.blocking`
+ * (`erasing` is one of the flags folded into it), and removing either call reopens BL-040
+ * exactly as before, just with no prop left for a reviewer to notice is missing.
  *
  * Extracted out of the DangerZone component so this ordering has a test: this repo's
  * Vitest runs in `environment: "node"` with no component-testing library, so a React

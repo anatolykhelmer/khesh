@@ -29,8 +29,9 @@ export function OnboardingScreen() {
   // releases, and Continue writes a seed over the same key, which `finalizeConnect` then
   // arms an engine to upload over the real file. Unmounting this screen does not cancel
   // an in-flight `createHousehold` either. A plan merely *on screen* is enough to block:
-  // it is one tap from that write, and `sync.applying` only covers the tap after.
-  const busy = saving || importing || sync.applying || sync.pendingInspection !== null;
+  // it is one tap from that write, and `activity.blocking` alone only covers the tap after.
+  const busy =
+    saving || importing || sync.activity.blocking || sync.pendingInspection !== null;
 
   function chooseLanguage(next: AppLanguage) {
     setLanguageChoice(next);
@@ -103,9 +104,9 @@ export function OnboardingScreen() {
         disabled={busy}
         onBusyChange={setImporting}
       />
-      {/* Only this screen's own writes: `ConnectDrive` adds `sync.applying` itself, and
-          passing the plan-on-screen half would disable the very choices it renders. */}
-      <ConnectDrive disabled={saving || importing} />
+      {/* `ConnectDrive` takes no prop: it gates on `sync.activity.blocking` itself, and
+          this screen's own `saving`/`importing` do not reach it — see its doc comment. */}
+      <ConnectDrive />
       <a className="onboarding-about" href="/about.html" target="_blank" rel="noopener">
         {t("onboarding.aboutLink")}
       </a>

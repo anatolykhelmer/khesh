@@ -41,14 +41,17 @@ const EXPLAIN_KEYS = {
  * Which choices appear is `firstConnectOptions`', decided when the remote was inspected
  * and carried on `sync.pendingPlan`. This component only renders it.
  *
- * `disabled` is the host screen's own busy state — a save, an import, a start-over. Those
- * writes and a first connect are mutually exclusive: an in-flight `useRemote` that lands
- * after a seed was written uploads the seed over the adopted book, and one that lands
- * after a start-over re-arms the connection that start-over just tore down. The screen
- * owns that flag because only it knows what else it is running; this component adds
- * `sync.applying` to it and gates every button, Cancel included.
+ * No props. Every button here, Cancel included, gates on `sync.activity.blocking` — the
+ * session's own record of whatever it is doing, connect/apply/disconnect/erase alike. A
+ * host screen's *other* busy state (a save, an import, a start-over) does not reach in
+ * here: those writes and a first connect are still mutually exclusive — an in-flight
+ * `useRemote` that lands after a seed was written uploads the seed over the adopted book,
+ * and one that lands after a start-over re-arms the connection that start-over just tore
+ * down — but each screen now enforces that on its own controls, the same way it already
+ * gates the opposite direction (its `busy` already folds in `sync.pendingInspection`/
+ * `activity.blocking` so its own writes wait out a first connect).
  */
-export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
+export function ConnectDrive() {
   const { t } = useTranslation();
   const { book } = useLedger();
   const sync = useSync();
@@ -58,10 +61,10 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
   // `applyChoice`'s `onStarted` and never from the tap itself — `applyChoice` turns a tap
   // away when the live plan no longer offers the choice, and when an apply is already
   // running, and a second tap that lands inside that window would otherwise move the
-  // label onto a button that is doing nothing. Paired with `sync.applying` at every read,
-  // never trusted alone: a failed apply leaves the stage `choosing` and the inspection
-  // unchanged, so the reset effect below never fires and a label keyed on this alone would
-  // sit at "Working…" over a re-enabled button.
+  // label onto a button that is doing nothing. Paired with `sync.activity.applying` at
+  // every read, never trusted alone: a failed apply leaves the stage `choosing` and the
+  // inspection unchanged, so the reset effect below never fires and a label keyed on this
+  // alone would sit at "Working…" over a re-enabled button.
   const [running, setRunning] = useState<FirstConnectChoice | null>(null);
 
   // A pending confirmation belongs to the plan it was opened against. `pendingInspection`
@@ -81,7 +84,7 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
 
   // Cancel is on this list: it only drops the choice screen, so leaving it live during an
   // apply let the user dismiss the UI while the write it started ran on to completion.
-  const blocked = disabled || sync.applying;
+  const blocked = sync.activity.blocking;
 
   // The one thing this component cannot leave unsaid: the choices the user tapped Connect
   // for were dropped because the book moved underneath them, so Connect looks like it did
@@ -116,7 +119,7 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
               disabled={blocked}
               onClick={() => void sync.connect()}
             >
-              {t(sync.applying ? "sync.connecting" : "sync.connect")}
+              {t(sync.activity.connecting ? "sync.connecting" : "sync.connect")}
             </button>
             <p className="muted row-hint">
               {t(book === null ? "sync.connectRestoreHint" : "sync.connectHint")}
@@ -185,7 +188,7 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
                         onClick={() => void sync.applyChoice(choice, () => setRunning(choice))}
                       >
                         {t(
-                          running === choice && sync.applying
+                          running === choice && sync.activity.applying
                             ? "sync.applyingChoice"
                             : confirmKeys.confirm,
                         )}
@@ -218,7 +221,7 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
                     }}
                   >
                     {t(
-                      running === choice && sync.applying
+                      running === choice && sync.activity.applying
                         ? "sync.applyingChoice"
                         : CHOICE_KEYS[choice].label,
                     )}

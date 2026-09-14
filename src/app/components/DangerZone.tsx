@@ -13,18 +13,19 @@ import { useSync } from "../sync/sync-context";
  * announce sequence itself lives in `performReset` (`../reset-flow`), which is plain
  * TypeScript and has its own tests.
  *
- * `onBusyChange` lifts that `busy` to `SettingsScreen`, which hands it down to
- * `SyncSection` — `ImportBookButton`'s pattern, for the reason given below: the erase and
- * the Connect row are siblings on one screen and each has to know the other is running.
- *
- * **Required, where `ImportBookButton`'s is optional.** That is not an inconsistency: the
- * import button has a real call site with nothing to tell (`SettingsScreen`'s own), while
- * this prop is the first hop of the only guard on `performReset`'s post-teardown window —
- * `performReset`'s doc calls it "not decoration", and dropping it reopens BL-040 with the
- * whole suite green, since no test in this repo can mount a component. This component has
- * exactly one call site, so requiring it costs nothing and buys the one check that does
- * run over this file: `tsc`. */
-export function DangerZone({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
+ * No props. `busy` used to be lifted to `SettingsScreen` and handed down to `SyncSection`
+ * — `ImportBookButton`'s pattern — because the erase and the Connect row are siblings on
+ * one screen and each had to know the other was running, and that lift was the first hop
+ * of the only guard on `performReset`'s post-teardown window: `performReset`'s own doc
+ * called it "not decoration", and dropping it reopened BL-040 with the whole suite green,
+ * since no test in this repo can mount a component. That prop chain's middle two hops
+ * (`SettingsScreen`, `SyncSection`) were exactly the part invisible to the suite — deleting
+ * both left it green regardless. `performReset` now brackets itself with
+ * `sync.beginErase()`/`sync.endErase()` instead of taking a callback from its caller, and
+ * `endErase()`'s own `finally` is what closes the window this component used to hold open
+ * by hand: every screen reads it back through `sync.activity.blocking` (BL-055), including
+ * one that mounts only after this component has already unmounted. */
+export function DangerZone() {
   const { t } = useTranslation();
   const { app, announceBookChanged, setError } = useLedger();
   const sync = useSync();
@@ -39,20 +40,22 @@ export function DangerZone({ onBusyChange }: { onBusyChange: (busy: boolean) => 
   // but does not stop `applyFirstConnect` from saving the Drive book *after* `resetAll`
   // cleared storage, leaving the erase ending with the remote book back on disk and the app
   // already on onboarding. A plan on screen counts for the same reason it does in
-  // onboarding: one tap from that write.
+  // onboarding: one tap from that write. Not `activity.blocking` — that now folds in
+  // `erasing`, which this component is about to set, so gating this button on it would
+  // gate the erase on its own erase.
   //
   // This is one direction of a pair, and for a long time it was the only one — the erase
   // knew about a live connect, the connect knew nothing about a live erase. The other
-  // direction is `onBusyChange` above: `busy` covers the whole of `performReset`, which
-  // runs on well past the `disconnect()` it starts with, and that remainder is the window
-  // a Connect could finalize into.
-  const connecting = sync.applying || sync.pendingInspection !== null;
+  // direction is `sync.beginErase()`/`endErase()` below: `activity.erasing` covers the
+  // whole of `performReset`, which runs on well past the `disconnect()` it starts with,
+  // and that remainder is the window a Connect could finalize into.
+  const connecting =
+    sync.activity.connecting || sync.activity.applying || sync.pendingInspection !== null;
 
   async function onReset() {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
-    onBusyChange(true);
     try {
       await performReset({
         sync,
@@ -63,7 +66,6 @@ export function DangerZone({ onBusyChange }: { onBusyChange: (busy: boolean) => 
     } finally {
       busyRef.current = false;
       setBusy(false);
-      onBusyChange(false);
     }
   }
 

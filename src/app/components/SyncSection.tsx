@@ -18,35 +18,29 @@ const SPECIFIC_ERROR_KEYS: Partial<Record<LedgerErrorCode, string>> = {
  * The Settings "Sync" block: connect button, first-connect choice, status,
  * manual-resolution actions. Renders nothing when no OAuth client id is built in.
  *
- * `disabled` is the screen's own erase — `DangerZone`'s `busy`, lifted through
- * `SettingsScreen`. Settings is the screen that renders a first connect and the erase as
- * siblings, and until now only one of them knew about the other: `DangerZone` gates its
- * button on `sync.applying` and a plan being on screen, while every Connect here stayed
- * live for the whole of `performReset`. That gap is not theoretical. `performReset` awaits
- * `disconnect()` first, and the tail of that writes `connected: false` — so for the whole
- * of `resetAll()` this block renders its `!connected` branch with an enabled Connect row,
- * and a connect finalizing into that window arms an engine at the user's real Drive file
- * while the book is being erased out from under it (BL-040). `RecoveryScreen` and
- * `OnboardingScreen` have passed this union into `ConnectDrive` since BL-049; Settings is
- * the screen that never got it. Nothing in the provider can substitute: the erase runs on
- * past the teardown, and `useSync()` has no way to know it is still running.
- *
- * **Required, with no default.** A `disabled = false` default reads as a courtesy and is
- * not one: this component has exactly one call site, and the only thing an omission could
- * mean there is that the second hop of that guard has been dropped — silently, because
- * `performReset`'s window is unreachable from a repo whose Vitest cannot mount a
- * component. Required, and `tsc` says so instead of nobody saying so.
+ * No props. This used to need `disabled` — `DangerZone`'s `busy`, lifted through
+ * `SettingsScreen` — because Settings renders a first connect and the erase as siblings,
+ * and until BL-055 closed only `SettingsScreen` knew both existed: `DangerZone` gated its
+ * own button on a plan being on screen, while every Connect here stayed live for the whole
+ * of `performReset`. That gap was not theoretical. `performReset` awaits `disconnect()`
+ * first, and the tail of that writes `connected: false` — so for the whole of `resetAll()`
+ * this block renders its `!connected` branch, and a connect finalizing into that window
+ * arms an engine at the user's real Drive file while the book is being erased out from
+ * under it (BL-040). The session now publishes `erasing` on `sync.activity` for the whole
+ * of `performReset`, folded into `activity.blocking` alongside connect/apply/disconnect —
+ * so this block reads the guard straight from context, the same way `ConnectDrive` reads
+ * it for its own rows, and no prop has to carry it down from `SettingsScreen` at all.
  */
-export function SyncSection({ disabled }: { disabled: boolean }) {
+export function SyncSection() {
   const { t, i18n } = useTranslation();
   const sync = useSync();
   // The other half of the same window, and this one is this component's own: `disconnect`
   // is awaited here with nothing gating the rows underneath it. On a `SYNC_FILE_MISSING`
   // state the connected view stays up for the whole teardown — `connected` goes false only
-  // at its tail — and the Reconnect row below is disabled by `sync.applying` alone, so a
-  // tap runs a fresh `connect()` against a connection this tab is in the middle of
-  // dropping. Ref plus state for the reason the rest of the app uses it: a second tap
-  // arrives before React has re-rendered.
+  // at its tail — and the Reconnect row below would otherwise be disabled by
+  // `activity.blocking` alone, so a tap runs a fresh `connect()` against a connection this
+  // tab is in the middle of dropping. Ref plus state for the reason the rest of the app
+  // uses it: a second tap arrives before React has re-rendered.
   const [disconnecting, setDisconnecting] = useState(false);
   const disconnectingRef = useRef(false);
 
@@ -65,7 +59,7 @@ export function SyncSection({ disabled }: { disabled: boolean }) {
   if (!sync.configured) return null;
 
   // Everything in this block that starts or re-starts a connection is blocked by both.
-  const blocked = disabled || disconnecting;
+  const blocked = sync.activity.blocking || disconnecting;
 
   const when = relativeSyncTime(sync.state?.lastSyncAt ?? null, Date.now(), i18n.language);
 
@@ -75,8 +69,8 @@ export function SyncSection({ disabled }: { disabled: boolean }) {
         {sync.pendingInspection === null ? (
           <h2 className="section-label">{t("sync.title")}</h2>
         ) : null}
-        {/* `ConnectDrive` adds `sync.applying` itself. */}
-        <ConnectDrive disabled={blocked} />
+        {/* `ConnectDrive` reads `sync.activity.blocking` itself. */}
+        <ConnectDrive />
       </>
     );
   }
@@ -166,7 +160,7 @@ export function SyncSection({ disabled }: { disabled: boolean }) {
             <button
               type="button"
               className="row-button"
-              disabled={sync.applying || blocked}
+              disabled={blocked}
               onClick={() => void sync.reconnect()}
             >
               {t("sync.reconnectAction")}

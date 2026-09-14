@@ -154,4 +154,50 @@ describe("planStarterBook", () => {
     const car = tree[3].children.find((n) => n.key === "car")!;
     expect(car.children.map((n) => n.key)).toEqual(["fuel", "carInsurance", "carRepairs", "parking"]);
   });
+
+  it("the maximal plan (every group and every extra at once) has unique keys and resolvable parents", () => {
+    const taps: [keyof Answers, string][] = [
+      ["household", "family"],
+      ["childAges", "under3"],
+      ["childAges", "school"],
+      ["childAges", "student"],
+      ["income", "salary"],
+      ["income", "salary2"],
+      ["income", "freelance"],
+      ["income", "benefits"],
+      ["income", "rental"],
+      ["income", "investments"],
+      ["trackBusiness", "yes"],
+      ["housing", "mortgage"],
+      ["buildingFees", "yes"],
+      ["transport", "car"],
+      ["transport", "lease"],
+      ["transport", "public"],
+      ["carLoan", "yes"],
+      ["money", "cash"],
+      ["money", "bank"],
+      ["money", "card"],
+      ["money", "savings"],
+      ["money", "fx"],
+      ["secondBank", "yes"],
+      ["cardCount", "3"],
+      ["fxCurrency", "USD"],
+      // `household: "family"` already seeds `extras` with its defaults (defaultExtras);
+      // tap only the ones missing from that default so every extra ends up present.
+      ["extras", "sport"],
+      ["extras", "beauty"],
+      ["extras", "pets"],
+      ["extras", "education"],
+    ];
+    let a = EMPTY_ANSWERS;
+    for (const [id, option] of taps) a = applyOption(a, id, option);
+
+    const plan = planStarterBook(a, "ILS");
+    const keys = new Set(plan.map((p) => p.key));
+    const duplicate = plan.map((p) => p.key).find((k, i) => plan.findIndex((p) => p.key === k) !== i);
+    expect(keys.size, `expected all ${plan.length} keys unique, duplicate: ${duplicate}`).toBe(plan.length);
+    for (const item of plan) {
+      if (item.parentKey !== null) expect(keys.has(item.parentKey), `${item.key}'s parent ${item.parentKey} is missing`).toBe(true);
+    }
+  });
 });

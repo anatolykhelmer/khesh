@@ -99,11 +99,29 @@ export function createFakeDrive(seed?: { id: string; payload: string }): FakeDri
     files,
     nextId: 1,
     storeFor(io: ConnectionIO): SyncStorePort {
-      const resolveId = async (): Promise<string> => {
+      /**
+       * The cached id, else a name search, else null: mirrors `resolveFileId` in
+       * `google-drive-sync.ts` ("the cached one, else a search by name … else null"),
+       * which is what lets a connection with no id of its own — a fresh connect, or a
+       * second device — find a book a test seeded straight into `drive.files` instead of
+       * through a prior `write()`. This fake models one Drive holding at most one khesh
+       * book, so "search by name" is "the one entry already there"; a real ambiguous
+       * match is the adapter's own concern, untouched by this plan.
+       */
+      const discoverId = async (): Promise<string | null> => {
         const known = io.getFileId();
         if (known !== null) return known;
-        // No id: this is the create-a-new-file path — the one BL-053's duplicate came
-        // down. Recorded here so a test can count files rather than infer.
+        if (files.size !== 1) return null;
+        const [onlyId] = files.keys();
+        await io.onFileId(onlyId);
+        return onlyId;
+      };
+      const resolveId = async (): Promise<string> => {
+        const discovered = await discoverId();
+        if (discovered !== null) return discovered;
+        // No id, and nothing to discover: this is the create-a-new-file path — the one
+        // BL-053's duplicate came down. Recorded here so a test can count files rather
+        // than infer.
         const id = `file-${drive.nextId}`;
         drive.nextId += 1;
         files.set(id, "");
@@ -114,14 +132,14 @@ export function createFakeDrive(seed?: { id: string; payload: string }): FakeDri
         async probe() {
           const token = await io.getToken(false);
           if (!token.ok) return token;
-          const id = io.getFileId();
+          const id = await discoverId();
           const payload = id === null ? undefined : files.get(id);
           return ok(payload === undefined || payload === "" ? null : { rev: "1" });
         },
         async read() {
           const token = await io.getToken(false);
           if (!token.ok) return token;
-          const id = io.getFileId();
+          const id = await discoverId();
           const payload = id === null ? undefined : files.get(id);
           return ok(payload === undefined || payload === "" ? null : { payload, rev: "1" });
         },
@@ -161,17 +179,38 @@ export function createGatedMetaStore(initial: Partial<SyncMeta> = {}): SyncMetaS
   };
 }
 
-/** A `GoogleAuth` whose token fetches and revoke the test times. */
+/**
+ * A `GoogleAuth` whose token fetches and revoke the test times.
+ *
+ * Only `interactive: true` goes to the gate. `createGoogleAuth` (`google-drive-sync.ts`)
+ * is explicit that this is an "in-memory hourly token": once a fetch has landed, every
+ * silent call — a store's per-operation `getToken(false)`, a `syncNow()` cycle's own reads
+ * and writes — returns it for free, no network round trip. A fake that queued those too
+ * would make every connect a multi-settle affair no test actually wants to spell out, and
+ * would hang a first-connect test that only ever drives the one popup. `interactive: true`
+ * bypasses the cache unconditionally, because that is the one fetch a test *does* want to
+ * see and time — `reauth()`'s included, even with a cached token still good, since it is
+ * the deliberate user tap a stale token needs.
+ *
+ * `revoke()` does not clear the cache. Production does (`token = null`), but nothing here
+ * needs that half modelled, and a released connection's io is still expected to answer a
+ * trailing `getToken(false)` — a write already in flight when a teardown lets go — without
+ * the test having to settle a gate call for a connection nothing is driving any more.
+ */
 export function createGatedAuth(): GoogleAuth & {
   tokenGate: Gate<Result<string>>;
   revokes: number;
 } {
   const tokenGate = new Gate<Result<string>>();
+  let cachedToken: string | null = null;
   const auth = {
     tokenGate,
     revokes: 0,
-    async getToken(_interactive: boolean) {
-      return tokenGate.enter();
+    async getToken(interactive: boolean) {
+      if (!interactive && cachedToken !== null) return ok(cachedToken);
+      const result = await tokenGate.enter();
+      if (result.ok) cachedToken = result.value;
+      return result;
     },
     async revoke() {
       auth.revokes += 1;

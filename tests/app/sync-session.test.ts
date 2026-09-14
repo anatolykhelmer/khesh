@@ -88,6 +88,31 @@ function serialLock() {
   };
 }
 
+/**
+ * A session already past first connect: an empty local book against an empty Drive is the
+ * one combination `firstConnectOptions` answers with `{kind: "apply", choice:
+ * "replaceRemote"}`, so it reaches `connected` with no choice screen in the way.
+ *
+ * Deviates from the brief: also seeds `repo`, not just `session.setBook()`. `setBook`
+ * (Task 5) never writes the repository — it only mirrors the book for the session's own
+ * `localState()` — so in production the two stay in step because the app's own ledger
+ * code is what persists there. This harness has no such code, and `replaceRemote` reads
+ * the book to upload from `repo.load()` (`applyFirstConnect` → `loadLocal`), not from
+ * `setBook`'s argument. Without this, `repo.load()` answers null, the apply fails with
+ * BOOK_INVALID, and the session never reaches `connected: true`.
+ */
+async function connectedSession() {
+  const h = makeSession();
+  const book = emptyBook();
+  await h.repo.save(book);
+  h.session.setBook(book);
+  const connecting = h.session.connect();
+  await h.auth.tokenGate.settle(ok("token-1"));
+  await connecting;
+  expect(h.session.getSnapshot().connected).toBe(true);
+  return h;
+}
+
 describe("sync session: snapshot", () => {
   it("starts idle, disconnected and unconfigured-aware", () => {
     const { session } = makeSession();
@@ -138,5 +163,83 @@ describe("sync session: snapshot", () => {
     expect(session.getSnapshot().activity.blocking).toBe(true);
     session.endErase();
     expect(session.getSnapshot().activity.blocking).toBe(false);
+  });
+});
+
+describe("sync session: connection identity", () => {
+  it("puts the choices on screen when Drive holds a book and local holds one too", async () => {
+    const { session, auth, drive } = makeSession();
+    drive.files.set("file-remote", JSON.stringify({ schema: "khesh.book.v1" }));
+    session.setBook(realBook());
+    const connecting = session.connect();
+    expect(session.getSnapshot().activity.connecting).toBe(true);
+    expect(session.getSnapshot().activity.blocking).toBe(true);
+    await auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    expect(session.getSnapshot().stage.kind).toBe("choosing");
+    expect(session.getSnapshot().activity.connecting).toBe(false);
+  });
+
+  it("disposes the engine and revokes the token when the user disconnects", async () => {
+    const { session, auth, meta } = await connectedSession();
+    await session.disconnect();
+    expect(auth.revokes).toBe(1);
+    expect(meta.record.connected).toBe(false);
+    expect(session.getSnapshot().connected).toBe(false);
+  });
+
+  it("completes a disconnect while a token fetch is still hanging", async () => {
+    const { session, auth } = await connectedSession();
+    const hung = session.reauth();           // never settled below
+    await session.disconnect();               // must not wait on it
+    expect(session.getSnapshot().connected).toBe(false);
+    expect(auth.tokenGate.pending).toBe(1);
+    void hung;
+  });
+
+  it("leaves a released connection its own file id, so a doomed write cannot duplicate", async () => {
+    // BL-053. The old provider nulled a *shared* fileIdRef, so a write already in flight
+    // read null, took the create-a-new-file path, and succeeded against a token not yet
+    // revoked. Abandoning the connection instead of emptying it makes that unreachable.
+    const { session, drive, io } = await connectedSession();
+    const before = drive.files.size;
+    await session.disconnect();
+    expect(io().getFileId()).not.toBeNull();
+    await io().getToken(false);               // whatever the doomed write does next
+    expect(drive.files.size).toBe(before);
+  });
+
+  it("a connect superseded before its token settles writes no stage", async () => {
+    // Deviates from the brief in two ways, both found by mutation-testing this test
+    // itself: temporarily gutting `superseded`/`userEnds` left it green, which means the
+    // brief's version (settle, *then* disconnect, then assert "idle") was not exercising
+    // supersession at all.
+    //
+    // First, the ordering: the brief settled the token before disconnecting and named
+    // this "mid-inspect". As literally written that superseded nothing — the caching
+    // `createGatedAuth` needs so every other test in this file does not hang on
+    // `inspectRemote`'s own silent `getToken(false)` (see `sync-harness.ts`) means settling
+    // the interactive fetch first lets the whole connect run to completion in the same
+    // microtask cascade, before `disconnect()` ever gets a turn. Disconnecting *first*
+    // lands while `runConnect` still has that fetch outstanding, which is the one
+    // interruption point this fake can still produce.
+    //
+    // Second, the destination: "idle" is also `stage`'s value before anything runs, so
+    // even the reordered version above still passed with the guards gutted — this
+    // `realBook()`-with-nothing-seeded-into-`repo` setup makes the apply fail with
+    // BOOK_INVALID on its own, which also never touches `stage`. Seeding the Drive with a
+    // file (`realBook()` on the local side keeps `firstConnectOptions` on the "choose"
+    // side of the matrix, same as the first test in this block) means an unsuperseded
+    // connect would reach `stage = {kind: "choosing", ...}` — a value teardown's own
+    // `afterTeardown` does not produce — so "idle" here can only mean the connect never
+    // got that far.
+    const { session, auth, drive } = makeSession();
+    drive.files.set("file-remote", JSON.stringify({ schema: "khesh.book.v1" }));
+    session.setBook(realBook());
+    const connecting = session.connect();
+    await session.disconnect();
+    await auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    expect(session.getSnapshot().stage.kind).toBe("idle");
   });
 });

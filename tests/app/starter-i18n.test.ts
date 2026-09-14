@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import en from "../../src/app/locales/en.json";
+import { CURRENCIES } from "../../src/app/currencies";
 import {
   applyOption,
   EMPTY_ANSWERS,
@@ -14,7 +15,10 @@ function lookup(path: string): unknown {
   return path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), en);
 }
 
-const CURRENCY_CODES = new Set(["ILS", "USD", "EUR"]);
+// `fxCurrency`'s options are currency codes, which QuestionStep renders as themselves
+// rather than through an i18n key. Derived from the same list QuestionStep derives its
+// own set from, so adding a fourth currency does not fail this test spuriously.
+const CURRENCY_CODES = new Set<string>(CURRENCIES);
 
 describe("starter wizard strings", () => {
   it("every section, question and option has an English string", () => {

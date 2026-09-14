@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 // `?raw` rather than node:fs: the project's tsconfig deliberately ships no node types,
 // and Vite resolves these relative to this file instead of the working directory.
 import html from "../../public/about.html?raw";
-import onboardingSource from "../../src/app/screens/onboarding/SetupStep.tsx?raw";
+import onboardingSource from "../../src/app/screens/OnboardingScreen.tsx?raw";
+import setupStepSource from "../../src/app/screens/onboarding/SetupStep.tsx?raw";
 import settingsSource from "../../src/app/screens/SettingsScreen.tsx?raw";
 
 /** The page Google's reviewer opens from the consent screen's "Application home page"
@@ -28,6 +29,10 @@ describe("about page", () => {
    * first. Both must offer a way here, at the path the file actually lives at. */
   it("is linked from both screens a visitor can reach", () => {
     expect(settingsSource).toContain('href="/about.html"');
-    expect(onboardingSource).toContain('href="/about.html"');
+    // The onboarding link lives in SetupStep, so the link's presence is only half the
+    // claim: a SetupStep that OnboardingScreen no longer renders would carry the link
+    // where no reviewer can reach it, and this test would still pass. Check both.
+    expect(setupStepSource).toContain('href="/about.html"');
+    expect(onboardingSource).toContain("<SetupStep");
   });
 });

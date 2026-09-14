@@ -58,8 +58,23 @@ export function SyncSection() {
 
   if (!sync.configured) return null;
 
-  // Everything in this block that starts or re-starts a connection is blocked by both.
+  // Everything in this block that *starts or re-starts* a connection is blocked by both.
+  // Deliberately not the gate on the Disconnect row below — see its own comment.
   const blocked = sync.activity.blocking || disconnecting;
+
+  // The Disconnect row's own gate, and the one place in this block that is not on
+  // `blocking`. `blocking` folds in `connecting`, which the connected view can set itself:
+  // Reconnect (the SYNC_FILE_MISSING recovery below) is the only `reconnect()` the app has,
+  // and `connecting` stays true from that tap until both `getToken(true)` and
+  // `inspectRemote` settle — cleared only in `runConnect`'s `finally`. A hung OAuth popup
+  // or a stalled Drive read would therefore disable Disconnect with no exit but a page
+  // reload. That is the counter-case the spec already settled when it rejected a teardown
+  // queue: a connect that will not finish is exactly when letting go must stay possible.
+  // What remains gated is what genuinely conflicts with a teardown — an erase (which runs
+  // its own `disconnect()`), a teardown already in flight anywhere in the session, and this
+  // component's own in-flight tap.
+  const disconnectBlocked =
+    sync.activity.erasing || sync.activity.disconnecting || disconnecting;
 
   const when = relativeSyncTime(sync.state?.lastSyncAt ?? null, Date.now(), i18n.language);
 
@@ -191,7 +206,7 @@ export function SyncSection() {
           <button
             type="button"
             className="row-button"
-            disabled={blocked}
+            disabled={disconnectBlocked}
             onClick={() => void onDisconnect()}
           >
             {t("sync.disconnect")}

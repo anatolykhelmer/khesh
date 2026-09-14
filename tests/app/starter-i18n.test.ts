@@ -1,0 +1,68 @@
+import { describe, expect, it } from "vitest";
+import en from "../../src/app/locales/en.json";
+import {
+  applyOption,
+  EMPTY_ANSWERS,
+  QUESTIONS,
+  SECTIONS,
+  selectedOptions,
+  type Answers,
+} from "../../src/app/onboarding/questionnaire";
+import { planStarterBook } from "../../src/service/starter-plan";
+
+function lookup(path: string): unknown {
+  return path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), en);
+}
+
+const CURRENCY_CODES = new Set(["ILS", "USD", "EUR"]);
+
+describe("starter wizard strings", () => {
+  it("every section, question and option has an English string", () => {
+    for (const s of SECTIONS) expect(typeof lookup(`onboarding.wizard.section.${s}`), s).toBe("string");
+    for (const q of QUESTIONS) {
+      expect(typeof lookup(`onboarding.wizard.q.${q.id}.title`), q.id).toBe("string");
+      // Options may depend on answers; union them over a few representative states.
+      const states: Answers[] = ["solo", "couple", "family"].map((h) => applyOption(EMPTY_ANSWERS, "household", h));
+      for (const a of states) {
+        for (const o of q.options(a, "ILS")) {
+          if (CURRENCY_CODES.has(o)) continue;
+          const key = o === "yes" || o === "no" ? `onboarding.wizard.q.yesNo.${o}` : `onboarding.wizard.q.${q.id}.${o}`;
+          expect(typeof lookup(key), key).toBe("string");
+        }
+      }
+    }
+    for (const k of ["next", "back", "createBook", "summaryTitle", "summaryHint", "progressLabel"]) {
+      expect(typeof lookup(`onboarding.wizard.${k}`), k).toBe("string");
+    }
+  });
+
+  it("every account name the planner can emit has an English string", () => {
+    // The widest plan: every 'many' option on, every follow-up yes, three cards, USD account.
+    let a = applyOption(EMPTY_ANSWERS, "household", "family");
+    for (const q of QUESTIONS) {
+      if (!q.visibleWhen(a) || q.kind !== "many") continue;
+      for (const o of q.options(a, "ILS")) {
+        if (!selectedOptions(a, q.id).includes(o)) a = applyOption(a, q.id, o);
+      }
+    }
+    for (const q of QUESTIONS) {
+      if (!q.visibleWhen(a) || q.kind !== "one" || q.id === "household") continue;
+      const opts = q.options(a, "ILS");
+      // "yes" for every follow-up, three cards, a mortgage, the first foreign currency.
+      const pick = q.id === "cardCount" ? "3" : q.id === "housing" ? "mortgage" : opts[0];
+      a = applyOption(a, q.id, pick);
+    }
+    // Also the single-leg variants the widest plan cannot show at the same time.
+    const variants = [
+      a,
+      applyOption(applyOption(EMPTY_ANSWERS, "household", "solo"), "housing", "rent"),
+      applyOption(applyOption(EMPTY_ANSWERS, "household", "solo"), "housing", "mortgage"),
+      applyOption(applyOption(EMPTY_ANSWERS, "household", "solo"), "housing", "own"),
+    ];
+    for (const v of variants) {
+      for (const item of planStarterBook(v, "ILS")) {
+        expect(typeof lookup(item.nameKey), item.nameKey).toBe("string");
+      }
+    }
+  });
+});

@@ -37,7 +37,91 @@
     "currencyListLabel": "מטבע בית",
     "continue": "המשך",
     "restore": "שחזור מגיבוי",
-    "aboutLink": "מה זה Khesh?"
+    "aboutLink": "מה זה Khesh?",
+    "wizard": {
+      "next": "הבא",
+      "back": "חזרה",
+      "createBook": "צור ספר",
+      "summaryTitle": "החשבונות שלך",
+      "summaryHint": "זה העץ שניצור. אפשר לשנות שם, להעביר או למחוק כל פריט מאוחר יותר, ולהוסיף עוד בכל עת.",
+      "progressLabel": "שלבים",
+      "section": {
+        "setup": "שפה",
+        "household": "משק בית",
+        "income": "הכנסות",
+        "home": "בית",
+        "transport": "תחבורה",
+        "accounts": "חשבונות",
+        "extras": "עוד",
+        "summary": "סיכום"
+      },
+      "q": {
+        "yesNo": { "yes": "כן", "no": "לא" },
+        "household": {
+          "title": "מי מנהל את הספר הזה?",
+          "solo": "רק אני",
+          "couple": "שנינו",
+          "family": "משפחה עם ילדים",
+          "skip": "דלג — התחל עם ספר ריק"
+        },
+        "childAges": {
+          "title": "בני כמה הילדים?",
+          "under3": "עד גיל 3",
+          "school": "גיל בית ספר",
+          "student": "סטודנטים"
+        },
+        "income": {
+          "title": "מאיפה מגיע הכסף?",
+          "salary": "משכורת",
+          "salary2": "משכורת שנייה",
+          "freelance": "עצמאי או עסק",
+          "benefits": "קצבאות ופנסיה",
+          "rental": "נכס מושכר",
+          "investments": "השקעות"
+        },
+        "trackBusiness": { "title": "לעקוב אחרי הוצאות העסק בנפרד?" },
+        "housing": {
+          "title": "איפה אתם גרים?",
+          "rent": "בשכירות",
+          "mortgage": "עם משכנתא",
+          "own": "בבעלות, בלי משכנתא",
+          "family": "אצל המשפחה"
+        },
+        "buildingFees": { "title": "ועד בית?" },
+        "transport": {
+          "title": "איך אתם מתניידים?",
+          "car": "רכב פרטי",
+          "lease": "רכב בליסינג",
+          "public": "תחבורה ציבורית",
+          "walk": "ברגל או באופניים"
+        },
+        "carLoan": { "title": "יש הלוואה על הרכב?" },
+        "money": {
+          "title": "איפה הכסף שלכם?",
+          "cash": "מזומן",
+          "bank": "חשבון בנק",
+          "card": "כרטיס אשראי",
+          "savings": "חיסכון או פיקדון",
+          "fx": "חשבון במטבע אחר"
+        },
+        "secondBank": { "title": "חשבון בנק שני?" },
+        "cardCount": { "title": "כמה כרטיסי אשראי?", "1": "אחד", "2": "שניים", "3": "שלושה" },
+        "fxCurrency": { "title": "איזה מטבע?" },
+        "extras": {
+          "title": "מה עוד לעקוב אחריו בנפרד?",
+          "health": "בריאות",
+          "clothing": "ביגוד",
+          "leisure": "פנאי",
+          "phone": "טלפון ומנויים",
+          "gifts": "מתנות ותרומות",
+          "travel": "נסיעות",
+          "sport": "ספורט",
+          "beauty": "טיפוח",
+          "pets": "חיות מחמד",
+          "education": "לימודים למבוגרים"
+        }
+      }
+    }
   },
   "recovery": {
     "storageTitle": "אין ל-Khesh גישה לאחסון",
@@ -184,6 +268,58 @@
     "rootIncome": "הכנסות",
     "rootExpenses": "הוצאות",
     "openingBalances": "יתרות פתיחה"
+  },
+  "starter": {
+    "accounts": {
+      "groceries": "מזון",
+      "other": "אחר",
+      "children": "ילדים",
+      "daycare": "מעון וגן",
+      "school": "בית ספר",
+      "activities": "חוגים",
+      "tuition": "שכר לימוד",
+      "childrenClothing": "ביגוד וצעצועים",
+      "salary": "משכורת",
+      "salaryN": "משכורת {{n}}",
+      "freelance": "עצמאי",
+      "business": "עסק",
+      "businessExpenses": "הוצאות העסק",
+      "benefits": "קצבאות ופנסיה",
+      "rentReceived": "שכר דירה שהתקבל",
+      "investments": "השקעות",
+      "housing": "דיור",
+      "rent": "שכר דירה",
+      "mortgage": "משכנתא",
+      "mortgageInterest": "ריבית משכנתא",
+      "utilities": "חשבונות בית",
+      "homeRepairs": "בית ותיקונים",
+      "buildingFees": "ועד בית",
+      "car": "רכב",
+      "fuel": "דלק",
+      "carInsurance": "ביטוח",
+      "carRepairs": "טיפולים ותיקונים",
+      "parking": "חניה ואגרות",
+      "carLoan": "הלוואת רכב",
+      "lease": "ליסינג",
+      "publicTransport": "תחבורה ציבורית",
+      "cash": "מזומן",
+      "bankAccount": "חשבון בנק",
+      "bankAccountN": "חשבון בנק {{n}}",
+      "creditCard": "כרטיס אשראי",
+      "creditCardN": "כרטיס אשראי {{n}}",
+      "savings": "חיסכון",
+      "fxAccount": "חשבון {{currency}}",
+      "health": "בריאות",
+      "clothing": "ביגוד",
+      "leisure": "פנאי",
+      "phone": "טלפון ומנויים",
+      "gifts": "מתנות ותרומות",
+      "travel": "נסיעות",
+      "sport": "ספורט",
+      "beauty": "טיפוח",
+      "pets": "חיות מחמד",
+      "education": "לימודים למבוגרים"
+    }
   },
   "accountDetail": {
     "titleFallback": "חשבון",

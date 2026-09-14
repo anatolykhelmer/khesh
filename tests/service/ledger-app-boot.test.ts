@@ -99,4 +99,29 @@ describe("LedgerApp boot + createHousehold", () => {
     broken.push({ key: "x", parentKey: "nope", nameKey: "starter.accounts.cash", type: "asset", isPlaceholder: false, currency: "ILS" });
     expect(unwrapErr(await app.createHousehold("ILS", broken)).code).toBe("ACCOUNT_PARENT_INVALID");
   });
+
+  it("createHousehold resolves plan names in the current language", async () => {
+    await i18n.changeLanguage("he");
+    const app = createLedgerApp(createMemoryRepository(null));
+    const answers = applyOption(applyOption(EMPTY_ANSWERS, "household", "solo"), "money", "cash");
+    const book = unwrap(await app.createHousehold("ILS", planStarterBook(answers, "ILS")));
+    expect(book.accounts.some((a) => a.name === i18n.t("starter.accounts.cash"))).toBe(true);
+    expect(book.accounts.some((a) => a.name === "Cash")).toBe(false);
+  });
+
+  // Before these strings existed, two credit-card entries both carried the raw key
+  // `starter.accounts.creditCardN` (i18next's fallback when no translation is present),
+  // so they collided on the kernel's sibling-name-uniqueness rule and a plan with more
+  // than one credit card could not be created at all. This proves the interpolated
+  // strings now resolve to distinct names for three cards.
+  it("createHousehold creates three credit cards with three distinct names", async () => {
+    let answers = applyOption(EMPTY_ANSWERS, "household", "solo");
+    answers = applyOption(answers, "money", "card");
+    answers = applyOption(answers, "cardCount", "3");
+    const app = createLedgerApp(createMemoryRepository(null));
+    const book = unwrap(await app.createHousehold("ILS", planStarterBook(answers, "ILS")));
+    const cards = book.accounts.filter((a) => a.type === "liability" && !a.isPlaceholder);
+    expect(cards).toHaveLength(3);
+    expect(new Set(cards.map((a) => a.name)).size).toBe(3);
+  });
 });

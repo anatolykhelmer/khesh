@@ -41,17 +41,23 @@ const EXPLAIN_KEYS = {
  * Which choices appear is `firstConnectOptions`', decided when the remote was inspected
  * and carried on `sync.pendingPlan`. This component only renders it.
  *
- * No props. Every button here, Cancel included, gates on `sync.activity.blocking` — the
- * session's own record of whatever it is doing, connect/apply/disconnect/erase alike. A
- * host screen's *other* busy state (a save, an import, a start-over) does not reach in
- * here: those writes and a first connect are still mutually exclusive — an in-flight
- * `useRemote` that lands after a seed was written uploads the seed over the adopted book,
- * and one that lands after a start-over re-arms the connection that start-over just tore
- * down — but each screen now enforces that on its own controls, the same way it already
- * gates the opposite direction (its `busy` already folds in `sync.pendingInspection`/
- * `activity.blocking` so its own writes wait out a first connect).
+ * `disabled` is the host screen's own busy state — a save, an import, a start-over. Those
+ * writes and a first connect are mutually exclusive: an in-flight `useRemote` that lands
+ * after a seed was written uploads the seed over the adopted book, and one that lands
+ * after a start-over re-arms the connection that start-over just tore down. The screen
+ * owns that flag because only it knows what else it is running (BL-049); this component
+ * adds `sync.activity.blocking` — the session's own record of connect/apply/disconnect/
+ * erase — and gates every button, Cancel included, on both together.
+ *
+ * **Neither source subsumes the other**, and that is not an accident to simplify away:
+ * `disabled` knows nothing about a first connect in progress (only the session does), and
+ * `activity.blocking` knows nothing about a save, an import, or a start-over running on the
+ * host screen (only the screen does). A caller with nothing of its own to report — Settings
+ * renders this beside `DangerZone`'s erase, which now arrives through `activity.blocking`
+ * itself rather than through a prop (BL-055) — passes no `disabled` at all and gets the
+ * default `false`, not a made-up "nothing is happening" value standing in for a real one.
  */
-export function ConnectDrive() {
+export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
   const { t } = useTranslation();
   const { book } = useLedger();
   const sync = useSync();
@@ -84,7 +90,9 @@ export function ConnectDrive() {
 
   // Cancel is on this list: it only drops the choice screen, so leaving it live during an
   // apply let the user dismiss the UI while the write it started ran on to completion.
-  const blocked = sync.activity.blocking;
+  // `disabled` is the host screen's own work (BL-049); `sync.activity.blocking` is the
+  // session's (BL-055). Read both — dropping either reopens the bug it closed.
+  const blocked = disabled || sync.activity.blocking;
 
   // The one thing this component cannot leave unsaid: the choices the user tapped Connect
   // for were dropped because the book moved underneath them, so Connect looks like it did

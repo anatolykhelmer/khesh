@@ -104,9 +104,9 @@ export function OnboardingScreen() {
         disabled={busy}
         onBusyChange={setImporting}
       />
-      {/* `ConnectDrive` takes no prop: it gates on `sync.activity.blocking` itself, and
-          this screen's own `saving`/`importing` do not reach it — see its doc comment. */}
-      <ConnectDrive />
+      {/* Only this screen's own writes: `ConnectDrive` adds `activity.blocking` itself, and
+          passing the plan-on-screen half would disable the very choices it renders. */}
+      <ConnectDrive disabled={saving || importing} />
       <a className="onboarding-about" href="/about.html" target="_blank" rel="noopener">
         {t("onboarding.aboutLink")}
       </a>

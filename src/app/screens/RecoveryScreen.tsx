@@ -87,8 +87,8 @@ export function RecoveryScreen() {
         onBusyChange={setImporting}
       />
 
-      {/* `ConnectDrive` takes no prop: it gates on `sync.activity.blocking` itself. */}
-      <ConnectDrive />
+      {/* `ConnectDrive` adds `activity.blocking` itself. */}
+      <ConnectDrive disabled={startingOver || importing} />
 
       <ul className="settings-list group">
         <li className="settings-row">

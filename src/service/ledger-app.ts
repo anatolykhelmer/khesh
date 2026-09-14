@@ -418,6 +418,47 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       return commit(updated.value);
     },
 
+    async setOpeningBalance(
+      book: Book,
+      input: { accountId: string; amount: MinorUnits; date: string },
+    ): Promise<Result<Book>> {
+      if (isSystemAccountId(input.accountId)) {
+        return err("ACCOUNT_IS_SYSTEM", "System accounts cannot have an opening balance", {
+          id: input.accountId,
+        });
+      }
+      const hadEntry = book.journal.some((e) => e.id === `opening:${input.accountId}`);
+      const recorded = recordOpeningBalance(
+        book,
+        {
+          accountId: input.accountId,
+          amount: input.amount,
+          date: input.date,
+          groupName: i18n.t("accounts.openingBalances"),
+        },
+        nowIso(),
+      );
+      if (!recorded.ok) return recorded;
+      // amount 0 with no prior entry is the kernel's own no-op (it clones the book
+      // unchanged) — skip the commit so clearing a balance that was never set doesn't
+      // still persist and fire afterCommit/sync for nothing.
+      if (input.amount === 0 && !hadEntry) return ok(book);
+      return commit(recorded.value);
+    },
+
+    openingBalanceOf(
+      book: Book,
+      accountId: string,
+    ): { amount: MinorUnits; date: string } | undefined {
+      const entry = book.journal.find(
+        (e) => e.id === `opening:${accountId}` && e.kind === "opening",
+      );
+      if (!entry) return undefined;
+      const posting = entry.postings.find((p) => p.accountId === accountId);
+      if (!posting) return undefined;
+      return { amount: posting.amount, date: entry.date };
+    },
+
     async removeAccount(book: Book, id: string): Promise<Result<Book>> {
       const account = book.accounts.find((a) => a.id === id);
       if (!account) {

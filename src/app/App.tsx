@@ -14,6 +14,7 @@ import { DashboardScreen } from "./screens/DashboardScreen";
 import { EntryDetailScreen } from "./screens/EntryDetailScreen";
 import { JournalScreen } from "./screens/JournalScreen";
 import { OnboardingScreen } from "./screens/OnboardingScreen";
+import { OpeningBalanceFormScreen } from "./screens/OpeningBalanceFormScreen";
 import { RecoveryScreen } from "./screens/RecoveryScreen";
 import { RecurringFormScreen } from "./screens/RecurringFormScreen";
 import { RecurringScreen } from "./screens/RecurringScreen";
@@ -40,6 +41,10 @@ function Shell() {
           <Route path="/accounts" element={<AccountsScreen />} />
           <Route path="/accounts/new" element={<AccountFormScreen />} />
           <Route path="/accounts/:accountId" element={<AccountDetailScreen />} />
+          <Route
+            path="/accounts/:accountId/opening-balance"
+            element={<OpeningBalanceFormScreen />}
+          />
           <Route path="/journal" element={<JournalScreen />} />
           <Route path="/new" element={<TransferFormScreen key="new" />} />
           <Route path="/journal/:entryId" element={<EntryDetailScreen />} />

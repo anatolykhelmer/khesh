@@ -207,6 +207,14 @@
     "openingBalanceLabel": "Opening balance (optional)",
     "saveAccount": "Save account"
   },
+  "openingBalanceForm": {
+    "title": "Opening balance",
+    "backToAccount": "Back to account",
+    "dateLabel": "Date",
+    "amountLabel": "Amount",
+    "save": "Save",
+    "notAvailable": "Opening balance isn't available for this account."
+  },
   "journal": {
     "title": "Journal",
     "couldNotLoad": "Could not load journal.",

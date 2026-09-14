@@ -40,7 +40,6 @@ export function planStarterBook(a: Answers, homeCurrency: CurrencyCode): Starter
   const plan = rootsPlan(homeCurrency);
   if (a.household === null || a.household === "skip") return plan;
 
-  const groups = new Set<string>();
   /** Add a leaf (or a group with `group: true`) under `parentKey`; `key` must be unique. */
   const add = (
     parentKey: string,
@@ -59,11 +58,12 @@ export function planStarterBook(a: Answers, homeCurrency: CurrencyCode): Starter
       isPlaceholder: opts.group === true,
       currency: opts.currency ?? homeCurrency,
     });
-    if (opts.group) groups.add(key);
   };
-  const group = (parentKey: string, key: string, name: string) => {
-    if (!groups.has(key)) add(parentKey, key, name, { group: true });
-  };
+  /** A placeholder parent for the leaves that follow it. Each of the four groups below has
+   * exactly one call site, guarded by the same condition as the leaves under it, so this
+   * is a name for "add a placeholder", not a guard against adding one twice. */
+  const group = (parentKey: string, key: string, name: string) =>
+    add(parentKey, key, name, { group: true });
 
   // Assets
   if (a.money.includes("cash")) add("assets", "cash", "cash");

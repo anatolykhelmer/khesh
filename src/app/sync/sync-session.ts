@@ -1,10 +1,12 @@
 import {
   IDLE,
+  afterLocalStateChange,
   afterTeardown,
   visibleError,
   type ConnectStage,
   type TeardownIntent,
 } from "./pending-plan-rule";
+import { shouldTearDown } from "./teardown-rule";
 import type { SyncState, SyncEngineDeps, SyncEngine } from "../../service/sync-engine";
 import type { SyncStorePort } from "../../ports/sync-store";
 import type { GoogleAuth } from "../../adapters/google-drive-sync";
@@ -112,6 +114,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
   let nextConnectionId = 1;
   let previousBook: Book | null | undefined = undefined;
   let book: Book | null = null;
+  let resumed = false;
 
   let snapshot: SyncSnapshot = buildSnapshot();
 
@@ -197,6 +200,53 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
 
   function localState(): LocalState {
     return book === null ? "none" : holdsNoUserData(book) ? "empty" : "real";
+  }
+
+  /**
+   * A plan is decided once, from the local state at the moment the remote was inspected —
+   * that is what stops the choices shifting under the user's finger. The book can still
+   * move underneath it, and then the plan describes a local side that no longer exists.
+   *
+   * The third argument must be `applying` and nothing else. It marks the one window in
+   * which the local state moves *because of the user's own choice*: pass `false` and a
+   * successful `useRemote` announces "the book changed, connect again" over its own
+   * success, and pass anything broader — `blocking`, an import in flight — and the drop
+   * stays suppressed while the book really is moving underneath, which is the hole
+   * `plannedFor` exists to close. This is why `activity` is a record and not one boolean.
+   */
+  function applyStalenessGate(): void {
+    const next = afterLocalStateChange(stage, localState(), applying);
+    if (next === stage) return;
+    stage = next;
+    // While the plan is dropped there is no error in state: the neutral sentence is the
+    // whole explanation, and the error that would sit under it is a failed apply from the
+    // plan being dropped, which is now moot.
+    if (next.kind === "dropped") lastError = null;
+    publish();
+  }
+
+  /** Adopt a connection this tab already had, the first time the book becomes available
+   * to check it against. Runs once: `resumed` latches on entry, synchronously, so a
+   * second `setBook` call — same book, a re-render, or one that lands before the load
+   * above resolves — cannot start a second load racing the first. */
+  function resumeStoredConnection(): void {
+    if (resumed || connected || book === null || ports.clientId === "") return;
+    resumed = true;
+    void ports.metaStore.load().then((meta) => {
+      if (!meta.connected || connected) return;
+      const conn = openConnection();
+      conn.fileId = meta.fileId;
+      connected = true;
+      email = meta.accountEmail;
+      engineState = { kind: "idle", lastSyncAt: meta.lastSyncAt };
+      // Being connected retires any first-connect state by definition: the plan describes a
+      // connection that is now made, and the notice asks for a tap on a Connect row this
+      // session is about to stop rendering.
+      stage = IDLE;
+      armEngine(conn);
+      publish();
+      void conn.engine?.syncNow();
+    });
   }
 
   async function runConnect(): Promise<void> {
@@ -410,8 +460,25 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       erasing = false;
       publish();
     },
-    setBook(nextBook) {
-      book = nextBook;
+    setBook(next) {
+      const previous = previousBook;
+      previousBook = next;
+      book = next;
+      const pendingInspection = stage.kind === "choosing" ? stage.inspection : null;
+      if (shouldTearDown(previous, next, { connected, pendingInspection })) {
+        // The intent carries *this* stage, so the plan the teardown announces as dropped is
+        // the one it was called about rather than whichever is current when its awaits land.
+        const startedFrom = stage;
+        void teardown({ cause: "bookVanished", startedFrom }).catch(() => {
+          // `releaseConnection` disposes the engine synchronously ahead of every await, so
+          // the one danger this path exists to close is already shut by the time anything
+          // here could reject. What is left is this session's own view not catching up —
+          // and there is no user action to attach an error to: the book is null.
+        });
+        return;
+      }
+      applyStalenessGate();
+      resumeStoredConnection();
     },
     connect: runConnect,
     async reconnect() {
@@ -462,6 +529,11 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
         await applyAndFinalize(conn, choice, endsAtStart);
       } finally {
         applying = false;
+        // `applying` just left the one window `afterLocalStateChange` suppresses drops in.
+        // A failed apply leaves `stage` exactly as it was, so if the book moved while it
+        // ran, this is where that plan finally gets dropped rather than left showing
+        // choices for a local side that no longer exists.
+        applyStalenessGate();
         publish();
       }
     },

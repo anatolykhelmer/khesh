@@ -367,17 +367,8 @@ describe("sync session: finalize and rollback", () => {
     // nothing else left running still writes `connected: false` after finalize's own write
     // has landed.
     //
-    // What this test does *not* exercise: the `superseded(conn) ||` half of that check.
-    // Every teardown reachable through the public API today is `session.disconnect()`,
-    // which bumps `userEnds` and releases the connection in the same synchronous prefix —
-    // so `superseded(conn)` and `userEnds !== endsAtStart` always become true together, from
-    // the same event, and dropping `superseded(conn) ||` here leaves this test (and "save
-    // first" above) exactly as green as they are now. `superseded(conn)` alone is what a
-    // `bookVanished` teardown — one that releases the connection *without* bumping
-    // `userEnds`, deliberately, so the drop notice's own Connect isn't vetoed — would need to
-    // distinguish, and nothing in this module produces a `bookVanished` teardown yet; that
-    // producer is Task 5's. Until it exists, `superseded(conn) ||`'s half of this guard is
-    // correct by the same reasoning as `userEnds !== endsAtStart`'s, but unpinned.
+    // What this test does *not* exercise: the `superseded(conn) ||` half of that check —
+    // see "rolls back a connection whose book vanished mid-finalize" below, which pins it.
     const { session, auth, meta, repo } = makeSession();
     const book = emptyBook();
     await repo.save(book);
@@ -397,6 +388,61 @@ describe("sync session: finalize and rollback", () => {
     await Promise.all([connecting, erasing]);  // rollback lands last and wins
     expect(meta.record.connected).toBe(false);
     expect(session.getSnapshot().connected).toBe(false);
+  });
+
+  it("rolls back a connection whose book vanished mid-finalize — the superseded(conn) case", async () => {
+    // Carried debt from Task 3. Every test above reaches `finalize`'s rollback check
+    // through `session.disconnect()`, which bumps `userEnds` and releases the connection
+    // in the same synchronous prefix — so `superseded(conn)` and `userEnds !== endsAtStart`
+    // always become true together, from the same event, and dropping `superseded(conn) ||`
+    // from the check leaves every test above exactly as green as it is now.
+    // `setBook(null)` is the first path that tears down with `cause: "bookVanished"`,
+    // which by design does *not* bump `userEnds` (see `teardown`'s own doc on `userEnds`)
+    // — the only way to make `superseded(conn)` fire on its own, with the other half of
+    // the check staying false throughout.
+    //
+    // Built on `choosingSession()`, not a fresh `connect()`: for `setBook(null)` here to
+    // tear anything down at all, `shouldTearDown` needs either `connected` or a live
+    // `pendingInspection` — neither holds during a first-ever connect's own finalize,
+    // since `connected` flips true only *after* the write this test parks inside. A
+    // `choosing` screen supplies `pendingInspection` instead, and nothing clears `stage`
+    // before finalize's own write resolves, so it is still live when the book vanishes.
+    const { session, auth, meta } = await choosingSession();
+    meta.saveGate.manual();
+    const applying = session.applyChoice("useRemote");
+    await flush();
+    // `useRemote` reads a file id `choosingSession()`'s own connect already discovered, so
+    // unlike the two tests above there is no extra file-id write ahead of finalize's own —
+    // exactly one save is parked here.
+    expect(meta.saveGate.pending).toBe(1);
+    session.setBook(null);
+    await flush();
+    // `releaseConnection` marks the connection released synchronously, ahead of its own
+    // await, so by this point finalize's `conn` is already superseded — but its own write
+    // was issued first and is still the one sitting at the front of the queue. Landing the
+    // teardown's write first is what makes finalize's *own* post-write check the one thing
+    // standing between this and a persisted `connected: true` — same shape as "teardown
+    // first" above, for the same reason.
+    expect(meta.saveGate.pending).toBe(2);
+    await meta.saveGate.settleLast(undefined); // the teardown's own write lands FIRST
+    expect(meta.record.connected).toBe(false); // intermediate: uncontested so far
+    await drainMetaSaves(meta);                // finalize's write lands on top, then its own
+    await applying;
+    expect(meta.record.connected).toBe(false);
+    expect(session.getSnapshot().connected).toBe(false);
+
+    // The other half of the carried debt: `userEnds` was never bumped by any of this, so
+    // the Connect the drop notice goes on to ask for is not vetoed — it runs to a live
+    // plan rather than being silently discarded by the `userEnds !== endsAtStart` check
+    // inside `runConnect`, which would otherwise leave `stage` at the `idle` it starts
+    // every connect from. Automatic again: this phase is not about save timing, and a
+    // fresh connect against an unknown file id writes one of its own (`onFileId`), which
+    // would otherwise park forever on the gate this test is done driving by hand.
+    meta.saveGate.automatic(undefined);
+    const connecting = session.connect();
+    await auth.tokenGate.settle(ok("token-2"));
+    await connecting;
+    expect(session.getSnapshot().stage.kind).toBe("choosing");
   });
 
   it("rolls back an erase that lands inside the apply itself", async () => {
@@ -579,6 +625,87 @@ describe("sync session: applying a choice", () => {
     const { session } = await choosingSession();
     session.cancelConnect();
     expect(session.getSnapshot().stage.kind).toBe("idle");
+    expect(session.getSnapshot().activity.blocking).toBe(false);
+  });
+});
+
+describe("sync session: the book moving underneath", () => {
+  it("resumes a stored connection once the book loads", async () => {
+    const { session, meta } = makeSession({
+      metaStore: createGatedMetaStore({ connected: true, fileId: "file-1", accountEmail: "a@b.c" }),
+    });
+    session.setBook(realBook());
+    await flush();
+    expect(session.getSnapshot().connected).toBe(true);
+    expect(session.getSnapshot().email).toBe("a@b.c");
+    void meta;
+  });
+
+  it("drops a plan the book moved out from under, and says so", async () => {
+    // Deviates from the brief: `session.setBook(realBook())`, not a second `emptyBook()`.
+    // `choosingSession()` plans from `local = "empty"` (see its own doc), so a second,
+    // content-equal `emptyBook()` is still `localState() === "empty"` — the same string
+    // `plannedFor` already holds, and `afterLocalStateChange` compares that string, not
+    // book identity. The brief's own inline comment ("real → empty") describes the
+    // opposite starting local state from what `choosingSession()` actually seeds; moving
+    // to `realBook()` here is what actually changes `localState()` and exercises the drop.
+    const { session } = await choosingSession();
+    session.setBook(realBook());                  // "empty" → "real": the plan is stale
+    expect(session.getSnapshot().stage.kind).toBe("dropped");
+    expect(session.getSnapshot().lastError).toBeNull();
+  });
+
+  it("tears down when the book vanishes under a live connection", async () => {
+    const { session, auth } = await connectedSession();
+    session.setBook(null);
+    await flush();
+    expect(session.getSnapshot().connected).toBe(false);
+    expect(auth.revokes).toBe(1);
+  });
+
+  it("a vanished book does not veto the Connect its own notice asks for", async () => {
+    // The `bookVanished`/`userAction` distinction, guarded today by a comment alone. The
+    // BL-050 spec names flattening it as a change the whole suite would survive.
+    //
+    // Deviates from the brief in two ways, both needed for the test to exercise what its
+    // name claims.
+    //
+    // First, the base: `choosingSession()`, not `connectedSession()`. `connectedSession()`
+    // ends at `stage: idle`, and `afterTeardown`'s own `kind` guard deliberately leaves an
+    // `idle` teardown alone — its doc names this exactly: "a teardown that begins at
+    // `idle` — the plain connected tab of BL-040, no plan ever offered — would otherwise
+    // match itself and put the notice on a screen that never showed choices." Only a
+    // `bookVanished` teardown that starts from a live `choosing` screen produces `dropped`,
+    // which is also the only shape "the dropped-plan notice asks for exactly the Connect a
+    // bump would veto" describes.
+    //
+    // Second, the final assertion: `stage.kind === "choosing"` after the second connect,
+    // not stopping at `tokenGate.calls > 0`. `runConnect` calls `getToken(true)` before it
+    // ever checks `userEnds`, so that call happening is true whether or not the guard
+    // this test is about is correct — only reaching a live plan again, past the check a
+    // wrongful bump would trip, is actual evidence.
+    const { session, auth } = await choosingSession();
+    session.setBook(null);
+    await flush();
+    expect(session.getSnapshot().stage.kind).toBe("dropped");
+    const connecting = session.connect();
+    expect(auth.tokenGate.calls).toBeGreaterThan(0);   // getToken(true) runs either way
+    await auth.tokenGate.settle(ok("token-2"));
+    await connecting;
+    expect(session.getSnapshot().stage.kind).toBe("choosing");   // NOT vetoed
+  });
+
+  it("keeps erasing visible across a screen swap", async () => {
+    // BL-055. The failing path is same-tab: performReset runs here, the book goes null
+    // underneath it, App swaps Settings for OnboardingScreen, and the new screen's
+    // ConnectDrive was gated on that screen's own writes only. Session state has no screen.
+    const { session } = await connectedSession();
+    session.beginErase();
+    session.setBook(null);
+    await flush();
+    expect(session.getSnapshot().activity.erasing).toBe(true);
+    expect(session.getSnapshot().activity.blocking).toBe(true);
+    session.endErase();
     expect(session.getSnapshot().activity.blocking).toBe(false);
   });
 });

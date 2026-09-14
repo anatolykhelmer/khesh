@@ -44,6 +44,8 @@
       "summaryTitle": "Your accounts",
       "summaryHint": "This is the tree we will create. You can rename, move or delete any of it later, and add more at any time.",
       "progressLabel": "Steps",
+      "chooseOne": "Choose one",
+      "chooseAny": "Choose any that apply",
       "section": {
         "setup": "Language",
         "household": "Household",

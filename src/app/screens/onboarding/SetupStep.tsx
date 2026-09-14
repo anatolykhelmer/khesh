@@ -1,7 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { CurrencyCode } from "../../../kernel";
 import { CURRENCIES } from "../../currencies";
-import { Check } from "../../components/icons";
 import { ConnectDrive } from "../../components/ConnectDrive";
 import { ImportBookButton } from "../../components/ImportBookButton";
 import type { AppLanguage } from "../../i18n";
@@ -30,40 +29,43 @@ export function SetupStep({
   const { t } = useTranslation();
   return (
     <>
+      {/* Both lists are fieldsets of native radios, the app's established shape for a
+          choice (see `AccountKindChoice`). The heading carries the question; the legend
+          names the group without repeating it, so nothing is announced twice. */}
       <h1>{t("onboarding.languageTitle")}</h1>
-      <div className="currency-list group" role="listbox" aria-label={t("onboarding.languageListLabel")}>
+      <fieldset className="currency-list group">
+        <legend className="visually-hidden">{t("onboarding.languageListLabel")}</legend>
         {(["en", "he"] as const).map((l) => (
-          <button
-            key={l}
-            type="button"
-            role="option"
-            aria-selected={language === l}
-            className={language === l ? "choice selected" : "choice"}
-            onClick={() => onLanguage(l)}
-          >
+          <label key={l} className={language === l ? "choice selected" : "choice"}>
             <span>{t(l === "en" ? "onboarding.languageEnglish" : "onboarding.languageHebrew")}</span>
-            {language === l ? <Check /> : null}
-          </button>
+            <input
+              type="radio"
+              name="onboarding-language"
+              checked={language === l}
+              disabled={busy}
+              onChange={() => onLanguage(l)}
+            />
+          </label>
         ))}
-      </div>
+      </fieldset>
 
       <h1>{t("onboarding.currencyTitle")}</h1>
       <p className="muted">{t("onboarding.currencySubtitle")}</p>
-      <div className="currency-list group" role="listbox" aria-label={t("onboarding.currencyListLabel")}>
+      <fieldset className="currency-list group">
+        <legend className="visually-hidden">{t("onboarding.currencyListLabel")}</legend>
         {CURRENCIES.map((code) => (
-          <button
-            key={code}
-            type="button"
-            role="option"
-            aria-selected={currency === code}
-            className={currency === code ? "choice selected" : "choice"}
-            onClick={() => onCurrency(code)}
-          >
+          <label key={code} className={currency === code ? "choice selected" : "choice"}>
             <span>{code}</span>
-            {currency === code ? <Check /> : null}
-          </button>
+            <input
+              type="radio"
+              name="onboarding-currency"
+              checked={currency === code}
+              disabled={busy}
+              onChange={() => onCurrency(code)}
+            />
+          </label>
         ))}
-      </div>
+      </fieldset>
       <button type="button" className="primary" disabled={busy} onClick={onNext}>
         {t("onboarding.wizard.next")}
       </button>

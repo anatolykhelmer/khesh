@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
 import type { CurrencyCode } from "../../../kernel";
-import { Check } from "../../components/icons";
 import { CURRENCIES } from "../../currencies";
 import { selectedOptions, type Answers, type Question } from "../../onboarding/questionnaire";
 
@@ -42,29 +41,34 @@ export function QuestionStep({
   return (
     <>
       <h1>{t(`onboarding.wizard.q.${question.id}.title`)}</h1>
-      <div
-        className="currency-list group"
-        role="listbox"
-        aria-multiselectable={many || undefined}
-        aria-label={t(`onboarding.wizard.q.${question.id}.title`)}
-      >
+      {/* Native inputs in a fieldset, the app's established shape for a choice (see
+          `AccountKindChoice`): radios for "one", checkboxes for "many". That is where the
+          arrow keys, the checked state and the group semantics come from — the column of
+          buttons under `role="listbox"` that stood here promised an arrow-key listbox and
+          was not one. The heading carries the question, so the legend must not: it says
+          the one thing the heading cannot, which is how many options may be picked. */}
+      <fieldset className="currency-list group">
+        <legend className="visually-hidden">
+          {t(many ? "onboarding.wizard.chooseAny" : "onboarding.wizard.chooseOne")}
+        </legend>
         {options.map((option) => {
           const isSelected = selected.includes(option);
           return (
-            <button
-              key={option}
-              type="button"
-              role="option"
-              aria-selected={isSelected}
-              className={isSelected ? "choice selected" : "choice"}
-              onClick={() => onOption(option)}
-            >
+            <label key={option} className={isSelected ? "choice selected" : "choice"}>
               <span>{CURRENCY_CODES.has(option) ? option : t(optionKey(question, option))}</span>
-              {isSelected ? <Check /> : null}
-            </button>
+              <input
+                type={many ? "checkbox" : "radio"}
+                // One radio group per question, so arrow keys move within this question
+                // and nowhere else. Question ids are unique and only one step is mounted.
+                name={question.id}
+                checked={isSelected}
+                disabled={busy}
+                onChange={() => onOption(option)}
+              />
+            </label>
           );
         })}
-      </div>
+      </fieldset>
       <div className="wizard-nav">
         <button type="button" className="secondary" disabled={busy} onClick={onBack}>
           {t("onboarding.wizard.back")}

@@ -19,11 +19,36 @@
   color: var(--ink-muted);
 }
 
+/* Text carried for assistive technology only. The wizard's option lists are fieldsets, a
+   fieldset needs a legend to name its group, and the question is already on screen as the
+   step's heading — so the legend says what the heading cannot (how many options may be
+   picked) and stays out of the layout. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 .currency-list {
   display: flex;
   flex-direction: column;
   gap: 0;
   margin: var(--s-2) 0 var(--s-4);
+}
+
+/* Each option list is a fieldset of native radios or checkboxes (the same pattern as
+   `AccountKindChoice`, at list scale). `.group` gives it the card's border, radius and
+   inline padding; these two are the parts of a fieldset's UA box that `.group` does not
+   reach, and without them the card gains stray vertical padding and refuses to shrink. */
+fieldset.currency-list {
+  min-inline-size: 0;
+  padding-block: 0;
 }
 
 .choice,
@@ -32,6 +57,8 @@ button {
   font: inherit;
 }
 
+/* A whole row is the tap target: the label wraps the input, so the text and the empty
+   space beside it both toggle it, the way the button that used to be here did. */
 .choice {
   min-height: var(--tap);
   display: flex;
@@ -45,15 +72,26 @@ button {
   color: var(--ink);
   text-align: start;
   padding: 0;
+  cursor: pointer;
 }
 
-.choice:first-child {
+/* The legend is the fieldset's first child, so the first row is `legend + .choice`, not
+   `:first-child`. Both are listed: the separator is between rows either way. */
+.choice:first-child,
+legend + .choice {
   border-top: none;
 }
 
-.choice svg {
-  color: var(--accent);
+/* The native control stands where the check mark used to, in the same accent. */
+.choice > input {
   flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.choice:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .choice.selected {

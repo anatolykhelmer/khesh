@@ -35,7 +35,10 @@ describe("starter wizard strings", () => {
         }
       }
     }
-    for (const k of ["next", "back", "createBook", "summaryTitle", "summaryHint", "progressLabel"]) {
+    const chrome = ["next", "back", "createBook", "summaryTitle", "summaryHint", "progressLabel",
+      // The fieldset legends QuestionStep names its option groups with.
+      "chooseOne", "chooseAny"];
+    for (const k of chrome) {
       expect(typeof lookup(`onboarding.wizard.${k}`), k).toBe("string");
     }
   });

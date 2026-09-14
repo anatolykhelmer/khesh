@@ -1,18 +1,38 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { CurrencyCode } from "../../kernel";
-import { CURRENCIES } from "../currencies";
-import { Check } from "../components/icons";
-import { ConnectDrive } from "../components/ConnectDrive";
-import { ImportBookButton } from "../components/ImportBookButton";
 import type { AppLanguage } from "../i18n";
 import { setLanguage } from "../i18n";
 import { useLedger } from "../ledger-context";
+import {
+  applyOption,
+  EMPTY_ANSWERS,
+  nextStep,
+  previousStep,
+  QUESTIONS,
+  sectionOf,
+  SECTIONS,
+  visibleSteps,
+  type Answers,
+  type SectionId,
+  type Step,
+} from "../onboarding/questionnaire";
+import { planStarterBook, planTree } from "../../service/starter-plan";
 import { useSync } from "../sync/sync-context";
 import { useLedgerMutation } from "../use-ledger-mutation";
+import { QuestionStep } from "./onboarding/QuestionStep";
+import { SetupStep } from "./onboarding/SetupStep";
+import { SummaryStep } from "./onboarding/SummaryStep";
+import { WizardProgress } from "./onboarding/WizardProgress";
 
+/**
+ * The starter wizard. All branching lives in `questionnaire.ts` and all tree-building in
+ * `starter-plan.ts`; this component holds the answers and asks those modules what to show.
+ * No router: `App` renders this screen whenever there is no book, and the empty state has
+ * no routes of its own.
+ */
 export function OnboardingScreen() {
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
   const { app } = useLedger();
   const sync = useSync();
   const { busy: saving, run } = useLedgerMutation();
@@ -20,95 +40,85 @@ export function OnboardingScreen() {
     i18n.language === "he" ? "he" : "en",
   );
   const [currency, setCurrency] = useState<CurrencyCode>("ILS");
+  const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS);
+  const [step, setStep] = useState<Step>("setup");
+  // The furthest section index the user has reached, for the progress list's back-links.
+  const [furthest, setFurthest] = useState(0);
   // The import button drives its own async work, so the screen's disabled state is
   // the union of both: either one running must gate the other.
   const [importing, setImporting] = useState(false);
   // Connecting Drive belongs in that union too, and it is the half that costs data.
   // `createHousehold` and `applyFirstConnect` both take the sync lock, so they cannot
   // interleave — but they can still run back to back: `useRemote` saves the Drive book,
-  // releases, and Continue writes a seed over the same key, which `finalizeConnect` then
-  // arms an engine to upload over the real file. Unmounting this screen does not cancel
-  // an in-flight `createHousehold` either. A plan merely *on screen* is enough to block:
-  // it is one tap from that write, and `sync.applying` only covers the tap after.
+  // releases, and Create book writes a seed over the same key, which `finalizeConnect`
+  // then arms an engine to upload over the real file. Unmounting this screen does not
+  // cancel an in-flight `createHousehold` either. A plan merely *on screen* is enough to
+  // block: it is one tap from that write, and `sync.applying` only covers the tap after.
   const busy = saving || importing || sync.applying || sync.pendingInspection !== null;
+
+  const plan = useMemo(() => planStarterBook(answers, currency), [answers, currency]);
+  const tree = useMemo(() => planTree(plan), [plan]);
+  const section = sectionOf(step);
+  const reached = SECTIONS.slice(0, furthest + 1);
 
   function chooseLanguage(next: AppLanguage) {
     setLanguageChoice(next);
     setLanguage(next);
   }
 
-  async function onContinue() {
-    setLanguage(language);
-    await run(() => app.createHousehold(currency));
+  function goTo(next: Step) {
+    setStep(next);
+    setFurthest((f) => Math.max(f, SECTIONS.indexOf(sectionOf(next))));
   }
+
+  function jumpToSection(target: SectionId) {
+    const first = visibleSteps(answers).find((s) => sectionOf(s) === target);
+    if (first !== undefined) setStep(first);
+  }
+
+  async function onCreate() {
+    setLanguage(language);
+    await run(() => app.createHousehold(currency, plan));
+  }
+
+  const question = QUESTIONS.find((q) => q.id === step);
 
   return (
     <main className="screen onboarding">
       <p className="brand">Khesh</p>
-
-      <h1>{t("onboarding.languageTitle")}</h1>
-      <div
-        className="currency-list group"
-        role="listbox"
-        aria-label={t("onboarding.languageListLabel")}
-      >
-        <button
-          type="button"
-          role="option"
-          aria-selected={language === "en"}
-          className={language === "en" ? "choice selected" : "choice"}
-          onClick={() => chooseLanguage("en")}
-        >
-          <span>{t("onboarding.languageEnglish")}</span>
-          {language === "en" ? <Check /> : null}
-        </button>
-        <button
-          type="button"
-          role="option"
-          aria-selected={language === "he"}
-          className={language === "he" ? "choice selected" : "choice"}
-          onClick={() => chooseLanguage("he")}
-        >
-          <span>{t("onboarding.languageHebrew")}</span>
-          {language === "he" ? <Check /> : null}
-        </button>
-      </div>
-
-      <h1>{t("onboarding.currencyTitle")}</h1>
-      <p className="muted">{t("onboarding.currencySubtitle")}</p>
-      <div
-        className="currency-list group"
-        role="listbox"
-        aria-label={t("onboarding.currencyListLabel")}
-      >
-        {CURRENCIES.map((code) => (
-          <button
-            key={code}
-            type="button"
-            role="option"
-            aria-selected={currency === code}
-            className={currency === code ? "choice selected" : "choice"}
-            onClick={() => setCurrency(code)}
-          >
-            <span>{code}</span>
-            {currency === code ? <Check /> : null}
-          </button>
-        ))}
-      </div>
-      <button type="button" className="primary" disabled={busy} onClick={onContinue}>
-        {t("onboarding.continue")}
-      </button>
-      <ImportBookButton
-        label={t("onboarding.restore")}
-        disabled={busy}
-        onBusyChange={setImporting}
-      />
-      {/* Only this screen's own writes: `ConnectDrive` adds `sync.applying` itself, and
-          passing the plan-on-screen half would disable the very choices it renders. */}
-      <ConnectDrive disabled={saving || importing} />
-      <a className="onboarding-about" href="/about.html" target="_blank" rel="noopener">
-        {t("onboarding.aboutLink")}
-      </a>
+      <WizardProgress current={section} reached={reached} onJump={jumpToSection} />
+      {step === "setup" ? (
+        <SetupStep
+          language={language}
+          currency={currency}
+          busy={busy}
+          saving={saving}
+          importing={importing}
+          onLanguage={chooseLanguage}
+          onCurrency={setCurrency}
+          onImporting={setImporting}
+          onNext={() => goTo(nextStep("setup", answers))}
+        />
+      ) : step === "summary" ? (
+        <SummaryStep
+          tree={tree}
+          homeCurrency={currency}
+          busy={busy}
+          onBack={() => setStep(previousStep("summary", answers))}
+          onCreate={() => void onCreate()}
+        />
+      ) : question !== undefined ? (
+        <QuestionStep
+          question={question}
+          answers={answers}
+          homeCurrency={currency}
+          busy={busy}
+          canGoBack
+          onOption={(option) => setAnswers((a) => applyOption(a, question.id, option))}
+          onBack={() => setStep(previousStep(question.id, answers))}
+          onNext={() => goTo(nextStep(question.id, answers))}
+        />
+      ) : null}
     </main>
   );
 }

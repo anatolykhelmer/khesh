@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 // `?raw` rather than node:fs: the project's tsconfig deliberately ships no node types,
 // and Vite resolves these relative to this file instead of the working directory.
 import html from "../../public/about.html?raw";
-import onboardingSource from "../../src/app/screens/OnboardingScreen.tsx?raw";
+import onboardingSource from "../../src/app/screens/onboarding/SetupStep.tsx?raw";
 import settingsSource from "../../src/app/screens/SettingsScreen.tsx?raw";
 
 /** The page Google's reviewer opens from the consent screen's "Application home page"

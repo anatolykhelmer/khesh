@@ -233,7 +233,14 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     if (resumed || connected || book === null || ports.clientId === "") return;
     resumed = true;
     void ports.metaStore.load().then((meta) => {
-      if (!meta.connected || connected) return;
+      // `shouldTearDown` cannot see the window this load is in flight for: it only tears a
+      // connection down once one exists (`connected` or a live `pendingInspection`), and
+      // neither holds yet while this callback is still pending — so a book that vanishes
+      // (or a different one that arrives) during the load passes straight through it, now
+      // and on every `setBook` after, since `previous` is already what `next` was by then.
+      // Rechecking `book` here, against the value as it stands *when this resolves* rather
+      // than when the load started, is what catches it instead.
+      if (!meta.connected || connected || book === null) return;
       const conn = openConnection();
       conn.fileId = meta.fileId;
       connected = true;
@@ -533,6 +540,14 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
         // A failed apply leaves `stage` exactly as it was, so if the book moved while it
         // ran, this is where that plan finally gets dropped rather than left showing
         // choices for a local side that no longer exists.
+        //
+        // The `publish()` below is unconditional and needed regardless: `activity.applying`
+        // just changed and has to reach the cached snapshot even when the gate above is a
+        // no-op (the common, successful-apply case — `finalize` already moved `stage` to
+        // `IDLE` and published before this line runs). On the path where the gate *did*
+        // just drop the plan, `applyStalenessGate()` has already published once on its own,
+        // so this fires a second, harmless notification with nothing left to say — accepted
+        // rather than threaded through as a "did it change" flag for one rare case.
         applyStalenessGate();
         publish();
       }

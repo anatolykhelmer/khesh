@@ -9,6 +9,7 @@ import {
 } from "../helpers/sync-harness";
 import { createMemoryRepository } from "../../src/adapters/memory-repository";
 import { encodeEnvelope } from "../../src/adapters/sync-envelope";
+import type { SyncMeta } from "../../src/adapters/sync-meta-store";
 import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
@@ -639,6 +640,34 @@ describe("sync session: the book moving underneath", () => {
     expect(session.getSnapshot().connected).toBe(true);
     expect(session.getSnapshot().email).toBe("a@b.c");
     void meta;
+  });
+
+  it("does not commit a resumed connection whose book vanished while the load was in flight", async () => {
+    // Reviewer-found gap in Task 5. `resumeStoredConnection`'s callback guarded only
+    // `!meta.connected || connected` — not the book having vanished *while the load
+    // itself was pending*. `shouldTearDown` cannot see that window: it only tears a
+    // connection down once one exists (`connected` or a live `pendingInspection`), and
+    // during this load neither does yet, so `setBook(null)` arriving mid-load is a no-op
+    // there (see the "does not veto" test above for the same gate, exercised the other
+    // way). Nothing afterwards corrects it either — a later `setBook` call, vanish or
+    // reload, reads `previous` as already `null` and is a no-op in `shouldTearDown` for
+    // that reason too. Without the fix this callback commits `connected: true` bound to a
+    // stale `fileId`, with a live engine, over a book that is null — the BL-040/BL-055
+    // class this task exists to close, reopened through the one path it adds.
+    //
+    // A one-shot `deferred`, not `createGatedMetaStore`, because the harness's meta-store
+    // fake only gates `save`, not `load` — nothing else in this file has needed to hold a
+    // `load()` open before.
+    const { promise: loadPromise, resolve: resolveLoad } = deferred<SyncMeta>();
+    const { session } = makeSession({
+      metaStore: { load: () => loadPromise, save: async () => {} },
+    });
+    session.setBook(realBook());   // starts the resume load, `resumed` latches
+    session.setBook(null);         // arrives before the load resolves; shouldTearDown is a no-op
+    resolveLoad({ connected: true, fileId: "file-1", accountEmail: "a@b.c", lastSyncAt: null });
+    await flush();
+    expect(session.getSnapshot().connected).toBe(false);
+    expect(session.getSnapshot().state).toBeNull();   // armEngine never ran
   });
 
   it("drops a plan the book moved out from under, and says so", async () => {

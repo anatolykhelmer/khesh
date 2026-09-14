@@ -199,7 +199,15 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
   }
 
   async function runConnect(): Promise<void> {
-    if (connecting || applying) return;
+    // `disconnecting`, not just `connecting`/`applying`: a `disconnect()` already under way
+    // bumps `userEnds` synchronously, ahead of anything this function could capture — there
+    // is no await between that bump and this line, so an `endsAtStart` snapshot taken here
+    // would just re-read the already-bumped value and a same-value check on it could never
+    // fire. Refusing to start at all while `disconnecting` is what actually keeps the user
+    // from paying for an OAuth popup on a connect an erase has already overtaken (defect 2);
+    // the check that used to sit after `openConnection()`, comparing `userEnds` against a
+    // baseline captured one synchronous line above it, could not have done that job.
+    if (connecting || applying || disconnecting) return;
     connecting = true;
     lastError = null;
     // The notice asked for this tap and the button beside it is already disabled, so the
@@ -209,9 +217,6 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     const endsAtStart = userEnds;
     const conn = openConnection();
     try {
-      // Before the interactive token and not after it: an erase already under way must not
-      // cost the user an OAuth popup for an operation that will then do nothing (defect 2).
-      if (userEnds !== endsAtStart) return;
       const token = await conn.auth.getToken(true);
       if (superseded(conn) || userEnds !== endsAtStart) return;
       if (!token.ok) {
@@ -320,7 +325,12 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     // Refuse to persist a connection this session cannot describe (BL-054). The old code
     // wrote `connected: true` with `accountEmail: null` and left the connected view showing
     // no account under a connection that has one.
-    const accountEmail = emailResult.ok ? emailResult.value : null;
+    if (!emailResult.ok) {
+      lastError = errorMessage(emailResult.error.code);
+      await releaseConnection(conn);
+      return;
+    }
+    const accountEmail = emailResult.value;
     await ports.metaStore.save({ connected: true, accountEmail });
     connected = true;
     email = accountEmail;
@@ -329,8 +339,15 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     publish();
     // The rollback. Everything above is what a teardown would otherwise have to undo, and
     // could not, because it had already answered "proceed" and gone home.
-    if (userEnds !== endsAtStart) {
-      await teardown({ cause: "userAction" });
+    if (superseded(conn) || userEnds !== endsAtStart) {
+      // Which teardown to record matters. `userAction` would bump `userEnds` and veto the
+      // Connect the drop notice is about to ask for, so a supersession that was not the
+      // user's is rolled back as what it was.
+      await teardown(
+        userEnds !== endsAtStart
+          ? { cause: "userAction" }
+          : { cause: "bookVanished", startedFrom: stage },
+      );
       return;
     }
     void conn.engine?.syncNow();
@@ -414,9 +431,27 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       if (superseded(conn) || !token.ok) return;
       await conn.engine?.syncNow();
     },
+    // Task 3's own "erase lands inside the apply itself" test is the one place this task
+    // needs to reach `applyAndFinalize` through a user's choice rather than through
+    // `connect`'s own auto-apply branch — a no-op stub would make that test vacuous. This is
+    // only that much of Task 4's `applyChoice`: capture `current` and `userEnds` at the true
+    // start, hand off, toggle `applying`. Choice validation (`isChoiceOffered`), `onStarted`,
+    // and what a dropped stage does to a stale choice are Task 4's to add.
+    async applyChoice(choice) {
+      const conn = current;
+      if (!conn || connecting || applying) return;
+      const endsAtStart = userEnds;
+      applying = true;
+      publish();
+      try {
+        await applyAndFinalize(conn, choice, endsAtStart);
+      } finally {
+        applying = false;
+        publish();
+      }
+    },
     // Every remaining method is added by Tasks 4, 6 and 8. Until then they must exist and
     // be typed, so the interface compiles:
-    async applyChoice() {},
     cancelConnect() {},
     syncNow() {},
     resolveUseLocal() {},

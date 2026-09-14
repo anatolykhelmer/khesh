@@ -203,9 +203,18 @@ describe("sync session: connection identity", () => {
     // revoked. Abandoning the connection instead of emptying it makes that unreachable.
     const { session, drive, io } = await connectedSession();
     const before = drive.files.size;
+    const beforeId = io().getFileId();
     await session.disconnect();
     expect(io().getFileId()).not.toBeNull();
-    await io().getToken(false);               // whatever the doomed write does next
+    // Make the doomed write real, rather than stopping at `getToken`: `revoke()` in this
+    // fake does not clear the cached token (see `createGatedAuth`'s own doc), so this
+    // write does not fail on auth — it succeeds, against the *same* file the abandoned
+    // connection already owned. That is BL-053's fix, not a gap in it: the old bug was a
+    // shared ref going to null and a doomed write taking the create-a-new-file path
+    // instead of this one.
+    const doomedWrite = await drive.storeFor(io()).write(remotePayload());
+    expect(doomedWrite.ok).toBe(true);
+    expect(io().getFileId()).toBe(beforeId);
     expect(drive.files.size).toBe(before);
   });
 
@@ -241,5 +250,166 @@ describe("sync session: connection identity", () => {
     await auth.tokenGate.settle(ok("token-1"));
     await connecting;
     expect(session.getSnapshot().stage.kind).toBe("idle");
+  });
+});
+
+/** Settle every meta-store write currently parked on the gate, then flush, repeating until
+ * nothing is left pending. The brief this suite comes from hard-codes a settle count; the
+ * actual number of writes is an implementation detail (a first connect that has to create a
+ * Drive file also persists that file's id, ahead of the write this task cares about), so
+ * draining is what keeps these tests honest about what they pin — the final record, not a
+ * guessed number of saves. */
+async function drainMetaSaves(meta: ReturnType<typeof createGatedMetaStore>): Promise<void> {
+  while (meta.saveGate.pending > 0) {
+    await meta.saveGate.settle(undefined);
+  }
+}
+
+describe("sync session: finalize and rollback", () => {
+  it("persists the connection and arms the engine on the happy path", async () => {
+    const { session, auth, meta, repo } = makeSession();
+    // Deviates from the brief the same way `connectedSession()` does: `applyFirstConnect`
+    // reads the book to upload from `repo.load()`, not from `setBook`'s argument. Without
+    // this, `repo.load()` answers null, the apply fails with BOOK_INVALID, and the session
+    // never reaches `connected: true` — see `connectedSession()`'s own note above.
+    const book = emptyBook();
+    await repo.save(book);
+    session.setBook(book);
+    const connecting = session.connect();
+    await auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    expect(meta.record.connected).toBe(true);
+    expect(meta.record.accountEmail).toBe("someone@example.com");
+    expect(session.getSnapshot().connected).toBe(true);
+    expect(session.getSnapshot().stage.kind).toBe("idle");
+  });
+
+  it("rolls back when the erase lands inside the finalize meta write — save first", async () => {
+    // Deviates from the brief's statement order, confirmed necessary by running it: with an
+    // empty local book and an empty Drive, `replaceRemote` has to create a Drive file, and
+    // creating one persists its id (`ConnectionIO.onFileId`) — a `metaStore.save` of its own,
+    // ahead of finalize's. Erasing immediately after the token settles (the brief's literal
+    // order) lands that erase before this file-id write ever resolves, so `applyAndFinalize`
+    // catches it at its own, pre-existing supersession check and never reaches `finalize` at
+    // all. Draining the file-id write first, then erasing, is what parks the erase inside
+    // finalize's own `metaStore.save({connected: true, ...})` instead — the window this
+    // task's rollback exists for.
+    //
+    // "Save first" here means finalize's write is the one *issued* first and lands first,
+    // uncontested, with the erase's own independent write landing right behind it — the
+    // ordering a plain FIFO gate produces on its own. Mutating this rollback away still
+    // leaves this test green (see the task report's mutation notes): the erase's own write,
+    // arriving after regardless, already fixes the record on this ordering. It is kept
+    // anyway as the companion proof to the test below — this ordering needs no rescue, the
+    // other one does, and "the same answer either way" is a claim about both.
+    const { session, auth, meta, repo } = makeSession();
+    const book = emptyBook();
+    await repo.save(book);
+    session.setBook(book);
+    meta.saveGate.manual();                  // hand timing to the test
+    const connecting = session.connect();
+    await auth.tokenGate.settle(ok("token-1"));
+    // Parked inside the apply's own file-id write. Let it through so the connect reaches
+    // finalize's write next.
+    await meta.saveGate.settle(undefined);
+    // Finalize's `metaStore.save({connected: true, accountEmail})` is now parked. Erase only
+    // now, so its own write necessarily queues *behind* finalize's — and, left to settle in
+    // that same order, lands behind it too.
+    const erasing = session.disconnect();
+    await drainMetaSaves(meta);
+    await Promise.all([connecting, erasing]);
+    expect(meta.record.connected).toBe(false);
+    expect(session.getSnapshot().connected).toBe(false);
+  });
+
+  it("rolls back when the erase lands inside the finalize meta write — teardown first", async () => {
+    // The landing order a plain FIFO gate cannot produce on its own, and the one this task's
+    // whole claim rests on: `SyncMetaStore.save` is a non-atomic read-modify-write, so two
+    // concurrent calls are not ordered by which was *issued* first, only by which one's
+    // underlying write happens to *land* first. The erase's own write is issued second (it
+    // cannot be issued at all until finalize's pre-write guard has already let finalize's own
+    // write through), but real storage owes it no order — `Gate.settleLast` is what lets
+    // this test make it land first anyway, exactly as an unlucky real one could. Finalize's
+    // write then lands on top, and only its own post-write check, running after that write,
+    // ever sees the erase again — the earlier guards already passed before the erase existed.
+    // Mutating that check away turns this test red (see the task report's mutation notes):
+    // nothing else left running still writes `connected: false` after finalize's own write
+    // has landed.
+    const { session, auth, meta, repo } = makeSession();
+    const book = emptyBook();
+    await repo.save(book);
+    session.setBook(book);
+    meta.saveGate.manual();
+    const connecting = session.connect();
+    await auth.tokenGate.settle(ok("token-1"));
+    await meta.saveGate.settle(undefined);   // the apply's file-id write, out of the way
+    // Finalize's write is parked (issued first). Erase now, then let its own write reach the
+    // gate too, so both are pending together before either is let through.
+    const erasing = session.disconnect();
+    await flush();
+    expect(meta.saveGate.pending).toBe(2);
+    await meta.saveGate.settleLast(undefined); // the erase's write lands FIRST despite that
+    expect(meta.record.connected).toBe(false); // intermediate: the erase, uncontested so far
+    await drainMetaSaves(meta);                // finalize's write lands on top, then its own
+    await Promise.all([connecting, erasing]);  // rollback lands last and wins
+    expect(meta.record.connected).toBe(false);
+    expect(session.getSnapshot().connected).toBe(false);
+  });
+
+  it("rolls back an erase that lands inside the apply itself", async () => {
+    // Spec scenario 5. `applyFirstConnect` is Drive I/O plus a repo.save, so an erase can
+    // begin inside it. The two things it must not go on to do are announce the book it
+    // just restored — moments later `performReset` announces null, and whichever lands
+    // last decides whether the user ends on onboarding or on the ledger they erased — and
+    // persist `connected: true` over an engine aimed at the real Drive file.
+    const announced: (Book | null)[] = [];
+    const { session, auth, meta, drive } = makeSession({
+      announceBookChanged: (b: Book | null) => announced.push(b),
+    });
+    drive.files.set("file-remote", remotePayload());
+    session.setBook(emptyBook());
+    const connecting = session.connect();
+    await auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    const applying = session.applyChoice("useRemote");
+    await session.disconnect();
+    await applying;
+    expect(announced).toEqual([]);
+    expect(meta.record.connected).toBe(false);
+    expect(session.getSnapshot().connected).toBe(false);
+  });
+
+  it("never persists a connection it cannot name", async () => {
+    // BL-054. A finalize whose email fetch failed must not leave `connected: true` with a
+    // null account behind it. Deviates from the brief by seeding `repo` (as above) and by
+    // dropping the trailing `disconnect()`: with `fetchAccountEmail` and `metaStore.save`
+    // both unblocked in this test, the whole connect runs to completion inside the token
+    // settle's own flush, before a `disconnect()` placed after it would even start — so a
+    // `disconnect()` there asserts nothing an already-clean record wouldn't already satisfy
+    // on its own (confirmed by running it: the assertions below hold whether or not
+    // `finalize` refuses, once a trailing `disconnect()` is there to clean up either way).
+    // Asserting immediately after `connecting` resolves, with no teardown to fall back on,
+    // is what actually pins the refusal.
+    const { session, auth, meta, repo } = makeSession({
+      fetchAccountEmail: async () => err<string>("SYNC_AUTH_REQUIRED", "gone"),
+    });
+    const book = emptyBook();
+    await repo.save(book);
+    session.setBook(book);
+    const connecting = session.connect();
+    await auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    expect(meta.record.connected).toBe(false);
+    expect(meta.record.accountEmail).toBeNull();
+  });
+
+  it("does not open an OAuth popup for a connect an erase has already overtaken", async () => {
+    // Defect 2. The old guard sat after getToken(true), so the user got a Google popup for
+    // an operation that then silently did nothing.
+    const { session, auth } = makeSession();
+    session.setBook(emptyBook());
+    void session.disconnect();               // bumps userEnds synchronously
+    await session.connect();
+    expect(auth.tokenGate.calls).toBe(0);
   });
 });

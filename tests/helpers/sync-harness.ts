@@ -66,6 +66,23 @@ export class Gate<T> {
     await flush();
   }
 
+  /**
+   * Resolve the most recently entered call instead of the oldest one.
+   *
+   * `SyncMetaStore.save` is a non-atomic read-modify-write: two concurrent calls are not
+   * ordered by which one was *issued* first, only by which one's underlying I/O happens to
+   * land first. `settle()` alone can only ever produce "issued first, lands first" — useful,
+   * but it is the one ordering a check placed *before* a write can already handle. Proving a
+   * check placed *after* the write is what needs the other ordering: a call issued second
+   * whose write still lands first, so the earlier call's write is the one overwriting on
+   * top, and only a check that runs after *that* write can still catch it. */
+  async settleLast(value: T): Promise<void> {
+    const d = this.queue.pop();
+    if (!d) throw new Error("Gate.settleLast() with no pending call");
+    d.resolve(value);
+    await flush();
+  }
+
   async fail(error: unknown): Promise<void> {
     const d = this.queue.shift();
     if (!d) throw new Error("Gate.fail() with no pending call");

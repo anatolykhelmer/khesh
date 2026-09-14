@@ -200,6 +200,7 @@
     "saveChanges": "שמירת שינויים",
     "addNested": "הוספת חשבון מקונן",
     "entries": "תנועות",
+    "openingBalance": "יתרת פתיחה",
     "deleteConfirm": "למחוק את {{name}}?"
   },
   "accountForm": {

@@ -197,6 +197,7 @@
     "saveChanges": "Save changes",
     "addNested": "Add nested",
     "entries": "Entries",
+    "openingBalance": "Opening balance",
     "deleteConfirm": "Delete {{name}}?"
   },
   "accountForm": {

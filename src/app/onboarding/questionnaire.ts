@@ -73,9 +73,19 @@ export type Question = {
 
 const answered = (a: Answers): boolean => a.household !== null && a.household !== "skip";
 const YES_NO = ["yes", "no"] as const;
-const ALL_EXTRAS: readonly Extra[] = [
-  "health", "clothing", "leisure", "phone", "gifts", "travel", "sport", "beauty", "pets", "education",
-];
+/**
+ * Every member of `Extra`, in the order the question offers them. Written as a record
+ * keyed by the union rather than as an array of it, so a member added to `Extra` and
+ * forgotten here is a compile error ("property is missing") instead of an extra that
+ * silently stops being offered — which nothing else would catch, since a smaller list is
+ * still a valid `readonly Extra[]`. Key order is offer order: these are all non-numeric
+ * keys, so `Object.keys` returns them exactly as written.
+ */
+const EXTRA_OFFER_ORDER: Record<Extra, true> = {
+  health: true, clothing: true, leisure: true, phone: true, gifts: true,
+  travel: true, sport: true, beauty: true, pets: true, education: true,
+};
+const ALL_EXTRAS = Object.keys(EXTRA_OFFER_ORDER) as readonly Extra[];
 
 export const QUESTIONS: readonly Question[] = [
   {

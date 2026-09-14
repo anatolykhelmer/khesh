@@ -86,7 +86,7 @@
           "rent": "Renting",
           "mortgage": "Mortgage",
           "own": "Own outright",
-          "family": "With family"
+          "family": "With family (no accounts needed)"
         },
         "buildingFees": { "title": "Building fees (va'ad bayit)?" },
         "transport": {
@@ -94,7 +94,7 @@
           "car": "Own car",
           "lease": "Leased car",
           "public": "Public transport",
-          "walk": "Walking or cycling"
+          "walk": "Walking or cycling (no accounts needed)"
         },
         "carLoan": { "title": "Is there a car loan?" },
         "money": {

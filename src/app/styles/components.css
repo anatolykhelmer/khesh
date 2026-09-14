@@ -1207,6 +1207,15 @@ a.row-button {
   color: var(--ink-muted);
 }
 
+/* Visited sections are tap-sized buttons and the rest are plain text, so without this the
+   two kinds sit at different heights and their labels stop sharing a baseline once the bar
+   wraps. Every item gets the button's box; only the link inside it is interactive. */
+.wizard-progress li {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
+
 .wizard-progress li[aria-current="step"] {
   color: var(--ink);
   font-weight: 600;

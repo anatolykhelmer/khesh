@@ -274,7 +274,9 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
   // post-`metaStore.save` check in `finalize` is here already: leaving it out would make
   // this function *not* what Task 3 is about to test, and a second, diverging definition
   // three commits later is how the two drift. Task 3 should find both already matching
-  // what it needs and spend its own diff on tests.
+  // what it needs and spend its own diff on tests. (Task 3 did end up giving this a second
+  // caller of its own, below: `applyChoice`, minimally, for its own "erase lands inside the
+  // apply itself" test — so `runConnect`'s auto-apply branch is no longer the only route in.)
   /**
    * Turn a decided `{kind: "apply"}` plan into a live connection: run the choice, then
    * claim the connection if nothing has overtaken it.
@@ -322,15 +324,20 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       await releaseConnection(conn);
       return;
     }
-    // Refuse to persist a connection this session cannot describe (BL-054). The old code
-    // wrote `connected: true` with `accountEmail: null` and left the connected view showing
-    // no account under a connection that has one.
-    if (!emailResult.ok) {
-      lastError = errorMessage(emailResult.error.code);
-      await releaseConnection(conn);
-      return;
-    }
-    const accountEmail = emailResult.value;
+    // BL-054 ("an account it cannot name") is closed above this line, not by refusing here.
+    // The old bug was `authRef.current!` throwing when a shared ref had already gone null
+    // under a torn-down connection; `conn.auth` is never shared and never null by
+    // construction, so that crash cannot happen, and the ordinary case it crashed inside —
+    // an email fetch failing because a concurrent teardown killed the auth it reads through
+    // — is exactly what the supersession check above already catches, before this line runs.
+    // What reaches here with `emailResult.ok === false` is the remaining case: a transient
+    // failure of the userinfo endpoint, nothing else wrong. `applyFirstConnect` has already
+    // written the user's book to Drive by this point, so refusing here would tear down a
+    // working connection and an already-completed write over a network hiccup, and show the
+    // user an error about fetching an email instead of about their data. `accountEmail` is
+    // simply `null` in that case — the "no account name" UI state a working, still-nameless
+    // connection is supposed to render.
+    const accountEmail = emailResult.ok ? emailResult.value : null;
     await ports.metaStore.save({ connected: true, accountEmail });
     connected = true;
     email = accountEmail;

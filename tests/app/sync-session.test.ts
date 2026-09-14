@@ -4,6 +4,7 @@ import {
   createFakeDrive,
   createGatedAuth,
   createGatedMetaStore,
+  deferred,
   flush,
 } from "../helpers/sync-harness";
 import { createMemoryRepository } from "../../src/adapters/memory-repository";
@@ -12,7 +13,7 @@ import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import type { Book } from "../../src/kernel/types";
-import { err, ok } from "../../src/kernel/result";
+import { err, ok, type Result } from "../../src/kernel/result";
 import { createSyncEngine } from "../../src/service/sync-engine";
 import { NOW, unwrap } from "../helpers";
 
@@ -335,6 +336,18 @@ describe("sync session: finalize and rollback", () => {
     // Mutating that check away turns this test red (see the task report's mutation notes):
     // nothing else left running still writes `connected: false` after finalize's own write
     // has landed.
+    //
+    // What this test does *not* exercise: the `superseded(conn) ||` half of that check.
+    // Every teardown reachable through the public API today is `session.disconnect()`,
+    // which bumps `userEnds` and releases the connection in the same synchronous prefix —
+    // so `superseded(conn)` and `userEnds !== endsAtStart` always become true together, from
+    // the same event, and dropping `superseded(conn) ||` here leaves this test (and "save
+    // first" above) exactly as green as they are now. `superseded(conn)` alone is what a
+    // `bookVanished` teardown — one that releases the connection *without* bumping
+    // `userEnds`, deliberately, so the drop notice's own Connect isn't vetoed — would need to
+    // distinguish, and nothing in this module produces a `bookVanished` teardown yet; that
+    // producer is Task 5's. Until it exists, `superseded(conn) ||`'s half of this guard is
+    // correct by the same reasoning as `userEnds !== endsAtStart`'s, but unpinned.
     const { session, auth, meta, repo } = makeSession();
     const book = emptyBook();
     await repo.save(book);
@@ -380,18 +393,50 @@ describe("sync session: finalize and rollback", () => {
   });
 
   it("never persists a connection it cannot name", async () => {
-    // BL-054. A finalize whose email fetch failed must not leave `connected: true` with a
-    // null account behind it. Deviates from the brief by seeding `repo` (as above) and by
-    // dropping the trailing `disconnect()`: with `fetchAccountEmail` and `metaStore.save`
-    // both unblocked in this test, the whole connect runs to completion inside the token
-    // settle's own flush, before a `disconnect()` placed after it would even start — so a
-    // `disconnect()` there asserts nothing an already-clean record wouldn't already satisfy
-    // on its own (confirmed by running it: the assertions below hold whether or not
-    // `finalize` refuses, once a trailing `disconnect()` is there to clean up either way).
-    // Asserting immediately after `connecting` resolves, with no teardown to fall back on,
-    // is what actually pins the refusal.
+    // BL-054, properly stated: "a connect that finalizes into a torn-down auth persists an
+    // account it cannot name." `conn.auth` being non-null by construction (a fresh auth per
+    // connection, never a shared ref that a teardown could null out from under this one)
+    // already rules out the old `authRef.current!` crash. What is left, and what this test
+    // pins, is the ordinary supersession check at the top of `finalize` —
+    // `superseded(conn) || userEnds !== endsAtStart` — catching an email fetch that failed
+    // because the *same* teardown about to release this connection also killed the auth it
+    // reads through. A transient email failure with no teardown involved is a different,
+    // deliberately *not* refused case — see the next test.
+    //
+    // Deviates from the brief: seeds `repo` (as above), and gates `fetchAccountEmail`
+    // itself (a one-shot `deferred`, not a reusable `Gate`) instead of the brief's plain
+    // failing async function — the brief's version resolves immediately, so nothing can
+    // land *inside* the email fetch for a teardown to race against, and finalize's earlier,
+    // pre-existing guard is exactly what this test needs to reach.
+    const { promise: emailPromise, resolve: resolveEmail } = deferred<Result<string>>();
     const { session, auth, meta, repo } = makeSession({
-      fetchAccountEmail: async () => err<string>("SYNC_AUTH_REQUIRED", "gone"),
+      fetchAccountEmail: () => emailPromise,
+    });
+    const book = emptyBook();
+    await repo.save(book);
+    session.setBook(book);
+    const connecting = session.connect();
+    await auth.tokenGate.settle(ok("token-1"));
+    // Finalize is now parked inside its own email fetch. Erase fully before failing it, so
+    // the auth this fetch reads through is the one the erase has already torn down.
+    await session.disconnect();
+    resolveEmail(err("SYNC_AUTH_REQUIRED", "torn down"));
+    await connecting;
+    expect(meta.record.connected).toBe(false);
+    expect(meta.record.accountEmail).toBeNull();
+    expect(session.getSnapshot().connected).toBe(false);
+  });
+
+  it("persists a connection even when the email fetch fails without a teardown", async () => {
+    // The case a refusal here would have wrongly caught too, and the repo owner's explicit
+    // call: a transient failure of the userinfo endpoint, nothing else wrong — no teardown,
+    // no supersession. `applyFirstConnect` has already written the user's book to Drive by
+    // the time this runs, so tearing the connection down here would abandon a working
+    // connection and a completed write over a network hiccup, and show the user an error
+    // about an email fetch instead of about their data. `accountEmail: null` is the whole,
+    // intended consequence — the connection still finalizes, arms its engine, and syncs.
+    const { session, auth, meta, repo } = makeSession({
+      fetchAccountEmail: async () => err<string>("SYNC_AUTH_REQUIRED", "userinfo hiccup"),
     });
     const book = emptyBook();
     await repo.save(book);
@@ -399,8 +444,12 @@ describe("sync session: finalize and rollback", () => {
     const connecting = session.connect();
     await auth.tokenGate.settle(ok("token-1"));
     await connecting;
-    expect(meta.record.connected).toBe(false);
+    await flush();                             // give the fire-and-forget syncNow() a turn
+    expect(meta.record.connected).toBe(true);
     expect(meta.record.accountEmail).toBeNull();
+    expect(session.getSnapshot().connected).toBe(true);
+    expect(session.getSnapshot().email).toBeNull();
+    expect(session.getSnapshot().state).not.toBeNull(); // armEngine's syncNow() actually ran
   });
 
   it("does not open an OAuth popup for a connect an erase has already overtaken", async () => {

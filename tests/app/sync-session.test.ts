@@ -858,12 +858,22 @@ describe("sync session: port-failure sweep", () => {
     "fetchAccountEmail",
     "store",
   ])("no method rejects when only %s throws", async (broken) => {
-    const { session } = await makeBrokenSession(broken);
-    await expect(session.connect(), broken).resolves.toBeUndefined();
-    await expect(session.reconnect(), broken).resolves.toBeUndefined();
-    await expect(session.applyChoice("merge"), broken).resolves.toBeUndefined();
-    await expect(session.disconnect(), broken).resolves.toBeUndefined();
-    await expect(session.reauth(), broken).resolves.toBeUndefined();
+    // Carried defect (b). Every assertion below only checks that the promise resolves,
+    // so a `swallow` mutant that empties its body — the exact silent catch the module
+    // doc forbids — stayed green. `console.error` is the one observable side effect
+    // `swallow` promises; a spy on it is what actually holds that promise to account.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { session } = await makeBrokenSession(broken);
+      await expect(session.connect(), broken).resolves.toBeUndefined();
+      await expect(session.reconnect(), broken).resolves.toBeUndefined();
+      await expect(session.applyChoice("merge"), broken).resolves.toBeUndefined();
+      await expect(session.disconnect(), broken).resolves.toBeUndefined();
+      await expect(session.reauth(), broken).resolves.toBeUndefined();
+      expect(consoleError, broken).toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   // The gap the six rows above cannot close on their own: with an empty local book,

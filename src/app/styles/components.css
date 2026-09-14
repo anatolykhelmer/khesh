@@ -1175,6 +1175,9 @@ a.row-button {
 }
 
 .wizard-progress-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
   border: none;
   background: transparent;
   padding: 0;

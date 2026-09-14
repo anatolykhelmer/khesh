@@ -1,9 +1,14 @@
 import { useTranslation } from "react-i18next";
 import type { CurrencyCode } from "../../../kernel";
 import { Check } from "../../components/icons";
+import { CURRENCIES } from "../../currencies";
 import { selectedOptions, type Answers, type Question } from "../../onboarding/questionnaire";
 
-const CURRENCY_CODES = new Set<string>(["ILS", "USD", "EUR"]);
+// `fxCurrency`'s options are currency codes, not option-id key tails — this question is
+// the only one where an option renders as itself rather than through `optionKey`. Built
+// from the same list the rest of the app offers, so a currency added there is rendered
+// the same way here instead of falling through to a raw missing-key string.
+const CURRENCY_CODES = new Set<string>(CURRENCIES);
 
 function optionKey(question: Question, option: string): string {
   if (option === "yes" || option === "no") return `onboarding.wizard.q.yesNo.${option}`;

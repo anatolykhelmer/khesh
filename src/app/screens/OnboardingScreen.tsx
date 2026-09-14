@@ -59,7 +59,14 @@ export function OnboardingScreen() {
   const plan = useMemo(() => planStarterBook(answers, currency), [answers, currency]);
   const tree = useMemo(() => planTree(plan), [plan]);
   const section = sectionOf(step);
-  const reached = SECTIONS.slice(0, furthest + 1);
+  // `furthest` only remembers how far the user has scrolled forward; it never shrinks
+  // back when an earlier answer changes (household -> "skip" can erase most of the
+  // tree). What the progress list may actually offer is the intersection of that memory
+  // with the sections `visibleSteps` still has for the *current* answers — the same
+  // list `jumpToSection` below searches — so a section can never render as a link that
+  // `jumpToSection` would then fail to find a step for.
+  const visible = new Set(visibleSteps(answers).map(sectionOf));
+  const reached = SECTIONS.slice(0, furthest + 1).filter((s) => visible.has(s));
 
   function chooseLanguage(next: AppLanguage) {
     setLanguageChoice(next);
@@ -86,7 +93,7 @@ export function OnboardingScreen() {
   return (
     <main className="screen onboarding">
       <p className="brand">Khesh</p>
-      <WizardProgress current={section} reached={reached} onJump={jumpToSection} />
+      <WizardProgress current={section} reached={reached} busy={busy} onJump={jumpToSection} />
       {step === "setup" ? (
         <SetupStep
           language={language}

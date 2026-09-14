@@ -63,13 +63,36 @@ export const SECTIONS: readonly SectionId[] = [
   "setup", "household", "income", "home", "transport", "accounts", "extras", "summary",
 ];
 
-export type Question = {
+type QuestionBase = {
   id: QuestionId;
   section: SectionId;
-  kind: "one" | "many";
   visibleWhen: (a: Answers) => boolean;
   options: (a: Answers, homeCurrency: CurrencyCode) => readonly string[];
 };
+
+/**
+ * A "many" question may be left empty — nothing chosen is a valid answer ("no car, no
+ * lease, no public transport") — so it needs no default. A "one" question must carry one,
+ * because `settle` answers it the moment it becomes visible and the planner reads that
+ * answer. Splitting the two kinds into a union is what makes the default a *compile-time*
+ * requirement: a new single-select question written without `defaultOption` does not
+ * typecheck, the same way a forgotten `Extra` does not.
+ *
+ * `defaultOption` is a function of the answers and the home currency, not a constant,
+ * because `fxCurrency`'s neutral answer is "whichever currency this book is not in".
+ *
+ * What a default must be is a *semantic* decision, never "whatever `options` lists first":
+ * render order is a UI concern and would silently become a claim about the user's money.
+ * The rule is that a seeded answer adds nothing beyond what the user has already said —
+ * "no" to every yes/no follow-up, the lowest credit-card count (ticking "credit card" does
+ * assert one card), and for `housing` the one option that creates no housing group.
+ */
+export type Question =
+  | (QuestionBase & { kind: "many" })
+  | (QuestionBase & {
+      kind: "one";
+      defaultOption: (a: Answers, homeCurrency: CurrencyCode) => string;
+    });
 
 const answered = (a: Answers): boolean => a.household !== null && a.household !== "skip";
 const YES_NO = ["yes", "no"] as const;
@@ -91,6 +114,11 @@ export const QUESTIONS: readonly Question[] = [
   {
     id: "household", section: "household", kind: "one",
     visibleWhen: () => true,
+    // Never actually applied: this is the question the wizard opens on, and `settle` only
+    // seeds follow-ups (see `isFollowUp`). Declared anyway because the type demands it of
+    // every single-select question, and "skip" is what neutral means here — it is the one
+    // answer that plans nothing but the four roots.
+    defaultOption: () => "skip",
     options: () => ["solo", "couple", "family", "skip"],
   },
   {
@@ -109,16 +137,29 @@ export const QUESTIONS: readonly Question[] = [
   {
     id: "trackBusiness", section: "income", kind: "one",
     visibleWhen: (a) => answered(a) && a.income.includes("freelance"),
+    // Freelance income does not imply a separate set of business expense accounts.
+    defaultOption: () => "no",
     options: () => YES_NO,
   },
   {
     id: "housing", section: "home", kind: "one",
     visibleWhen: answered,
+    // The only housing answer that plans nothing. "rent" adds a Rent line, "mortgage" adds
+    // a mortgage liability and its interest, and even "own" opens a Housing group with
+    // utilities and repairs — each of those would be the wizard telling a user who has not
+    // reached this question yet what they pay for their home. "family" is exactly as
+    // silent as no answer at all (`planStarterBook` skips the group for it, and it is also
+    // the one answer that keeps `buildingFees` hidden, so nothing cascades from it), which
+    // is what lets `housing` keep the same invariant as every other follow-up rather than
+    // becoming a visible question with no answer.
+    defaultOption: () => "family",
     options: () => ["rent", "mortgage", "own", "family"],
   },
   {
     id: "buildingFees", section: "home", kind: "one",
     visibleWhen: (a) => answered(a) && a.housing !== null && a.housing !== "family",
+    // Having a home does not imply a building-fee bill.
+    defaultOption: () => "no",
     options: () => YES_NO,
   },
   {
@@ -129,6 +170,9 @@ export const QUESTIONS: readonly Question[] = [
   {
     id: "carLoan", section: "transport", kind: "one",
     visibleWhen: (a) => answered(a) && a.transport.includes("car"),
+    // Owning a car says nothing about owing money on it, and the "yes" branch plans a
+    // liability: a debt the user never claimed to have.
+    defaultOption: () => "no",
     options: () => YES_NO,
   },
   {
@@ -139,16 +183,26 @@ export const QUESTIONS: readonly Question[] = [
   {
     id: "secondBank", section: "accounts", kind: "one",
     visibleWhen: (a) => answered(a) && a.money.includes("bank"),
+    // One bank account is what "I have a bank account" said; a second one is not.
+    defaultOption: () => "no",
     options: () => YES_NO,
   },
   {
     id: "cardCount", section: "accounts", kind: "one",
     visibleWhen: (a) => answered(a) && a.money.includes("card"),
+    // Ticking "credit card" does assert a card, so the neutral answer here is not "none"
+    // (there is no such option) but the lowest count the tick already implies.
+    defaultOption: () => "1",
     options: () => ["1", "2", "3"],
   },
   {
     id: "fxCurrency", section: "accounts", kind: "one",
     visibleWhen: (a) => answered(a) && a.money.includes("fx"),
+    // Ticking "an account in another currency" asserts the account; some currency must
+    // stand for "another one", and every option here is equally a guess, so the first
+    // offered is as neutral as it gets. It depends on the home currency, which is why
+    // defaults are functions: the book's own currency is never among the choices.
+    defaultOption: (a, home) => CURRENCIES.filter((c) => c !== home)[0],
     options: (_a, home) => CURRENCIES.filter((c) => c !== home),
   },
   {
@@ -294,9 +348,12 @@ function isFollowUp(q: Question): boolean {
  * never the boolean against the option string directly, so an answered follow-up is never
  * mistaken for an unanswered one.
  *
- * Seeding: every visible single-select follow-up has an answer — its question's own first
- * offered option, taken from `options()` so the seed cannot drift from the list the screen
- * renders. This is the invariant the planner relies on: it reads `a.cardCount !== null`
+ * Seeding: every visible single-select follow-up has an answer — the one its question
+ * declares as `defaultOption`, which is the option that adds nothing beyond what the user
+ * has already said. The default is declared rather than inferred from the option list
+ * because render order is not plan semantics: reading the first option would have the
+ * wizard assert a car loan because "yes" happens to be drawn before "no".
+ * This is the invariant the planner relies on: it reads `a.cardCount !== null`
  * and `a.fxCurrency !== null`, and a visible question with no answer is exactly how a
  * ticked "credit card" used to create nothing when the user jumped past its follow-up
  * instead of walking through it. Holding it here rather than gating navigation means it
@@ -334,11 +391,9 @@ function settle(a: Answers, homeCurrency: CurrencyCode): Answers {
         continue;
       }
       if (q.kind !== "one" || !isFollowUp(q)) continue;
-      const [first] = q.options(out, homeCurrency);
-      if (allowed.size > 0 && first !== undefined) {
-        out = setAnswer(out, q.id, first);
-        changed = true;
-      }
+      if (allowed.size === 0) continue;
+      out = setAnswer(out, q.id, q.defaultOption(out, homeCurrency));
+      changed = true;
     }
   }
   return out;

@@ -296,6 +296,39 @@ describe("questionnaire", () => {
     }
   });
 
+  /**
+   * The type makes every single-select question *carry* a default; only this can say the
+   * default is a value the question would actually offer at the moment it is seeded. A
+   * default that is not among the current options would be written in and pruned straight
+   * back out, leaving the question visible and unanswered — finding 1 all over again, and
+   * silently, since the loop that does it terminates either way.
+   */
+  it("every declared default is an option its question currently offers", () => {
+    for (const home of CURRENCIES) {
+      for (const a of [...representativeStates(home), ...currencySwitchedStates(home)]) {
+        for (const q of QUESTIONS) {
+          if (q.kind !== "one") continue;
+          expect(q.options(a, home), `home ${home}: ${q.id}`).toContain(q.defaultOption(a, home));
+        }
+      }
+    }
+  });
+
+  /** The defaults are a product decision, not an implementation detail: each one is the
+   * answer that adds nothing to the plan beyond what the user already said. Ticking "own
+   * car" must not assert a debt, and answering only the household must not assert rent. */
+  it("no seeded default plans anything the user did not ask for", () => {
+    const a = applyOption(EMPTY_ANSWERS, "household", "couple", "ILS");
+    expect(a.housing).toBe("family"); // the one housing answer that plans no housing group
+    expect(visibleSteps(a)).not.toContain("buildingFees"); // and so nothing cascades from it
+    const withCar = applyOption(a, "transport", "car", "ILS");
+    expect(withCar.carLoan).toBe(false);
+    const withBank = applyOption(a, "money", "bank", "ILS");
+    expect(withBank.secondBank).toBe(false);
+    const freelancing = applyOption(a, "income", "freelance", "ILS");
+    expect(freelancing.trackBusiness).toBe(false);
+  });
+
   it("no stored answer is absent from its question's options, under every home currency", () => {
     for (const home of CURRENCIES) {
       for (const a of [...representativeStates(home), ...currencySwitchedStates(home)]) {
@@ -320,10 +353,11 @@ describe("questionnaire", () => {
     a = applyOption(a, "money", "card", "ILS");
     expect(visibleSteps(a)).toContain("cardCount");
     expect(a.cardCount).toBe(1);
-    // The seed is the question's own first option rather than a value written here, so it
-    // cannot drift from the list the screen renders.
+    // The seed is the count the question declares as adding nothing beyond the tick — the
+    // lowest one — and not whatever its option list happens to render first.
     const cardCount = QUESTIONS.find((q) => q.id === "cardCount")!;
-    expect(selectedOptions(a, "cardCount")).toEqual([cardCount.options(a, "ILS")[0]]);
+    if (cardCount.kind !== "one") throw new Error("cardCount is a single-select question");
+    expect(selectedOptions(a, "cardCount")).toEqual([cardCount.defaultOption(a, "ILS")]);
     // Unticking the card puts it back to unanswered, so nothing stale reaches the planner.
     expect(applyOption(a, "money", "card", "ILS").cardCount).toBeNull();
   });

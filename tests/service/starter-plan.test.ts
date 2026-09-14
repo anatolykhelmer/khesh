@@ -148,14 +148,13 @@ describe("planStarterBook", () => {
     a = applyOption(a, "housing", "mortgage", "ILS");
     const plan = planStarterBook(a, "ILS");
     expect(names(plan, "liabilities")).toContain("starter.accounts.mortgage");
-    // `buildingFees` is the follow-up "mortgage" reveals, so answering housing seeds it
-    // with its first option ("yes") and the line is here without a second tap. Untouched
-    // in the assertion below on purpose: it is what the user would see on the summary.
+    // "mortgage" reveals `buildingFees`, which is seeded with the answer that adds
+    // nothing — "no" — so a user who chose a mortgage and walked on is not billed for
+    // building fees they never mentioned.
     expect(names(plan, "housing")).toEqual([
       "starter.accounts.mortgageInterest",
       "starter.accounts.utilities",
       "starter.accounts.homeRepairs",
-      "starter.accounts.buildingFees",
     ]);
   });
 
@@ -171,6 +170,23 @@ describe("planStarterBook", () => {
     a = applyOption(a, "fxCurrency", "USD", "ILS");
     const fx = planStarterBook(a, "ILS").find((p) => p.key === "fx")!;
     expect(fx).toMatchObject({ parentKey: "assets", currency: "USD", nameKey: "starter.accounts.fxAccount", nameArgs: { currency: "USD" } });
+  });
+
+  /** The tree a user sees if they answer the household question and jump straight to the
+   * summary. Every line in it must be one the household answer itself accounts for:
+   * seeding fills the follow-ups the household revealed, and a filled follow-up that
+   * planned rent, a car loan or a second bank account would be the wizard inventing the
+   * user's money for them. */
+  it("answering only the household plans nothing the household did not say", () => {
+    for (const h of ["solo", "couple", "family"] as const) {
+      const plan = planStarterBook(applyOption(EMPTY_ANSWERS, "household", h, "ILS"), "ILS");
+      const keys = plan.map((p) => p.key);
+      for (const absent of ["housing", "rent", "buildingFees", "mortgage", "car", "carLoan", "bank", "bank2", "card", "fx"]) {
+        expect(keys, `${h}: planned "${absent}" from the household answer alone`).not.toContain(absent);
+      }
+      expect(plan.filter((p) => p.parentKey === "liabilities")).toEqual([]);
+      expect(plan.filter((p) => p.parentKey === "assets")).toEqual([]);
+    }
   });
 
   it("groceries and other are always present for any real household", () => {

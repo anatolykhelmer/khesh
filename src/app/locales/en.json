@@ -332,6 +332,7 @@
     "saveChanges": "Save changes",
     "addNested": "Add nested",
     "entries": "Entries",
+    "openingBalance": "Opening balance",
     "deleteConfirm": "Delete {{name}}?"
   },
   "accountForm": {
@@ -341,6 +342,15 @@
     "currencyLabel": "Currency",
     "openingBalanceLabel": "Opening balance (optional)",
     "saveAccount": "Save account"
+  },
+  "openingBalanceForm": {
+    "title": "Opening balance",
+    "backToAccount": "Back to account",
+    "dateLabel": "Date",
+    "amountLabel": "Amount",
+    "save": "Save",
+    "notAvailable": "Opening balance isn't available for this account.",
+    "clearHint": "Leave blank to remove the opening balance."
   },
   "journal": {
     "title": "Journal",

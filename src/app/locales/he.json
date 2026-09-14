@@ -335,6 +335,7 @@
     "saveChanges": "שמירת שינויים",
     "addNested": "הוספת חשבון מקונן",
     "entries": "תנועות",
+    "openingBalance": "יתרת פתיחה",
     "deleteConfirm": "למחוק את {{name}}?"
   },
   "accountForm": {
@@ -344,6 +345,15 @@
     "currencyLabel": "מטבע",
     "openingBalanceLabel": "יתרת פתיחה (אופציונלי)",
     "saveAccount": "שמירת חשבון"
+  },
+  "openingBalanceForm": {
+    "title": "יתרת פתיחה",
+    "backToAccount": "חזרה לחשבון",
+    "dateLabel": "תאריך",
+    "amountLabel": "סכום",
+    "save": "שמירה",
+    "notAvailable": "יתרת פתיחה אינה זמינה עבור חשבון זה.",
+    "clearHint": "השאירו ריק כדי להסיר את יתרת הפתיחה."
   },
   "journal": {
     "title": "יומן",

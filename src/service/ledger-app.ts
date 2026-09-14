@@ -422,6 +422,11 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       book: Book,
       input: { accountId: string; amount: MinorUnits; date: string },
     ): Promise<Result<Book>> {
+      if (isSystemAccountId(input.accountId)) {
+        return err("ACCOUNT_IS_SYSTEM", "System accounts cannot have an opening balance", {
+          id: input.accountId,
+        });
+      }
       const recorded = recordOpeningBalance(
         book,
         {

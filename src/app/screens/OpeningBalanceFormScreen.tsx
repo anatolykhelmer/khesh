@@ -8,6 +8,8 @@ import { todayCalendarDate } from "../../service/dates";
 import { ChevronBack } from "../components/icons";
 import { useLedger } from "../ledger-context";
 import { useLedgerMutation } from "../use-ledger-mutation";
+import { accountPathLabel } from "../format";
+import { currencySymbol } from "../currencies";
 
 export function OpeningBalanceFormScreen() {
   const { t } = useTranslation();
@@ -26,7 +28,7 @@ export function OpeningBalanceFormScreen() {
 
   const currentBook = book;
 
-  if (!account || account.isPlaceholder) {
+  if (!account || account.isPlaceholder || account.id.startsWith("sys:")) {
     return (
       <main className="screen">
         <div className="screen-head">
@@ -72,6 +74,7 @@ export function OpeningBalanceFormScreen() {
         </Link>
         <h1>{t("openingBalanceForm.title")}</h1>
       </div>
+      <p className="muted">{accountPathLabel(currentBook, currentAccount.id)}</p>
       <form className="stack-form" onSubmit={onSubmit}>
         <div className="group form-group">
           <label>
@@ -85,7 +88,7 @@ export function OpeningBalanceFormScreen() {
             />
           </label>
           <label>
-            {t("openingBalanceForm.amountLabel")}
+            {t("openingBalanceForm.amountLabel")} ({currencySymbol(currentAccount.currency)})
             <input
               inputMode="decimal"
               dir="ltr"

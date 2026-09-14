@@ -17,7 +17,7 @@ import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import type { Book } from "../../src/kernel/types";
 import { err, ok, type Result } from "../../src/kernel/result";
-import { createSyncEngine, type SyncEngine } from "../../src/service/sync-engine";
+import { createSyncEngine, type SyncEngine, type SyncEngineDeps } from "../../src/service/sync-engine";
 import { NOW, unwrap } from "../helpers";
 
 /** A book with no user data: `holdsNoUserData` answers true, so `LocalState` is "empty". */
@@ -961,15 +961,48 @@ describe("sync session: window and signal wiring", () => {
     }
   });
 
+  it("publishes when the engine reports a state change", async () => {
+    // Carried defect (a). `armEngine`'s `onStateChanged` used to assign the closed-over
+    // `engineState` and stop, so no subscriber ever learned a sync state moved — the
+    // instant the provider's only path to the UI became `useSyncExternalStore`, the
+    // Drive status row would have frozen with no syncing indicator, no elapsed time, no
+    // error state. Driven through the injected `createEngine` port, which is the only
+    // way to reach the callback `armEngine` builds without running a real sync cycle.
+    let onStateChanged: SyncEngineDeps["onStateChanged"] | null = null;
+    const stubEngine: SyncEngine = {
+      async syncNow() {},
+      notifyLocalChange() {},
+      async resolveUseLocal() {},
+      async resolveUseRemote() {},
+      getState: () => ({ kind: "idle", lastSyncAt: null }),
+      dispose() {},
+    };
+    const { session, auth, repo } = makeSession({
+      createEngine: (deps: SyncEngineDeps) => {
+        onStateChanged = deps.onStateChanged;
+        return stubEngine;
+      },
+    });
+    const book = emptyBook();
+    await repo.save(book);
+    session.setBook(book);
+    const connecting = session.connect();
+    await auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    let notified = 0;
+    session.subscribe(() => {
+      notified += 1;
+    });
+    onStateChanged!({ kind: "syncing", lastSyncAt: null });
+    expect(notified).toBe(1);
+    expect(session.getSnapshot().state).toEqual({ kind: "syncing", lastSyncAt: null });
+  });
+
   it("syncNow, resolveUseLocal and resolveUseRemote each reach the live connection's engine", async () => {
-    // A spy engine, not the real `createSyncEngine`: the real one's `getSnapshot().state`
-    // turned out not to be a usable oracle here — `armEngine`'s `onStateChanged` updates
-    // the closed-over `engineState` variable directly and never calls `publish()`, so the
-    // session's cached snapshot does not observe a sync cycle finishing on its own (only a
-    // later, unrelated `publish()` — e.g. `beginErase()` — makes it catch up). That is a
-    // real gap, but in `armEngine`, which this task consumes rather than recreates; flagged
-    // separately rather than patched here. A spy sidesteps it entirely and asserts the one
-    // thing these three methods actually promise: reaching `current.engine`.
+    // A spy engine, not the real `createSyncEngine`: it isolates the one thing these
+    // three methods actually promise — reaching `current.engine` — from the rest of a
+    // real sync cycle. (`armEngine`'s own `onStateChanged` → `publish()` wiring has its
+    // own test above.)
     const calls: string[] = [];
     const fakeEngine: SyncEngine = {
       async syncNow() {

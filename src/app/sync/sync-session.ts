@@ -204,6 +204,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       onBookChanged: ports.announceBookChanged,
       onStateChanged: (next) => {
         engineState = next;
+        publish();
         if (next.kind === "idle" && next.lastSyncAt !== null) {
           void ports.metaStore
             .save({ lastSyncAt: next.lastSyncAt })

@@ -116,7 +116,11 @@ export function planStarterBook(a: Answers, homeCurrency: CurrencyCode): Starter
     }
   }
   if (a.transport.includes("public")) add("expenses", "publicTransport", "publicTransport");
-  if (a.household === "family") {
+  // "A family with children" is not by itself an answer about what those children cost:
+  // pressing Next past the ages question is the user declining to say, and a Children group
+  // with Clothing and toys in it would be the wizard answering for them. Every other group
+  // here is gated on the leaves under it existing, and so is this one.
+  if (a.household === "family" && a.childAges.length > 0) {
     group("expenses", "children", "children");
     if (a.childAges.includes("under3")) add("children", "daycare", "daycare");
     if (a.childAges.includes("school")) {

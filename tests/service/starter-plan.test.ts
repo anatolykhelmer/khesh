@@ -121,6 +121,29 @@ describe("planStarterBook", () => {
     expect(plan.find((p) => p.key === "children")).toMatchObject({ parentKey: "expenses", isPlaceholder: true, type: "expense" });
   });
 
+  /* Choosing "a family with children" and then pressing Next past the ages question is the
+   * user declining to say what those children cost. The group used to appear anyway, with
+   * Clothing and toys under it, so the wizard answered a question the user had skipped. */
+  it("a family that names no child ages gets no Children group at all", () => {
+    const a = applyOption(EMPTY_ANSWERS, "household", "family", "ILS");
+    expect(a.childAges).toEqual([]);
+    const plan = planStarterBook(a, "ILS");
+    expect(plan.find((p) => p.key === "children")).toBeUndefined();
+    expect(plan.filter((p) => p.parentKey === "children")).toEqual([]);
+    // And no orphan is left behind: the leaf that used to be unconditional is gone too.
+    expect(plan.map((p) => p.key)).not.toContain("childrenClothing");
+  });
+
+  /* Unticking the last age is the same state arrived at from the other direction: the
+   * group and every leaf under it have to go, not just the age-specific ones. */
+  it("unticking the last child age removes the Children group again", () => {
+    let a = applyOption(EMPTY_ANSWERS, "household", "family", "ILS");
+    a = applyOption(a, "childAges", "student", "ILS");
+    expect(planStarterBook(a, "ILS").find((p) => p.key === "children")).toBeDefined();
+    a = applyOption(a, "childAges", "student", "ILS");
+    expect(planStarterBook(a, "ILS").find((p) => p.key === "children")).toBeUndefined();
+  });
+
   it("three credit cards are three numbered liabilities", () => {
     let a = applyOption(EMPTY_ANSWERS, "household", "solo", "ILS");
     a = applyOption(a, "money", "card", "ILS");

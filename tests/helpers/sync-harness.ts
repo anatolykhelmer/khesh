@@ -167,24 +167,36 @@ export function createFakeDrive(seed?: { id: string; payload: string }): FakeDri
 }
 
 /** An in-memory `SyncMetaStore` with a gate on `save`, so a test can stand inside the
- * window `finalizeConnect` writes in. */
+ * window `finalize` writes in.
+ *
+ * `patches` records what each caller *asked for*, which `record` cannot answer: the record
+ * only ever shows whichever write landed last, so two writes that agree are
+ * indistinguishable from one. A test that needs to know a particular write was issued at
+ * all — a rollback's, say, behind an erase's own write of the same field — reads this. */
 export function createGatedMetaStore(initial: Partial<SyncMeta> = {}): SyncMetaStore & {
   record: SyncMeta;
+  patches: Partial<SyncMeta>[];
   saveGate: Gate<void>;
 } {
   const record: SyncMeta = { ...EMPTY_SYNC_META, ...initial };
+  const patches: Partial<SyncMeta>[] = [];
   // Automatic by default: most tests do not care when a meta write lands. The ones that
   // stand inside that window call `meta.saveGate.manual()` first.
   const saveGate = new Gate<void>().automatic(undefined);
   return {
     record,
+    patches,
     saveGate,
-    async load() {
-      return { ...record };
-    },
     async save(patch: Partial<SyncMeta>) {
+      // Recorded on entry, before the gate: the question this answers is which writes were
+      // *issued*, and a test that parks one on the gate is standing in exactly the window
+      // where it has been issued and not yet landed.
+      patches.push(patch);
       await saveGate.enter();
       Object.assign(record, patch);
+    },
+    async load() {
+      return { ...record };
     },
   };
 }

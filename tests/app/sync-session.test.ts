@@ -319,6 +319,66 @@ describe("sync session: connection identity", () => {
     expect(drive.files.size).toBe(before);
   });
 
+  it("a retry after a failed token releases the connection it displaces", async () => {
+    // `openConnection` used to assign over `current` with no release, so a connect that
+    // failed and was tried again left the first connection alive in every way that matters
+    // — a GIS token nothing would ever revoke, and (further along the same three routes) an
+    // engine nothing would dispose. Nothing else can reach it afterwards: it is no longer
+    // `current`, so no teardown finds it.
+    //
+    // A failed `getToken` is the cheapest of the three routes: the failure itself releases
+    // nothing (deliberately — the connection is still the session's, and inert), so the
+    // retry's own claim on `current` is the only thing that can, and `revokes` counts it.
+    // The claim is synchronous, which is why this is asserted before the second token even
+    // settles.
+    const { session, auth } = makeSession();
+    session.setBook(emptyBook());
+    const first = session.connect();
+    await auth.tokenGate.settle(err("SYNC_AUTH_REQUIRED", "denied"));
+    await first;
+    expect(session.getSnapshot().lastError).not.toBeNull();
+    expect(auth.revokes).toBe(0);                 // the failure alone lets go of nothing
+    const second = session.connect();
+    expect(auth.revokes).toBe(1);                 // …the retry's claim does
+    await auth.tokenGate.settle(ok("token-2"));
+    await second;
+    expect(auth.revokes).toBe(1);                 // and only the one it displaced
+  });
+
+  it("a connect after cancelConnect releases the connection cancel left standing", async () => {
+    // The second of the three routes, and the one `cancelConnect`'s own doc depends on:
+    // it ends the flow *on screen* and deliberately releases nothing, on the promise that
+    // "a connect that finishes afterwards finds itself superseded". That promise is only
+    // kept if becoming superseded is also what ends the old connection.
+    const { session, auth } = await choosingSession();
+    session.cancelConnect();
+    expect(auth.revokes).toBe(0);
+    const connecting = session.connect();
+    expect(auth.revokes).toBe(1);                 // the displaced connection, let go of
+    await auth.tokenGate.settle(ok("token-2"));
+    await connecting;
+    expect(session.getSnapshot().stage.kind).toBe("choosing");   // and the new one works
+  });
+
+  it("an engine the session no longer speaks for cannot publish over the live one", async () => {
+    // The other half of the same defect, and the one a revoke count cannot see. A displaced
+    // engine keeps reporting through the `onStateChanged` the session handed it —
+    // `dispose()` stops it taking new work, not the cycle already running — and that
+    // callback wrote `engineState` and published unconditionally. The status row would then
+    // show a released connection's sync state over the live connection's, and
+    // `{lastSyncAt}` would reach the shared record from a connection nobody is using.
+    const { session, meta, engines } = await connectedWithRecordingEngines();
+    const displaced = engines[0];
+    const before = session.getSnapshot().state;
+    const savesBefore = meta.saveGate.calls;
+    session.dispose();                            // releases the connection, engine included
+    // The disposed engine, reporting one cycle late.
+    displaced.engine.syncNow();
+    await flush();
+    expect(session.getSnapshot().state).toEqual(before);   // the snapshot did not move
+    expect(meta.saveGate.calls).toBe(savesBefore);         // and nothing was persisted
+  });
+
   it("a connect superseded before its token settles writes no stage", async () => {
     // Deviates from the brief in two ways, both found by mutation-testing this test
     // itself: temporarily gutting `superseded`/`userEnds` left it green, which means the
@@ -383,6 +443,14 @@ describe("sync session: finalize and rollback", () => {
     expect(meta.record.accountEmail).toBe("someone@example.com");
     expect(session.getSnapshot().connected).toBe(true);
     expect(session.getSnapshot().stage.kind).toBe("idle");
+    // The half the name claims and the four assertions above do not touch: "arms the
+    // engine". `connected: true` is written by `finalize` two lines above `armEngine`, so
+    // deleting the arming left every assertion here green and the user with a connected
+    // session that never syncs. The engine's own first cycle reporting a state through
+    // `onStateChanged` is the consequence — the same evidence the email-hiccup test below
+    // already uses.
+    await flush();
+    expect(session.getSnapshot().state).not.toBeNull();
   });
 
   it("rolls back when the erase lands inside the finalize meta write — save first", async () => {
@@ -398,11 +466,16 @@ describe("sync session: finalize and rollback", () => {
     //
     // "Save first" here means finalize's write is the one *issued* first and lands first,
     // uncontested, with the erase's own independent write landing right behind it — the
-    // ordering a plain FIFO gate produces on its own. Mutating this rollback away still
-    // leaves this test green (see the task report's mutation notes): the erase's own write,
-    // arriving after regardless, already fixes the record on this ordering. It is kept
-    // anyway as the companion proof to the test below — this ordering needs no rescue, the
-    // other one does, and "the same answer either way" is a claim about both.
+    // ordering a plain FIFO gate produces on its own. On this ordering the final record is
+    // not evidence of anything: the erase's own write arrives after regardless and repairs
+    // `connected: false` whether or not the rollback exists, and `drainMetaSaves` then hides
+    // how many writes it took. Asserting it alone — which this test used to do — left it
+    // green with the rollback mutated away, while its name promised rollback coverage.
+    //
+    // What the erase's write cannot fake is a *second* write of that field. The rollback is
+    // a `teardown` of its own, so it issues its own `connected: false`; without it exactly
+    // one is issued, by the erase. `meta.patches` records what each caller asked for, which
+    // the record cannot, because two writes that agree leave one value behind.
     const { session, auth, meta, repo } = makeSession();
     const book = emptyBook();
     await repo.save(book);
@@ -421,6 +494,9 @@ describe("sync session: finalize and rollback", () => {
     await Promise.all([connecting, erasing]);
     expect(meta.record.connected).toBe(false);
     expect(session.getSnapshot().connected).toBe(false);
+    // Two teardowns wrote it: the erase's own, and the rollback's, which ran because
+    // finalize's post-write check found the erase behind it.
+    expect(meta.patches.filter((patch) => patch.connected === false)).toHaveLength(2);
   });
 
   it("rolls back when the erase lands inside the finalize meta write — teardown first", async () => {
@@ -789,10 +865,23 @@ describe("sync session: applying a choice", () => {
   });
 
   it("cancelConnect clears the screen without releasing the connection", async () => {
-    const { session } = await choosingSession();
+    // Both fields this used to assert are already true on `choosingSession()`: the snapshot
+    // stands at `stage: choosing` with nothing running, so `blocking` is false before the
+    // cancel and `idle` is what a `cancelConnect` that tore the connection down would leave
+    // behind too. Neither says the connection survived, which is the whole claim in the
+    // name — and `cancelConnect` is the unguarded writer the `visibleError` rule leans on,
+    // so what it does and does not touch matters.
+    //
+    // The consequence instead: nothing was revoked, and a `disconnect` afterwards still has
+    // something to let go of. (Not "a later `applyChoice` finishes" — the cancel clears the
+    // stage, so `isChoiceOffered` turns every choice away by design.)
+    const { session, auth } = await choosingSession();
     session.cancelConnect();
     expect(session.getSnapshot().stage.kind).toBe("idle");
     expect(session.getSnapshot().activity.blocking).toBe(false);
+    expect(auth.revokes).toBe(0);
+    await session.disconnect();
+    expect(auth.revokes).toBe(1);
   });
 });
 
@@ -834,6 +923,93 @@ describe("sync session: the book moving underneath", () => {
     await flush();
     expect(session.getSnapshot().connected).toBe(false);
     expect(session.getSnapshot().state).toBeNull();   // armEngine never ran
+  });
+
+  it("refuses to resume into an erase, and asks again once the erase ends", async () => {
+    // `runConnect` is refused outright while `erasing` because no screen can be trusted to
+    // hold that line. Resume is the other path that *commits* a connection — it arms an
+    // engine at the user's real Drive file — and it consulted nothing but `meta.connected`
+    // and the book. `performReset` skips its own `disconnect()` whenever the React snapshot
+    // still reads `connected === false`, which is exactly the state a tab that has not
+    // resumed yet is in, so a stored resume landing inside the `resetAll()` window armed an
+    // engine at the real file while the book was being erased: BL-040's window, reopened
+    // through the one path this session adds.
+    //
+    // The second half is the latch. `resumed` was set on entry, before the load, so this
+    // refusal — like a thrown `load()` or a book that vanished under one — left the stored
+    // connection unadoptable for the life of the tab. A refusal is not an answer.
+    const { session } = makeSession({
+      metaStore: createGatedMetaStore({ connected: true, fileId: "file-1", accountEmail: "a@b.c" }),
+    });
+    session.beginErase();
+    session.setBook(realBook());
+    await flush();
+    expect(session.getSnapshot().connected).toBe(false);
+    expect(session.getSnapshot().state).toBeNull();      // armEngine never ran
+    session.endErase();
+    session.setBook(realBook());                         // the next book to arrive asks again
+    await flush();
+    expect(session.getSnapshot().connected).toBe(true);
+    expect(session.getSnapshot().email).toBe("a@b.c");
+  });
+
+  it("refuses to resume over a connect already in flight", async () => {
+    // Both commit a connection, and `openConnection` is an exclusive claim, so whichever
+    // runs second ends the other's. The resume must not be that second one: it would
+    // release a connect the user is standing in front of — a popup already answered — and
+    // replace it with a record written before this tab started.
+    const { promise: loadPromise, resolve: resolveLoad } = deferred<SyncMeta>();
+    const h = makeSession({ metaStore: { load: () => loadPromise, save: async () => {} } });
+    const book = emptyBook();
+    await h.repo.save(book);
+    h.session.setBook(book);                    // starts the resume load
+    const connecting = h.session.connect();     // claims `current` while it is in flight
+    resolveLoad({ connected: true, fileId: "file-1", accountEmail: "a@b.c", lastSyncAt: null });
+    await flush();
+    expect(h.session.getSnapshot().connected).toBe(false);   // the resume did not commit
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    expect(h.session.getSnapshot().connected).toBe(true);
+    // Whose connection it is, which `connected` alone cannot say: the connect's own email,
+    // not the stored record's.
+    expect(h.session.getSnapshot().email).toBe("someone@example.com");
+  });
+
+  it("refuses to resume while a disconnect is still landing", async () => {
+    // `performStartOver`: `disconnect()` runs unconditionally while the book is null, then
+    // onboarding's Continue brings a book in and the resume asks a record whose
+    // `connected: false` the teardown has issued but not yet landed. Adopting there arms an
+    // engine the teardown can never dispose — it captured `current` as null at its start —
+    // so the session ends disconnected with a live engine still syncing the book the user
+    // just walked away from. The count is what sees it: the teardown's own tail rewrites
+    // every snapshot field this would otherwise show up in.
+    let armed = 0;
+    const meta = createGatedMetaStore({ connected: true, fileId: "file-1", accountEmail: "a@b.c" });
+    const { session } = makeSession({
+      metaStore: meta,
+      createEngine: () => {
+        armed += 1;
+        return {
+          async syncNow() {},
+          notifyLocalChange() {},
+          async resolveUseLocal() {},
+          async resolveUseRemote() {},
+          getState: () => ({ kind: "idle", lastSyncAt: null }),
+          dispose() {},
+        } satisfies SyncEngine;
+      },
+    });
+    meta.saveGate.manual();
+    const disconnecting = session.disconnect();
+    await flush();
+    expect(meta.saveGate.pending).toBe(1);      // parked in the teardown's own meta write
+    session.setBook(realBook());
+    await flush();
+    expect(session.getSnapshot().connected).toBe(false);
+    await drainMetaSaves(meta);
+    await disconnecting;
+    expect(armed).toBe(0);
+    expect(meta.record.connected).toBe(false);
   });
 
   it("drops a plan the book moved out from under, and says so", async () => {
@@ -975,16 +1151,22 @@ describe("sync session: the rest of the surface", () => {
     expect(session.getSnapshot().state).toEqual({ kind: "idle", lastSyncAt: "sync-2" });
   });
 
-  it("a reauth whose token lands after another connection took over does not sync the old one", async () => {
-    // `superseded(conn)` inside `reauth`, which no test reached. It cannot be reached
-    // through `disconnect()`: `releaseConnection` nulls `conn.engine` synchronously, so the
-    // optional call below the check is already inert and deleting the check changes
-    // nothing observable. `reconnect()` is the supersession that leaves the abandoned
-    // connection's engine intact — it calls `openConnection()`, which makes a *new*
-    // connection `current` — so it is the one where the check is load-bearing. Without it
-    // the old connection's engine writes this tab's book to the Drive file the user is in
-    // the middle of moving away from.
+  it("a reconnect releases the connection it displaces, and a late reauth cannot revive it", async () => {
+    // This test used to document the leak as the intended way to reach `superseded(conn)`
+    // inside `reauth`: "`reconnect()` is the supersession that leaves the abandoned
+    // connection's engine intact". That was the defect, not a fixture. `reconnect` — and
+    // `openConnection` behind it — now releases the connection it displaces, so the claim
+    // to assert is the release itself: the old engine is disposed, and the old auth's token
+    // is revoked, before the replacement ever opens its popup.
+    //
+    // What the `superseded(conn)` check in `reauth` is worth after that, stated honestly:
+    // nothing independently observable. `releaseConnection` nulls `conn.engine` in the same
+    // synchronous prefix, so the `conn.engine?.syncNow()` below the check is inert on every
+    // path that reaches it — the same reason the check could not be pinned through
+    // `disconnect()` either. It stays as defence against a future release that stops
+    // nulling the engine; the assertion that would actually fail is the one below it.
     const { session, auth, engines } = await connectedWithRecordingEngines();
+    const revokesBefore = auth.revokes;
     const running = session.reauth();                  // interactive token, queued first
     await flush();
     expect(auth.tokenGate.pending).toBe(1);
@@ -992,11 +1174,92 @@ describe("sync session: the rest of the surface", () => {
     await flush();
     expect(auth.tokenGate.pending).toBe(2);
     expect(engines.length).toBe(1);                    // the new one is not armed yet
+    expect(engines[0].calls).toEqual(["dispose"]);     // …and the old one is gone
+    expect(auth.revokes).toBe(revokesBefore + 1);      // token included
     await auth.tokenGate.settle(ok("token-2"));        // the reauth's own token, at last
     await running;
-    expect(engines[0].calls).toEqual([]);              // superseded: no sync on the old one
+    expect(engines[0].calls).toEqual(["dispose"]);     // no sync on the released one
     await auth.tokenGate.settle(ok("token-3"));        // let the reconnect finish cleanly
     await reconnecting;
+  });
+
+  it("a reconnect an erase refuses still lets go of the connection it was leaving", async () => {
+    // Why `reconnect` releases the old connection itself instead of leaving it to
+    // `openConnection`'s claim: `runConnect` can decline to start at all. There is no await
+    // between the `userEnds` check below the `fileId: null` write and `openConnection`, so
+    // on every path where the connect *runs* the two are the same moment and either would
+    // do — but a refusal means no claim is ever made, and the old engine would stay armed
+    // at the real Drive file with the persisted address already cleared.
+    //
+    // The refusal that matters is `erasing`: `performReset` skips its own `disconnect()`
+    // whenever the React snapshot still reads `connected === false`, so an erase can be
+    // running with a live connection nothing has torn down. The engine has to go, and the
+    // reconnect must not open a popup on top of the erase.
+    const { session, auth, meta, engines } = await connectedWithRecordingEngines();
+    await flush();
+    meta.saveGate.manual();
+    const tokenCallsBefore = auth.tokenGate.calls;
+    const reconnecting = session.reconnect();
+    await flush();
+    expect(meta.saveGate.pending).toBe(1);          // parked in the `fileId: null` write
+    session.beginErase();
+    await meta.saveGate.settle(undefined);          // the write lands; the reconnect resumes
+    await reconnecting;
+    expect(auth.tokenGate.calls).toBe(tokenCallsBefore);   // refused: no OAuth popup
+    expect(engines[0].calls).toEqual(["dispose"]);         // and nothing left armed
+    expect(auth.revokes).toBe(1);
+  });
+
+  it("a doomed write across a reconnect cannot mint a second Drive file", async () => {
+    // BL-053, on the one path that still reopened it. `reconnect` used to null
+    // `current.fileId` on a connection that is live by definition — its only call site is
+    // the connected `SYNC_FILE_MISSING` row — and the old engine's store reads exactly that
+    // field. An in-flight or debounced cycle then finds null and takes `write`'s
+    // create-a-new-file path; two `khesh-book.json` is `SYNC_FILE_AMBIGUOUS`, which the app
+    // cannot recover from. Same assertion shape the `disconnect` test above already makes,
+    // on the flow that actually wants the id forgotten.
+    //
+    // The write has to go through the *displaced* connection's own io, captured before the
+    // reconnect opens its replacement — `io()` hands back the most recent one.
+    const { session, auth, drive, io, meta } = await connectedSession();
+    await flush();                                // finalize's own syncNow, out of the way
+    const before = drive.files.size;
+    const staleIo = io();
+    const staleId = staleIo.getFileId();
+    expect(staleId).not.toBeNull();
+    const reconnecting = session.reconnect();
+    await flush();                                // past the `fileId: null` meta write
+    expect(meta.record.fileId).toBeNull();         // the persisted address really is gone…
+    expect(staleIo.getFileId()).toBe(staleId);     // …and the abandoned connection keeps its own
+    const doomed = await drive.storeFor(staleIo).write(remotePayload());
+    expect(doomed.ok).toBe(true);                  // it still writes: revoke does not fail it
+    expect(drive.files.size).toBe(before);         // but into the file it already owned
+    await auth.tokenGate.settle(ok("token-2"));
+    await reconnecting;
+  });
+
+  it("an abandoned connect's file id never reaches the shared meta record", async () => {
+    // `ConnectionIO.onFileId` writes two places, and only one of them belongs to the
+    // connection: `conn.fileId` is the in-flight write's own id (BL-053 again — the doomed
+    // write above depends on it), while `SyncMeta.fileId` is one slot for the whole tab.
+    // Persisting unconditionally meant an abandoned connect that discovered or created a
+    // file wrote its id over the live connection's, and the next boot resumed at whichever
+    // landed last.
+    const { session, auth, drive, meta, io } = makeSession();
+    session.setBook(emptyBook());
+    const connecting = session.connect();          // opens the connection, parks on getToken
+    const staleIo = io();
+    await session.disconnect();                    // it is abandoned before it ever inspects
+    await auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    expect(meta.record.fileId).toBeNull();
+    // The write that grabbed this store before the teardown, running on: no id of its own
+    // and an empty Drive, so it takes the create path and reports the id it minted.
+    const doomed = await drive.storeFor(staleIo).write(remotePayload());
+    expect(doomed.ok).toBe(true);
+    expect(drive.files.size).toBe(1);
+    expect(staleIo.getFileId()).not.toBeNull();    // kept in memory, where the write needs it
+    expect(meta.record.fileId).toBeNull();         // and nowhere near the shared record
   });
 
   it("a reauth whose token lands after a disconnect neither syncs nor revives the session", async () => {
@@ -1020,10 +1283,17 @@ describe("sync session: the rest of the surface", () => {
   });
 
   it("dispose releases the connection and stops notifying", async () => {
-    const { session } = await connectedSession();
+    // "Releases the connection" was in the name and nowhere in the assertions: only the
+    // silence was checked, so gutting `releaseConnection` out of `dispose` left this green.
+    // Both halves now, and the release half is the one with teeth — `dispose` is what
+    // `SyncProvider` no longer calls from an effect cleanup precisely because it revokes.
+    const { session, auth, engines } = await connectedWithRecordingEngines();
     let notified = 0;
     session.subscribe(() => { notified += 1; });
     session.dispose();
+    await flush();
+    expect(engines[0].calls).toEqual(["dispose"]);
+    expect(auth.revokes).toBe(1);
     session.beginErase();
     expect(notified).toBe(0);
   });

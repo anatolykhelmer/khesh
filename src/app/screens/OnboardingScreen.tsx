@@ -51,11 +51,18 @@ export function OnboardingScreen() {
   // Connecting Drive belongs in that union too, and it is the half that costs data.
   // `createHousehold` and `applyFirstConnect` both take the sync lock, so they cannot
   // interleave — but they can still run back to back: `useRemote` saves the Drive book,
-  // releases, and Create book writes a seed over the same key, which `finalizeConnect`
-  // then arms an engine to upload over the real file. Unmounting this screen does not
-  // cancel an in-flight `createHousehold` either. A plan merely *on screen* is enough to
-  // block: it is one tap from that write, and `sync.applying` only covers the tap after.
-  const busy = saving || importing || sync.applying || sync.pendingInspection !== null;
+  // releases, and Create book writes a seed over the same key, which `finalize` then
+  // arms an engine to upload over the real file. Unmounting this screen does not cancel
+  // an in-flight `createHousehold` either. A plan merely *on screen* is enough to block:
+  // it is one tap from that write, and `activity.blocking` alone only covers the tap after.
+  //
+  // This is BL-049's screen-side half, and it has to reach the wizard's steps rather than
+  // stop here: `busy` is handed to every step below, so whichever one is on screen gates
+  // its own controls on the sync side too. `SetupStep` is the step that renders Connect,
+  // but Create book lives on `SummaryStep` — the write this guard exists to order against
+  // a first connect is two steps away from the button that starts one.
+  const busy =
+    saving || importing || sync.activity.blocking || sync.pendingInspection !== null;
 
   const plan = useMemo(() => planStarterBook(answers, currency), [answers, currency]);
   const tree = useMemo(() => planTree(plan), [plan]);

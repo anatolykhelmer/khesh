@@ -70,8 +70,14 @@ export function SetupStep({
         {t("onboarding.wizard.next")}
       </button>
       <ImportBookButton label={t("onboarding.restore")} disabled={busy} onBusyChange={onImporting} />
-      {/* Only this screen's own writes: `ConnectDrive` adds `sync.applying` itself, and
-          passing the plan-on-screen half would disable the very choices it renders. */}
+      {/* Only the screen's own writes: `ConnectDrive` adds `activity.blocking` itself, and
+          passing the plan-on-screen half would disable the very choices it renders.
+          `saving` and `importing` are props rather than this step's own state because the
+          writes are the *screen's* — `saving` is `OnboardingScreen`'s mutation, and the
+          import runs on past this step through `onImporting`. That is the other half of
+          BL-049 and the reason they are threaded down here separately from `busy`: `busy`
+          already folds in the sync side, and handing it to `ConnectDrive` would disable
+          the choice buttons on the strength of the very connect that opened them. */}
       <ConnectDrive disabled={saving || importing} />
       <a className="onboarding-about" href="/about.html" target="_blank" rel="noopener">
         {t("onboarding.aboutLink")}

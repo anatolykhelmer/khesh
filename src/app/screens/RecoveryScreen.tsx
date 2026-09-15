@@ -32,14 +32,14 @@ export function RecoveryScreen() {
   const [importing, setImporting] = useState(false);
   const [startingOver, setStartingOver] = useState(false);
   // One flag for the three things this screen can be doing. Start over and a first
-  // connect are the pair that matters: `applyChoice` always ends in `finalizeConnect`,
+  // connect are the pair that matters: `applyChoice` always ends in the session's `finalize`,
   // which writes `connected: true` and starts the engine, so a `useRemote` still in
   // flight undoes the teardown `performStartOver` just performed — and onboarding's
   // Continue then mints a seed into a tab whose engine is armed at the real remote.
   // That doubled-root resume is the failure start-over exists to close.
-  const busy = startingOver || importing || sync.applying;
+  const busy = startingOver || importing || sync.activity.blocking;
   // The ref is the guard and `startingOver` is what the UI reads: a second tap can arrive
-  // before React re-renders — same pattern as `DangerZone` and `SyncProvider.applyingRef`.
+  // before React re-renders — same pattern as `DangerZone`'s own `busyRef`.
   const busyRef = useRef(false);
 
   async function onStartOver() {
@@ -87,7 +87,7 @@ export function RecoveryScreen() {
         onBusyChange={setImporting}
       />
 
-      {/* `ConnectDrive` adds `sync.applying` itself. */}
+      {/* `ConnectDrive` adds `activity.blocking` itself. */}
       <ConnectDrive disabled={startingOver || importing} />
 
       <ul className="settings-list group">

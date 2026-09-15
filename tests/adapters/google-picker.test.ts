@@ -4,21 +4,38 @@ import { flush } from "../helpers/sync-harness";
 
 type PickerCallback = (response: { action: string; docs?: { id: string }[] }) => void;
 
-/** A fake `google.picker` + `gapi`, just enough surface for `pickSharedFile` to drive:
+/**
+ * A fake `google.picker` + `gapi`, just enough surface for `pickSharedFile` to drive:
  * a builder that records the callback it was given, and a `build().setVisible()` the
- * test can observe was called. */
-function installFakePicker() {
+ * test can observe was called.
+ *
+ * **Every configuring call records its argument** into `calls`, rather than no-opping to
+ * keep the chain from throwing. A fake that only kept the chain alive made the whole
+ * configuration of the dialog unassertable: deleting `.setAppId(appId)` — without which the
+ * per-file grant a pick creates is not attributed to this app, so the id comes back and the
+ * very next Drive call still fails under `drive.file` — left every test here green.
+ *
+ * `deferModuleLoad` holds `gapi.load`'s callback instead of invoking it, which is the
+ * "script loaded, module registration never comes back" freeze `PICKER_TIMEOUT_MS` exists
+ * to bound. `finishModuleLoad()` releases it.
+ */
+function installFakePicker(options: { deferModuleLoad?: boolean } = {}) {
   let capturedCallback: PickerCallback | null = null;
   let madeVisible = false;
+  let moduleCallback: (() => void) | null = null;
+  const calls: { appId?: string; mimeTypes?: string; mode?: string; ownedByMe?: boolean } = {};
 
   class FakeDocsView {
-    setOwnedByMe() {
+    setOwnedByMe(ownedByMe: boolean) {
+      calls.ownedByMe = ownedByMe;
       return this;
     }
-    setMimeTypes() {
+    setMimeTypes(mimeTypes: string) {
+      calls.mimeTypes = mimeTypes;
       return this;
     }
-    setMode() {
+    setMode(mode: string) {
+      calls.mode = mode;
       return this;
     }
   }
@@ -32,7 +49,8 @@ function installFakePicker() {
     setDeveloperKey() {
       return this;
     }
-    setAppId() {
+    setAppId(appId: string) {
+      calls.appId = appId;
       return this;
     }
     setCallback(callback: PickerCallback) {
@@ -49,7 +67,13 @@ function installFakePicker() {
   }
 
   (globalThis as Record<string, unknown>).gapi = {
-    load: (_api: string, callback: () => void) => callback(),
+    load: (_api: string, callback: () => void) => {
+      if (options.deferModuleLoad) {
+        moduleCallback = callback;
+        return;
+      }
+      callback();
+    },
   };
   (globalThis as Record<string, unknown>).google = {
     picker: {
@@ -62,8 +86,10 @@ function installFakePicker() {
   };
 
   return {
+    calls,
     fire: (response: { action: string; docs?: { id: string }[] }) => capturedCallback?.(response),
     wasMadeVisible: () => madeVisible,
+    finishModuleLoad: () => moduleCallback?.(),
   };
 }
 
@@ -90,14 +116,36 @@ describe("pickSharedFile", () => {
     expect(await pending).toBeNull();
   });
 
-  /** The dialog is a foreign widget: it answers PICKED or CANCEL, or it answers nothing
-   * at all. The session holds `connecting` up for as long as this promise is pending, and
-   * that flag gates Connect, Join *and* the Settings erase — so "nothing at all" has to
-   * become a failure on its own, the way the GIS token flow next door already does it. */
-  it("rejects when the dialog neither picks nor cancels", async () => {
+  /** Each of these four is load-bearing and each was previously unassertable, because the
+   * fake no-opped them to keep the builder chain from throwing. `setAppId` above all: under
+   * `drive.file` the per-file grant a pick creates is attributed by app id, so without it
+   * the picked id comes back and the next Drive call still fails. Deleting any one of these
+   * lines from `pickSharedFile` now turns this test red. */
+  it("configures the view and the app id the drive.file grant needs", async () => {
+    const fake = installFakePicker();
+    const pending = pickSharedFile("api-key", "token-1", "app-id");
+    await flush();
+    fake.fire({ action: "picked", docs: [{ id: "file-9" }] });
+    await pending;
+    expect(fake.calls.appId).toBe("app-id");
+    expect(fake.calls.mimeTypes).toBe("application/json");
+    expect(fake.calls.mode).toBe("list"); // the fake's DocsViewMode.LIST
+    expect(fake.calls.ownedByMe).toBe(false); // "shared with me", not the user's own files
+  });
+
+  /** The *load* is a foreign script: it answers, or it answers nothing at all. The session
+   * holds `connecting` up for as long as this promise is pending, and that flag gates
+   * Connect, Join *and* the Settings erase — so "nothing at all" has to become a failure on
+   * its own, the way the GIS token flow next door already does it.
+   *
+   * `gapi.load("picker", cb)` and not just the `<script>` fetch: the ceiling used to start
+   * only after `loadPickerModule()` had already resolved, so a script that loaded and then
+   * never called its module callback back — the exact freeze the timeout was written to
+   * close — had no ceiling at all, one `await` earlier than anyone was looking. */
+  it("rejects when the picker module registration never comes back", async () => {
     vi.useFakeTimers();
     try {
-      installFakePicker();
+      installFakePicker({ deferModuleLoad: true });
       const pending = pickSharedFile("api-key", "token-1", "app-id");
       // Both halves matter: the promise is still open before the ceiling...
       await flush();
@@ -114,23 +162,60 @@ describe("pickSharedFile", () => {
       expect(settled).toBe(false);
       // ...and rejected once it passes.
       vi.advanceTimersByTime(15000);
-      await expect(pending).rejects.toThrow(/timed out/i);
+      await expect(pending).rejects.toThrow(/failed to load in time/i);
       await watched;
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("clears the timeout once the dialog answers", async () => {
+  /** The other half of the redesign, and the one the ceiling used to get wrong. A person
+   * browsing "Shared with me" is not a hung widget: the 15s ceiling was copied from the GIS
+   * one-tap popup and, sitting over the dialog, fired during completely ordinary selection
+   * time — leaving the dialog visibly open while telling the user it could not be opened.
+   * The Picker's own close button already answers CANCEL, so the escape hatch this was
+   * meant to provide was there all along. */
+  it("puts no ceiling on the dialog itself, however long the person browses", async () => {
     vi.useFakeTimers();
     try {
       const fake = installFakePicker();
       const pending = pickSharedFile("api-key", "token-1", "app-id");
       await flush();
+      let settled = false;
+      const watched = pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      // Four times the old ceiling, and nothing fires: no PICKED, no CANCEL, no rejection.
+      vi.advanceTimersByTime(60000);
+      await flush();
+      expect(settled).toBe(false);
+      // And the pick still works on the far side of that wait.
+      fake.fire({ action: "picked", docs: [{ id: "file-9" }] });
+      expect(await pending).toBe("file-9");
+      await watched;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves no timer running once the picker module is up", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = installFakePicker();
+      const pending = pickSharedFile("api-key", "token-1", "app-id");
+      await flush();
+      // The ceiling belongs to the load, and the load is done. A live timer here is the
+      // defect this redesign removes: it would reject an already-open dialog on a person's
+      // ordinary selection time, and it would keep the tab's event loop busy for 15s after
+      // every cancel.
+      expect(vi.getTimerCount()).toBe(0);
       fake.fire({ action: "cancel" });
       expect(await pending).toBeNull();
-      // A live timer here would reject an already-resolved promise — harmless in itself,
-      // but it would also keep the tab's event loop busy for 15s after every cancel.
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();

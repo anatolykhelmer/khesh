@@ -153,9 +153,13 @@ async function main(): Promise<void> {
     throw new Error(`something is already answering on ${ORIGIN} — is port ${PORT} taken by another session?`);
   }
 
+  // Spawned as the vite binary directly, not via `npx vite` — npx wraps it in an extra
+  // process, and a signal sent to that wrapper is not guaranteed to reach the real vite
+  // child underneath it, which would then keep holding the port after this run believes
+  // it cleaned up. Removing the wrapper removes that problem instead of managing it.
   const preview = spawn(
-    "npx",
-    ["vite", "preview", "--port", String(PORT), "--strictPort", "--host", "127.0.0.1"],
+    "node_modules/.bin/vite",
+    ["preview", "--port", String(PORT), "--strictPort", "--host", "127.0.0.1"],
     { stdio: "inherit" },
   );
   try {

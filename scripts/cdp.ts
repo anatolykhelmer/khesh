@@ -54,6 +54,26 @@ async function connect(wsUrl: string): Promise<Cdp> {
     else slot.resolve(message.result);
   });
 
+  // The handshake above only covers the connect attempt: its `error` listener is `{ once:
+  // true }`, so it either already fired (and is gone) or is still sitting there but its
+  // reject() is a no-op now that the handshake promise settled — either way, nothing here
+  // reacts to the socket dying later. Without these two listeners, a `send()` made just
+  // before Chrome crashes or is killed never settles: its promise sits in `pending` forever,
+  // so the `await` inside `shoot()` never returns, so neither of main()'s nested `finally`
+  // blocks (which stop Chrome and kill the preview server) ever runs — the process hangs
+  // with both children still alive, and the orphaned preview then holds port 4399 for the
+  // next run's own pre-flight check.
+  const rejectPending = (error: Error) => {
+    for (const slot of pending.values()) slot.reject(error);
+    pending.clear();
+  };
+  ws.addEventListener("close", () => {
+    rejectPending(new Error(`Chrome's debugging socket closed with ${pending.size} command(s) still in flight`));
+  });
+  ws.addEventListener("error", () => {
+    rejectPending(new Error(`Chrome's debugging socket errored with ${pending.size} command(s) still in flight`));
+  });
+
   return {
     send(method, params = {}) {
       const id = nextId++;

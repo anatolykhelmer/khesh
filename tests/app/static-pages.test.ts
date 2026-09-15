@@ -139,4 +139,13 @@ describe("static pages", () => {
     const ignores = /globIgnores:\s*\[([\s\S]*?)\]/.exec(viteConfigSource);
     expect(ignores?.[1]).toContain("og.png");
   });
+
+  // vite.config.ts leaves webp out of globPatterns deliberately (see the comment there): the
+  // six landing-page screenshots would otherwise land in every installed PWA's precache.
+  // Nothing else pins that decision down — it's easy to "fix" a missing offline screenshot
+  // by adding webp back to the pattern and never notice this suite stayed green.
+  it("keeps webp out of every user's precache", () => {
+    const patterns = /globPatterns:\s*\[([\s\S]*?)\]/.exec(viteConfigSource);
+    expect(patterns?.[1]).not.toContain("webp");
+  });
 });

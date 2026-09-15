@@ -84,8 +84,22 @@ describe("static pages", () => {
 
   it("references only image files that exist", () => {
     for (const page of PAGES) {
-      const refs = [...page.html.matchAll(/(?:src|href|content)="([^"]+\.(?:png|webp|svg|ico|jpe?g))"/g)]
-        .map((match) => match[1])
+      const attrRefs = [
+        ...page.html.matchAll(/(?:src|href|content)="([^"]+\.(?:png|webp|svg|ico|jpe?g))"/g),
+      ].map((match) => match[1]);
+
+      // srcset is a comma-separated list of "<url> <descriptor>?" candidates (e.g.
+      // "a.webp 1x, b.webp 2x"). Every use on these pages is a single candidate today,
+      // but parsing it as the list the spec allows means a future 2x candidate stays
+      // covered instead of silently dropping out of this check.
+      const srcsetRefs = [...page.html.matchAll(/srcset="([^"]+)"/g)].flatMap((match) =>
+        match[1]
+          .split(",")
+          .map((candidate) => candidate.trim().split(/\s+/)[0])
+          .filter((url) => /\.(?:png|webp|svg|ico|jpe?g)$/.test(url)),
+      );
+
+      const refs = [...attrRefs, ...srcsetRefs]
         .map((ref) => (ref.startsWith(SITE) ? ref.slice(SITE.length) : ref))
         .filter((ref) => ref.startsWith("/"));
       expect(refs.length).toBeGreaterThan(0);

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 // and Vite resolves these relative to this file instead of the working directory.
 import appSource from "../../src/app/App.tsx?raw";
 import vercelJson from "../../vercel.json?raw";
+import viteConfigSource from "../../vite.config.ts?raw";
 
 /** The hosting rewrite that makes a direct GET for a React Router path work (BL-032).
  *
@@ -47,6 +48,23 @@ function routePaths(source: string): string[] {
     );
 }
 
+/** Asserts `items` has at least `min` elements, then returns it. A loop written as
+ * `for (const x of eachOf(items, min))` cannot forget the non-vacuity guard a broken
+ * extraction relies on to fail loudly — the guard rides along with getting the list to
+ * loop over, rather than being a separate line every author has to remember to add. (This
+ * file has needed that reminder more than once: a hand-written `expect(...).length` line
+ * next to a loop is easy to add to the first loop over a list and forget on the next.) */
+function eachOf<T>(items: T[], min: number): T[] {
+  expect(items.length).toBeGreaterThanOrEqual(min);
+  return items;
+}
+
+/** Every route the app declares, hoisted so every test below that needs it reuses the
+ * same extraction instead of re-running it. Non-vacuity is asserted at each use via
+ * `eachOf`, not here — an unguarded reference to this constant is still possible, but a
+ * loop over it cannot silently run zero times. */
+const appRoutePaths = routePaths(appSource);
+
 describe("SPA fallback rewrite", () => {
   it("sends unmatched paths to the app shell", () => {
     expect(rewrite.destination).toBe("/index.html");
@@ -54,10 +72,9 @@ describe("SPA fallback rewrite", () => {
   });
 
   it("covers every route the app declares", () => {
-    const paths = routePaths(appSource);
-    // Non-vacuity: a broken extraction would otherwise assert nothing at all.
-    expect(paths.length).toBeGreaterThan(10);
-    for (const path of paths) {
+    // 11: comfortably below App.tsx's actual route count, just enough to prove the
+    // extraction found real routes rather than nothing.
+    for (const path of eachOf(appRoutePaths, 11)) {
       expect(pattern.test(path), `route ${path} is not covered by the rewrite`).toBe(true);
     }
   });
@@ -80,5 +97,110 @@ describe("SPA fallback rewrite", () => {
     expect(pattern.test("/favicon.svg")).toBe(false);
     expect(pattern.test("/sw.js")).toBe(false);
     expect(pattern.test("/manifest.webmanifest")).toBe(false);
+  });
+});
+
+/** BL-060: the service worker's NavigationRoute has no allowlist of its own, so once
+ * about.html and privacy.html are excluded from the precache (vite.config.ts globIgnores),
+ * something has to stop that route from handing every navigation to them the cached app
+ * shell instead. navigateFallbackDenylist does that by denying any path whose last segment
+ * contains a dot — deliberately the same invariant the Vercel rewrite above rests on, so
+ * these two suites stay in lockstep instead of drifting apart. */
+
+// Unlike globIgnores/globPatterns above (plain quoted strings), this array holds a regex
+// literal whose character classes (`[^/?]`) contain their own "]" and "/" — a lazy match
+// to the first "]" would stop inside the literal instead of at the array's real close. Stay
+// on one line and take the last "]" on it, which the literal itself never abuts with a comma.
+const denylistMatch = /navigateFallbackDenylist:\s*\[(.*)\],?\s*$/m.exec(viteConfigSource);
+const denylistSource = denylistMatch?.[1]?.trim() ?? "";
+// The captured text is a JavaScript RegExp literal (e.g. `/…/`), so it's evaluable as one.
+// Guarded by the non-vacuity test below: if the source regex above stops matching,
+// `denylistSource` is "" and this stays `undefined` instead of throwing here at import
+// time, so the failure shows up as a normal assertion failure inside `it()`.
+// eslint-disable-next-line no-eval
+const denyPattern: RegExp | undefined = denylistSource ? eval(denylistSource) : undefined;
+
+describe("navigateFallbackDenylist", () => {
+  it("is declared in vite.config.ts", () => {
+    // Non-vacuity: a regex that stopped matching would hand every assertion below
+    // `undefined`, and `expect(undefined?.test(...)).toBe(false)` passes — a guard that
+    // quietly stops guarding, which is the failure this test exists to prevent.
+    expect(denylistMatch).not.toBeNull();
+    expect(denylistSource.length).toBeGreaterThan(0);
+  });
+
+  it("denies navigation to the two static pages", () => {
+    expect(denyPattern?.test("/about.html")).toBe(true);
+    expect(denyPattern?.test("/privacy.html")).toBe(true);
+    // A tracking query string is normal for a landing page and must not defeat the guard —
+    // the regex is tested against pathname + search, never pathname alone.
+    expect(denyPattern?.test("/about.html?utm_source=newsletter")).toBe(true);
+  });
+
+  it("leaves every real app route for the precached shell to handle", () => {
+    expect(denyPattern?.test("/")).toBe(false);
+    for (const path of eachOf(appRoutePaths, 11)) {
+      expect(denyPattern?.test(path), `route ${path} was wrongly denied`).toBe(false);
+    }
+  });
+});
+
+/** BL-060 (review follow-up): SettingsScreen.tsx and SetupStep.tsx link to about.html and
+ * privacy.html from inside the installed, offline-first app shell. navigateFallbackDenylist
+ * above stops the app shell from answering for those two paths, but by itself that would
+ * leave an offline visitor with nothing — this runtimeCaching entry is what actually serves
+ * them, network-first with a cache fallback, so the in-app links keep working offline. */
+
+type RuntimeCachingEntry = {
+  urlPattern: (arg: { url: URL }) => boolean;
+  handler: string;
+  options?: { cacheName?: string; networkTimeoutSeconds?: number };
+};
+
+// Same concern as navigateFallbackDenylist above: this array holds an object (not a plain
+// string), and the object's own braces don't help a lazy `[...]` match, but — unlike that
+// regex literal — nothing inside this block contains a literal "]", so the first one really
+// is the array's close. Anchored on the field that follows it in vite.config.ts (workbox's
+// closing brace) so a reordering wouldn't silently start matching too much either.
+const runtimeCachingMatch = /runtimeCaching:\s*\[([\s\S]*?)\]\s*,?\s*\n\s*\},/.exec(
+  viteConfigSource,
+);
+const runtimeCachingSource = runtimeCachingMatch?.[1]?.trim() ?? "";
+// eslint-disable-next-line no-eval
+const runtimeCaching: RuntimeCachingEntry[] = runtimeCachingSource
+  ? (eval(`[${runtimeCachingSource}]`) as RuntimeCachingEntry[])
+  : [];
+
+describe("runtimeCaching (offline fallback for the two static pages)", () => {
+  it("is declared in vite.config.ts", () => {
+    // Non-vacuity, same reasoning as above: a regex that stopped matching would hand every
+    // assertion below an empty array, and `for (const e of [])` runs zero times and passes.
+    expect(runtimeCachingMatch).not.toBeNull();
+    expect(runtimeCachingSource.length).toBeGreaterThan(0);
+    expect(runtimeCaching.length).toBeGreaterThan(0);
+  });
+
+  it("matches exactly the two static pages, not real app routes", () => {
+    for (const entry of eachOf(runtimeCaching, 1)) {
+      expect(entry.urlPattern({ url: new URL("https://khesh.app/about.html") })).toBe(true);
+      expect(entry.urlPattern({ url: new URL("https://khesh.app/privacy.html") })).toBe(true);
+      expect(entry.urlPattern({ url: new URL("https://khesh.app/") })).toBe(false);
+      for (const path of eachOf(appRoutePaths, 11)) {
+        expect(
+          entry.urlPattern({ url: new URL(path, "https://khesh.app") }),
+          `route ${path} was wrongly claimed by runtimeCaching`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("serves them network-first with a bounded timeout, not cache-first", () => {
+    for (const entry of eachOf(runtimeCaching, 1)) {
+      expect(entry.handler).toBe("NetworkFirst");
+      expect(entry.options?.cacheName).toBeTruthy();
+      // Unbounded would hang on a dead connection instead of falling back to the cache —
+      // see the comment in vite.config.ts for why 3s specifically.
+      expect(entry.options?.networkTimeoutSeconds).toBeGreaterThan(0);
+    }
   });
 });

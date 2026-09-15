@@ -74,29 +74,37 @@ export async function launchChrome(): Promise<{ cdp: Cdp; stop: () => void }> {
     { stdio: "ignore" },
   );
 
-  const port = await poll(
-    async () => {
-      const text = await readFile(join(profile, "DevToolsActivePort"), "utf8").catch(() => "");
-      const first = text.split("\n")[0];
-      return /^\d+$/.test(first) ? Number(first) : null;
-    },
-    15_000,
-    "Chrome's debugging port",
-  );
+  // Everything below can throw (the poll timeout, the fetch, "no page target", connect) —
+  // wrap it so a failure here still kills the spawned Chrome instead of orphaning it, and
+  // reraise unchanged so a caller debugging e.g. a timeout still sees the timeout.
+  try {
+    const port = await poll(
+      async () => {
+        const text = await readFile(join(profile, "DevToolsActivePort"), "utf8").catch(() => "");
+        const first = text.split("\n")[0];
+        return /^\d+$/.test(first) ? Number(first) : null;
+      },
+      15_000,
+      "Chrome's debugging port",
+    );
 
-  const targets = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as {
-    type: string;
-    webSocketDebuggerUrl: string;
-  }[];
-  const page = targets.find((target) => target.type === "page");
-  if (!page) throw new Error("Chrome exposed no page target");
+    const targets = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as {
+      type: string;
+      webSocketDebuggerUrl: string;
+    }[];
+    const page = targets.find((target) => target.type === "page");
+    if (!page) throw new Error("Chrome exposed no page target");
 
-  const cdp = await connect(page.webSocketDebuggerUrl);
-  return {
-    cdp,
-    stop: () => {
-      cdp.close();
-      child.kill();
-    },
-  };
+    const cdp = await connect(page.webSocketDebuggerUrl);
+    return {
+      cdp,
+      stop: () => {
+        cdp.close();
+        child.kill();
+      },
+    };
+  } catch (error) {
+    child.kill();
+    throw error;
+  }
 }

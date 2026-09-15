@@ -115,7 +115,7 @@ export function SyncSection() {
         return { label: t("sync.statusError"), hint: null, alert: true };
       default:
         // Also catches idle with no timestamp yet and the null window between
-        // finalizeConnect's setConnected(true) and the engine's first state event —
+        // `finalize`'s `connected = true` and the engine's first state event —
         // neither of those is "Synced" either.
         return when !== null
           ? { label: t("sync.statusSynced"), hint: null, alert: false }

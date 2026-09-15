@@ -23,8 +23,11 @@ import { useSync } from "../sync/sync-context";
  * both left it green regardless. `performReset` now brackets itself with
  * `sync.beginErase()`/`sync.endErase()` instead of taking a callback from its caller, and
  * `endErase()`'s own `finally` is what closes the window this component used to hold open
- * by hand: every screen reads it back through `sync.activity.blocking` (BL-055), including
- * one that mounts only after this component has already unmounted. */
+ * by hand: the screens that offer Connect read it back through `sync.activity.blocking`
+ * (BL-055), including one that mounts only after this component has already unmounted —
+ * and the session itself refuses to connect or resume while it is set, which is the half
+ * that does not depend on a screen remembering. This component is the one deliberate
+ * exception; see `connecting` below. */
 export function DangerZone() {
   const { t } = useTranslation();
   const { app, announceBookChanged, setError } = useLedger();
@@ -33,7 +36,7 @@ export function DangerZone() {
   const [busy, setBusy] = useState(false);
   // The ref is the guard and `busy` is what the UI reads: a second tap on this, the
   // app's most destructive button, can arrive before React re-renders with `busy` —
-  // same pattern as SyncProvider's `applyingRef`.
+  // same pattern as `RecoveryScreen`'s own `busyRef`.
   const busyRef = useRef(false);
   // Settings renders `SyncSection` — and so `ConnectDrive` — above this row, so a first
   // connect and the erase are one screen apart. Both take the sync lock, which orders them

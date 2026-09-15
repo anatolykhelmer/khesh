@@ -26,7 +26,7 @@ export function OnboardingScreen() {
   // Connecting Drive belongs in that union too, and it is the half that costs data.
   // `createHousehold` and `applyFirstConnect` both take the sync lock, so they cannot
   // interleave — but they can still run back to back: `useRemote` saves the Drive book,
-  // releases, and Continue writes a seed over the same key, which `finalizeConnect` then
+  // releases, and Continue writes a seed over the same key, which `finalize` then
   // arms an engine to upload over the real file. Unmounting this screen does not cancel
   // an in-flight `createHousehold` either. A plan merely *on screen* is enough to block:
   // it is one tap from that write, and `activity.blocking` alone only covers the tap after.

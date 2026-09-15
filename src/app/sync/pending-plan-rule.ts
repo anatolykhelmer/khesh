@@ -35,8 +35,8 @@ export const DROPPED: ConnectStage = { kind: "dropped" };
  * stage describes the local side as it stood a network round-trip ago. Nothing else
  * re-derives it. Three ways the book moves underneath, each with its own damage:
  *
- * - **Another tab resets** while the inspection is in flight. `buildStore()` has already
- *   bound `fileIdRef` to the user's real Drive file, but the stage is still `idle` at the
+ * - **Another tab resets** while the inspection is in flight. The connection has already
+ *   bound its store to the user's real Drive file, but the stage is still `idle` at the
  *   moment of the transition, so `shouldTearDown` correctly sees nothing to tear down.
  *   The screen then renders from the captured `local: "real"` and offers all three
  *   choices — "Upload this device's book" uploads a freshly-seeded book over the real
@@ -54,8 +54,8 @@ export const DROPPED: ConnectStage = { kind: "dropped" };
  *
  * `applying` is the one exception. While a choice is being applied the local state is
  * moving *because of that choice*: `applyChoice("useRemote")` replaces the book, so the
- * plan goes stale by succeeding, and `finalizeConnect` only clears the stage after a
- * network round trip for the account email. Dropping there would announce "the book
+ * plan goes stale by succeeding, and `finalize` only clears the stage after a network
+ * round trip for the account email. Dropping there would announce "the book
  * changed, connect again" over a choice that is completing. Nothing is lost by waiting:
  * on success the stage is cleared, and on failure the next render drops it correctly.
  *
@@ -78,8 +78,8 @@ export function afterLocalStateChange(
  * Why the connection is being torn down — and, when a vanished book is why, *which* plan
  * the teardown set out to end.
  *
- * The two callers of `teardownConnection` want opposite things from a first-connect plan
- * that is still on screen, so the caller says which it is rather than the rule guessing
+ * The two callers of the session's `teardown` want opposite things from a first-connect
+ * plan that is still on screen, so the caller says which it is rather than the rule guessing
  * from the stage. `bookVanished` carries one thing more, because the cause alone is not
  * enough to identify the plan: see `afterTeardown`.
  *
@@ -99,9 +99,9 @@ export type TeardownIntent =
 /**
  * The stage a connection teardown leaves behind, which depends on *why* it happened.
  *
- * A live choice screen cannot survive either way: `teardownConnection` has just dropped
- * the store, the auth and the file id its choices would act on. What differs is whether
- * the user is owed a sentence about it.
+ * A live choice screen cannot survive either way: the teardown has just released the
+ * connection whose store, auth and file id its choices would act through. What differs is
+ * whether the user is owed a sentence about it.
  *
  * - **`bookVanished`** is exactly the transition BL-050 exists to explain, so this
  *   teardown *is* the drop — the plan it started from ends in `dropped` here rather than
@@ -119,18 +119,28 @@ export type TeardownIntent =
  *   only exists in the connected view, and becoming connected clears the stage — so this
  *   arm is about the two erase flows.)
  *
- * **Why `bookVanished` needs `startedFrom`, and this is the ordering assumption that
- * really is gone.** The awaits in front of that write are still there, and nothing bounds
- * them:
- * `revoke()` is a network round trip with no timeout of its own, so this last line can
- * land arbitrarily late. `connect()` is not blocked in the meantime — it recreates the
- * auth and the store the teardown nulled — so by the time this runs the user may be
- * looking at a *second*, perfectly valid plan, decided from the local state the vanished
- * book left behind. Answering `dropped` for "whatever `choosing` is current" would print
- * the BL-050 notice over that plan: a false sentence, on the branch that exists to make
- * this sentence true. Identity is the whole test — stages are frozen and every
- * `choosing` is a fresh object from one `connect()`, so `stage === intent.startedFrom`
- * means "still the plan this teardown was about" and nothing else.
+ * **Why `bookVanished` names the plan it started from.** The awaits in front of this call
+ * are still unbounded — `revoke()` is a network round trip with no timeout of its own — so
+ * it can land arbitrarily late, and the stage it finds need not be the stage the teardown
+ * began at. `stage === intent.startedFrom` asks the only question worth asking about that:
+ * stages are frozen and every `choosing` is a fresh object from one `connect()`, so
+ * identity means "still the plan this teardown was about" and nothing else. Answering
+ * `dropped` for "whatever `choosing` is current" would print the BL-050 notice over a plan
+ * this teardown never had anything to do with: a false sentence, on the branch that exists
+ * to make this sentence true.
+ *
+ * The justification recorded here used to be a live race — a second `connect()` running
+ * through the teardown's own awaits and putting a second, perfectly valid plan on screen.
+ * That race is gone: the session refuses to start a connect at all while `disconnecting`,
+ * and this function is called while that flag is still set. So today the only writers that
+ * can reach the stage inside the window move it *off* `choosing` (`cancelConnect`, a
+ * staleness drop), which makes identity and a bare `kind === "choosing"` agree.
+ *
+ * That agreement is not a reason to simplify to the second. It holds because of a guard in
+ * another module, for reasons that have nothing to do with which plan a notice belongs to;
+ * this function would go on answering `dropped` for a plan that is not its own the moment
+ * that guard is relaxed, and the symptom — the BL-050 notice printed over live choices — is
+ * the one it was written to prevent.
  *
  * The `kind` check beside it is not redundant with that identity. A teardown that begins
  * at `idle` — the plain connected tab of BL-040, no plan ever offered — would otherwise
@@ -142,16 +152,16 @@ export type TeardownIntent =
  *
  * `userAction` needs no such care, and the reason recorded here used to be false. It said
  * the two erase flows cannot strand a plan started mid-teardown because `performReset`
- * "ends by calling `cancelConnect()` itself". `cancelConnect` is `setStage(IDLE)` and
- * nothing more: it ends the flow *on screen* and cannot see, let alone cancel, a
+ * "ends by calling `cancelConnect()` itself". `cancelConnect` sets the stage to `IDLE` and
+ * does nothing else: it ends the flow *on screen* and cannot see, let alone cancel, a
  * `connect()` that is in flight — which is the whole of the window this arm was claimed to
  * be free of. What is actually true is narrower and enough: a connect running under a
  * `userAction` teardown never reaches a plan. It finds itself superseded after the Drive
  * read and turns itself away, so it writes no book, persists nothing and starts no engine
- * — and never calls the `setStage({ kind: "choosing" })` that would put a plan here to be
- * wrongly cleared. (What it does leave behind is a store and an auth bound to the Drive
- * file, with no engine and no plan.) Clearing is this arm's answer for every stage in any
- * case, so even a plan that did somehow survive would be cleared rather than kept.
+ * — and never writes the `choosing` stage that would put a plan here to be wrongly
+ * cleared. It leaves nothing behind either: the same check releases the connection it was
+ * building, token included. Clearing is this arm's answer for every stage in any case, so
+ * even a plan that did somehow survive would be cleared rather than kept.
  */
 export function afterTeardown(stage: ConnectStage, intent: TeardownIntent): ConnectStage {
   if (intent.cause === "userAction") return IDLE;

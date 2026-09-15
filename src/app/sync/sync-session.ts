@@ -455,8 +455,9 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     // side of that save, rather than leaving the question to this line.
     //
     // `erasing` is here so the refusal is structural. It is the reason the erase became
-    // session state at all: every screen reads it back as `activity.blocking`, and this is
-    // the half that does not depend on every future screen remembering to.
+    // session state at all: the screens that offer Connect read it back as
+    // `activity.blocking`, and this is the half that does not depend on every future screen
+    // remembering to. `resumeStoredConnection` asks the same question for the same reason.
     if (connecting || applying || disconnecting || erasing) return;
     connecting = true;
     lastError = null;

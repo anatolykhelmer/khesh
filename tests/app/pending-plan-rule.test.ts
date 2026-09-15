@@ -38,7 +38,7 @@ describe("afterLocalStateChange", () => {
 
   it("drops a plan derived from a book another tab has since reset away", () => {
     // The teardown race: connect() captured local "real" before awaiting inspectRemote,
-    // fileIdRef is already bound to the user's real Drive file, and the stage was still
+    // the connection is already bound to the user's real Drive file, and the stage was still
     // idle at the transition so shouldTearDown correctly did nothing. Without this the
     // screen offers "Upload this device's book" over the real one.
     expect(afterLocalStateChange(choosing("real"), "none", false)).toBe(DROPPED);
@@ -73,7 +73,7 @@ describe("afterLocalStateChange", () => {
 
   it("drops nothing while the user's own choice is being applied", () => {
     // applyChoice("useRemote") replaces the book, so localState moves and the plan goes
-    // stale *by succeeding* — and finalizeConnect then awaits a network round trip for
+    // stale *by succeeding* — and the session's finalize then awaits a network round trip for
     // the account email before it clears the stage. Without this clause the screen would
     // announce "the book on this device changed, connect again" over a choice that is
     // completing successfully, for the length of an HTTP request.
@@ -113,8 +113,9 @@ describe("afterTeardown", () => {
   });
 
   it("turns a live choice screen into the notice when the book vanished under it", () => {
-    // Another tab's reset nulls the book, teardownConnection drops the store, auth and
-    // file id the choices would have acted on. Clearing to IDLE here is BL-050's exact
+    // Another tab's reset nulls the book, and the teardown releases the connection whose
+    // store, auth and file id the choices would have acted through. Clearing to IDLE here
+    // is BL-050's exact
     // silence: the screen collapses to a plain Connect row that looks untouched.
     for (const local of ALL) {
       const stage = choosing(local);

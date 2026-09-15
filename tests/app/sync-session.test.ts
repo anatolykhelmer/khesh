@@ -738,8 +738,9 @@ describe("sync session: finalize and rollback", () => {
 
   it("refuses to start a connect while an erase is running", async () => {
     // The erase became session state precisely so this guard would stop depending on every
-    // screen remembering it — `ConnectDrive`, `SyncSection` and `DangerZone` all read
-    // `erasing` back as `activity.blocking` — but the session itself did not consult it.
+    // screen remembering it — `ConnectDrive` and `SyncSection` read `erasing` back as
+    // `activity.blocking` (`DangerZone` deliberately does not: that would gate the erase on
+    // its own erase) — but the session itself did not consult it.
     // `performReset` brackets its whole sequence with `beginErase`/`endErase`, and the
     // window that matters is after its `disconnect()` has resolved (so `disconnecting` is
     // false again) while `resetAll()` is still erasing the book.

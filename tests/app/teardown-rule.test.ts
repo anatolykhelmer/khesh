@@ -15,8 +15,8 @@ describe("shouldTearDown", () => {
   });
 
   it("tears down on a pending first-connect choice even though connected is false", () => {
-    // `connect()` binds storeRef/authRef/fileIdRef to the real Drive file when it
-    // inspects it, so the choice screen is armed at that file with `connected` still
+    // `connect()` binds its connection — auth, store, file id — to the real Drive file
+    // when it inspects it, so the choice screen is armed at that file with `connected` still
     // false. Narrowing the check to `connected` alone is what re-opens BL-040's
     // "Replace remote uploads a fresh seed over the real book" hole.
     expect(shouldTearDown(BOOK, null, CHOOSING)).toBe(true);

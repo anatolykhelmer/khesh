@@ -29,9 +29,10 @@ import type { Book } from "../../kernel";
 export type TearDownSyncState = {
   connected: boolean;
   /** Non-null means a first-connect choice screen is open. `connect()` binds
-   * `storeRef`/`authRef`/`fileIdRef` to the real Drive file the moment it inspects it,
-   * so this alone is a live connection to the user's file even though `connected` is
-   * still false — the exact state BL-040's review found "Replace remote" armed in. */
+   * a `Connection` — its own auth, store and file id — to the user's real Drive file the
+   * moment it inspects it, so this alone is a live connection to the user's file even
+   * though `connected` is still false — the exact state BL-040's review found "Replace
+   * remote" armed in. */
   pendingInspection: unknown;
 };
 

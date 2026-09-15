@@ -6,13 +6,15 @@ import type { Result } from "../kernel/result";
  * can stub exactly this shape without touching React. */
 export type ResetSyncDeps = {
   connected: boolean;
-  /** Non-null means the first-connect choice UI is open: `storeRef`/`authRef`/`fileIdRef`
-   * are already live even though `connected` is still false, so this alone must also
-   * trigger teardown — otherwise the choice UI survives the reset armed at the old file. */
+  /** Non-null means the first-connect choice UI is open: the session already holds a
+   * connection — its own auth, store and file id, bound to the user's real Drive file —
+   * even though `connected` is still false, so this alone must also trigger teardown;
+   * otherwise the choice UI survives the reset armed at the old file. */
   pendingInspection: unknown;
   disconnect: () => Promise<void>;
-  /** Clears whatever the first-connect flow has on screen — `SyncProvider`'s
-   * `setStage(IDLE)`, and nothing else. Needed beyond `disconnect` because a *dropped*
+  /** Clears whatever the first-connect flow has on screen — the session's
+   * `cancelConnect`, which writes `IDLE` and nothing else. Needed beyond `disconnect`
+   * because a *dropped*
    * plan holds neither a connection nor an inspection: both fields above read quiet, the
    * gate below skips the teardown that would have cleared it, and the notice explaining a
    * book move that happened before the erase rides through onto the fresh onboarding
@@ -22,8 +24,9 @@ export type ResetSyncDeps = {
    * were. It cannot see a `connect()` that is in flight, let alone stop one: an inspection
    * already under way still returns, still holds the store and auth it bound to the user's
    * real Drive file, and still finalizes. What stops that is the connect itself finding an
-   * erase began under it and turning away, and the `erasing` flag every screen reads back
-   * as `activity.blocking`, which keeps a second one from starting. */
+   * erase began under it and turning away, and the `erasing` flag the session itself
+   * consults before it starts a connect or adopts a stored connection, which keeps a
+   * second one from starting. */
   cancelConnect: () => void;
   /** Published to every screen through the sync snapshot for the whole of `performReset`.
    * Replaces the `DangerZone → SettingsScreen → SyncSection → ConnectDrive` prop chain,
@@ -56,10 +59,14 @@ export type ResetDeps = {
  * again. `beginErase()`/`endErase()` bracket the whole of this function for exactly that
  * reason: `erasing` reaches every screen through the sync snapshot itself, not through a
  * prop threaded down from this function's one caller, and the `finally` is what keeps a
- * failed `resetAll` from leaving it stuck on. That bracket is the guard, not decoration —
- * `ConnectDrive`, `SyncSection` and `DangerZone` all read it back as `activity.blocking`
- * (`erasing` is one of the flags folded into it), and removing either call reopens BL-040
- * exactly as before, just with no prop left for a reviewer to notice is missing.
+ * failed `resetAll` from leaving it stuck on. That bracket is the guard, not decoration.
+ * `ConnectDrive` and `SyncSection` read it back as `activity.blocking` (`erasing` is one of
+ * the flags folded into it), and — the half that does not depend on a screen remembering —
+ * the session refuses to start a connect or adopt a stored connection while it is set.
+ * `DangerZone` is deliberately *not* in that list: `blocking` folds in the `erasing` this
+ * function is about to set, so gating the erase button on it would gate the erase on its
+ * own erase. Removing either call reopens BL-040 exactly as before, just with no prop left
+ * for a reviewer to notice is missing.
  *
  * Extracted out of the DangerZone component so this ordering has a test: this repo's
  * Vitest runs in `environment: "node"` with no component-testing library, so a React
@@ -142,16 +149,17 @@ export type StartOverDeps = {
  * common case and skip the one write that makes Continue safe.
  *
  * Note what is *not* the reason: `pendingInspection` is not always idle here. This screen
- * renders `ConnectDrive` (BL-043), so an unapplied choice is a live connection —
- * `storeRef`, `authRef` and `fileIdRef` are bound to the user's Drive file from the
- * moment `connect()` inspects it. It is a second thing worth tearing down, not an
- * argument that there is nothing to tear down.
+ * renders `ConnectDrive` (BL-043), so an unapplied choice is a live connection — the
+ * session's `Connection` is bound to the user's Drive file from the moment `connect()`
+ * inspects it. It is a second thing worth tearing down, not an argument that there is
+ * nothing to tear down.
  *
  * The same gate is correct where `performReset` uses it: Settings is reachable only with
  * a book, so the resume effect has run and `connected` does reflect the stored record.
  *
- * `teardownConnection` is idempotent and null-safe on every ref it touches, so running it
- * against a genuinely idle tab costs one best-effort write to the meta database. It is
+ * The session's teardown is idempotent and does nothing at all when there is no
+ * connection, so running it against a genuinely idle tab costs one best-effort write to
+ * the meta database. It is
  * also why this flow needs no `cancelConnect` of its own where `performReset` does: the
  * unconditional call ends the first-connect flow on every path, dropped plan included
  * (`afterTeardown`, cause `userAction`).

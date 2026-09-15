@@ -14,6 +14,10 @@ import { runExclusive } from "./sync-lock";
 
 const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? "";
 const PICKER_API_KEY = (import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined) ?? "";
+// The Picker's `setAppId` wants the Cloud project number, and an OAuth client id is
+// `<project-number>-<random>.apps.googleusercontent.com` — so it is already in hand, and a
+// third env var to configure (and to get out of step with the other two) is not needed.
+const APP_ID = CLIENT_ID.split("-")[0];
 
 export function SyncProvider({ children }: { children: ReactNode }) {
   const { book, repo, announceBookChanged } = useLedger();
@@ -39,7 +43,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       announceBookChanged,
       fetchAccountEmail: (getToken) => fetchAccountEmail(getToken),
       pickerConfigured: PICKER_API_KEY !== "",
-      pickFile: (accessToken) => pickSharedFile(PICKER_API_KEY, accessToken),
+      pickFile: (accessToken) => pickSharedFile(PICKER_API_KEY, accessToken, APP_ID),
     });
   }
   const session = sessionRef.current;

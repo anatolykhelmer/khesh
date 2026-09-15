@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { pickSharedFile } from "../../src/adapters/google-picker";
 import { flush } from "../helpers/sync-harness";
 
@@ -15,6 +15,12 @@ function installFakePicker() {
     setOwnedByMe() {
       return this;
     }
+    setMimeTypes() {
+      return this;
+    }
+    setMode() {
+      return this;
+    }
   }
   class FakePickerBuilder {
     addView() {
@@ -24,6 +30,9 @@ function installFakePicker() {
       return this;
     }
     setDeveloperKey() {
+      return this;
+    }
+    setAppId() {
       return this;
     }
     setCallback(callback: PickerCallback) {
@@ -47,6 +56,7 @@ function installFakePicker() {
       PickerBuilder: FakePickerBuilder,
       DocsView: FakeDocsView,
       ViewId: { DOCS: "docs" },
+      DocsViewMode: { LIST: "list" },
       Action: { PICKED: "picked", CANCEL: "cancel" },
     },
   };
@@ -65,7 +75,7 @@ describe("pickSharedFile", () => {
 
   it("resolves the picked file's id and shows the dialog", async () => {
     const fake = installFakePicker();
-    const pending = pickSharedFile("api-key", "token-1");
+    const pending = pickSharedFile("api-key", "token-1", "app-id");
     await flush();
     fake.fire({ action: "picked", docs: [{ id: "file-9" }] });
     expect(await pending).toBe("file-9");
@@ -74,9 +84,56 @@ describe("pickSharedFile", () => {
 
   it("resolves null when the dialog is cancelled", async () => {
     const fake = installFakePicker();
-    const pending = pickSharedFile("api-key", "token-1");
+    const pending = pickSharedFile("api-key", "token-1", "app-id");
     await flush();
     fake.fire({ action: "cancel" });
     expect(await pending).toBeNull();
+  });
+
+  /** The dialog is a foreign widget: it answers PICKED or CANCEL, or it answers nothing
+   * at all. The session holds `connecting` up for as long as this promise is pending, and
+   * that flag gates Connect, Join *and* the Settings erase — so "nothing at all" has to
+   * become a failure on its own, the way the GIS token flow next door already does it. */
+  it("rejects when the dialog neither picks nor cancels", async () => {
+    vi.useFakeTimers();
+    try {
+      installFakePicker();
+      const pending = pickSharedFile("api-key", "token-1", "app-id");
+      // Both halves matter: the promise is still open before the ceiling...
+      await flush();
+      let settled = false;
+      const watched = pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await flush();
+      expect(settled).toBe(false);
+      // ...and rejected once it passes.
+      vi.advanceTimersByTime(15000);
+      await expect(pending).rejects.toThrow(/timed out/i);
+      await watched;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the timeout once the dialog answers", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = installFakePicker();
+      const pending = pickSharedFile("api-key", "token-1", "app-id");
+      await flush();
+      fake.fire({ action: "cancel" });
+      expect(await pending).toBeNull();
+      // A live timer here would reject an already-resolved promise — harmless in itself,
+      // but it would also keep the tab's event loop busy for 15s after every cancel.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

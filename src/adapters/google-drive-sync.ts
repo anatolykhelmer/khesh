@@ -235,7 +235,13 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
   async function resolveFileId(): Promise<Result<string | null>> {
     const cached = deps.getFileId();
     if (cached !== null) return ok(cached);
-    const query = encodeURIComponent(`name='${FILE_NAME}' and trashed=false`);
+    // `'me' in owners` is the search's original intent made explicit: this is the ordinary
+    // Connect path looking for *this account's own* file. Once a file picked through the
+    // Join flow becomes visible to `drive.file`, it answers a bare name search too — so
+    // without the filter a later plain Connect on the same account can find a family
+    // member's shared book alongside its own and fail as SYNC_FILE_AMBIGUOUS. A shared
+    // book is adopted by an explicit pick or not at all.
+    const query = encodeURIComponent(`name='${FILE_NAME}' and trashed=false and 'me' in owners`);
     const found = await authFetch(`${FILES_URL}?q=${query}&spaces=drive&fields=files(id,modifiedTime)`);
     if (!found.ok) return found;
     const data = await readBody(() => found.value.json() as Promise<{ files?: Array<{ id: string }> }>);

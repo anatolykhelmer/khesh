@@ -36,6 +36,11 @@ describe("errorMessage", () => {
     expect(errorMessage("SYNC_ACCESS_REVOKED")).toMatch(/access/i);
   });
 
+  it("covers the picker code rather than falling back or naming Drive", () => {
+    expect(errorMessage("SYNC_PICKER_FAILED")).not.toBe("Something went wrong");
+    expect(errorMessage("SYNC_PICKER_FAILED")).toMatch(/picker/i);
+  });
+
   it("falls back for unknown codes", () => {
     expect(errorMessage("NOT_A_REAL_CODE")).toBe("Something went wrong");
   });

@@ -23,6 +23,7 @@ import { syncSignal } from "../../src/app/sync/sync-signal";
 // pins lives in the seam between the two, so an imitation of `performReset` would pin
 // nothing — it would spell the fixed sequence by hand and be green before the fix.
 import { performReset } from "../../src/app/reset-flow";
+import { errorMessage } from "../../src/service/error-messages";
 import { NOW, unwrap } from "../helpers";
 
 /** A book with no user data: `holdsNoUserData` answers true, so `LocalState` is "empty". */
@@ -1868,6 +1869,28 @@ describe("joinShared", () => {
     expect(snap.connected).toBe(false);
     expect(snap.stage.kind).toBe("idle");
     expect(snap.lastError).toBeNull();
+    expect(snap.activity.connecting).toBe(false);
+  });
+
+  it("surfaces a picker-specific error when the Picker fails to open", async () => {
+    // The adapter's script load can reject, and it now also rejects on its own 15s
+    // ceiling. Either way the user tapped Join, went through an OAuth popup, and must not
+    // be left with the silence of a plain cancel — nor with "Could not reach Google
+    // Drive", which names a call this path has not made yet.
+    const h = makeSession({
+      pickFile: async () => {
+        throw new Error("picker unavailable");
+      },
+    });
+
+    const joining = h.session.joinShared();
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await joining;
+
+    const snap = h.session.getSnapshot();
+    expect(snap.lastError).toBe(errorMessage("SYNC_PICKER_FAILED"));
+    expect(snap.lastError).not.toBe(errorMessage("SYNC_STORE_FAILED"));
+    expect(snap.connected).toBe(false);
     expect(snap.activity.connecting).toBe(false);
   });
 

@@ -540,6 +540,11 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
         // after they already went through an OAuth popup. Every other failure path in this
         // function — `!token.ok`, `!inspection.ok` — sets `lastError`; this is that same
         // treatment for the one port call that can throw instead of resolving to a Result.
+        //
+        // Its own code rather than `SYNC_STORE_FAILED`: nothing has been asked of Drive
+        // yet at this point, so "Could not reach Google Drive" would name the wrong thing
+        // — what failed is the picker widget itself (its script load, or the timeout it
+        // now carries).
         let pickedFileId: string | null;
         try {
           pickedFileId = await ports.pickFile(token.value);
@@ -548,7 +553,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
             await releaseConnection(conn);
             return;
           }
-          lastError = errorMessage("SYNC_STORE_FAILED");
+          lastError = errorMessage("SYNC_PICKER_FAILED");
           return;
         }
         if (superseded(conn) || userEnds !== endsAtStart) {

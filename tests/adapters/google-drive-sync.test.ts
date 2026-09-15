@@ -75,6 +75,10 @@ describe("drive sync store", () => {
     expect(unwrap(await store.probe())).toBeNull();
     expect(calls[0].url).toContain("https://www.googleapis.com/drive/v3/files?");
     expect(decodeURIComponent(calls[0].url)).toContain("name='khesh-book.json'");
+    // Scoped to this account's own files: a book a family member shared (and that a Join
+    // pick has since made visible to `drive.file`) must not turn up in the ordinary
+    // Connect search, where a second hit reads as SYNC_FILE_AMBIGUOUS.
+    expect(decodeURIComponent(calls[0].url)).toContain("'me' in owners");
     expect(calls[0].headers.Authorization).toBe("Bearer tok-1");
   });
 

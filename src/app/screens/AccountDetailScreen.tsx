@@ -178,6 +178,14 @@ export function AccountDetailScreen() {
           >
             {t("accountDetail.entries")}
           </Link>
+          {currentAccount.isPlaceholder || currentAccount.id.startsWith("sys:") ? null : (
+            <Link
+              className="secondary link-button"
+              to={`/accounts/${currentAccount.id}/opening-balance`}
+            >
+              {t("accountDetail.openingBalance")}
+            </Link>
+          )}
           <button type="button" className="secondary" onClick={startEditing}>
             {t("common.edit")}
           </button>

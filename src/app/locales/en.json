@@ -35,9 +35,94 @@
     "currencyTitle": "Choose home currency",
     "currencySubtitle": "Used for your household books.",
     "currencyListLabel": "Home currency",
-    "continue": "Continue",
     "restore": "Restore from backup",
-    "aboutLink": "What is Khesh?"
+    "aboutLink": "What is Khesh?",
+    "wizard": {
+      "next": "Next",
+      "back": "Back",
+      "createBook": "Create book",
+      "summaryTitle": "Your accounts",
+      "summaryHint": "This is the tree we will create. You can rename, move or delete any of it later, and add more at any time.",
+      "progressLabel": "Steps",
+      "chooseOne": "Choose one",
+      "chooseAny": "Choose any that apply",
+      "section": {
+        "setup": "Language",
+        "household": "Household",
+        "income": "Income",
+        "home": "Home",
+        "transport": "Transport",
+        "accounts": "Accounts",
+        "extras": "Extras",
+        "summary": "Summary"
+      },
+      "q": {
+        "yesNo": { "yes": "Yes", "no": "No" },
+        "household": {
+          "title": "Who keeps this book?",
+          "solo": "Just me",
+          "couple": "The two of us",
+          "family": "A family with children",
+          "skip": "Skip — start with an empty book"
+        },
+        "childAges": {
+          "title": "How old are the children?",
+          "under3": "Under 3",
+          "school": "School age",
+          "student": "Students"
+        },
+        "income": {
+          "title": "Where does the money come from?",
+          "salary": "Salary",
+          "salary2": "Second salary",
+          "freelance": "Freelance or business",
+          "benefits": "Benefits and pension",
+          "rental": "Rental property",
+          "investments": "Investments"
+        },
+        "trackBusiness": { "title": "Track business expenses separately?" },
+        "housing": {
+          "title": "Where do you live?",
+          "rent": "Renting",
+          "mortgage": "Mortgage",
+          "own": "Own outright",
+          "family": "With family (no accounts needed)"
+        },
+        "buildingFees": { "title": "Building fees (va'ad bayit)?" },
+        "transport": {
+          "title": "How do you get around?",
+          "car": "Own car",
+          "lease": "Leased car",
+          "public": "Public transport",
+          "walk": "Walking or cycling (no accounts needed)"
+        },
+        "carLoan": { "title": "Is there a car loan?" },
+        "money": {
+          "title": "Where is your money?",
+          "cash": "Cash",
+          "bank": "Bank account",
+          "card": "Credit card",
+          "savings": "Savings or deposit",
+          "fx": "Account in another currency"
+        },
+        "secondBank": { "title": "A second bank account?" },
+        "cardCount": { "title": "How many credit cards?", "1": "One", "2": "Two", "3": "Three" },
+        "fxCurrency": { "title": "Which currency?" },
+        "extras": {
+          "title": "What else do you want to track separately?",
+          "health": "Health",
+          "clothing": "Clothing",
+          "leisure": "Leisure",
+          "phone": "Phone and subscriptions",
+          "gifts": "Gifts and donations",
+          "travel": "Travel",
+          "sport": "Sport",
+          "beauty": "Beauty",
+          "pets": "Pets",
+          "education": "Adult education"
+        }
+      }
+    }
   },
   "recovery": {
     "storageTitle": "Khesh can't reach its storage",
@@ -182,6 +267,58 @@
     "rootExpenses": "Expenses",
     "openingBalances": "Opening Balances"
   },
+  "starter": {
+    "accounts": {
+      "groceries": "Groceries",
+      "other": "Other",
+      "children": "Children",
+      "daycare": "Daycare",
+      "school": "School",
+      "activities": "Activities",
+      "tuition": "Tuition",
+      "childrenClothing": "Clothing and toys",
+      "salary": "Salary",
+      "salaryN": "Salary {{n}}",
+      "freelance": "Freelance",
+      "business": "Business",
+      "businessExpenses": "Business expenses",
+      "benefits": "Benefits and pension",
+      "rentReceived": "Rent received",
+      "investments": "Investments",
+      "housing": "Housing",
+      "rent": "Rent",
+      "mortgage": "Mortgage",
+      "mortgageInterest": "Mortgage interest",
+      "utilities": "Utilities",
+      "homeRepairs": "Home and repairs",
+      "buildingFees": "Building fees",
+      "car": "Car",
+      "fuel": "Fuel",
+      "carInsurance": "Insurance",
+      "carRepairs": "Repairs",
+      "parking": "Parking and tolls",
+      "carLoan": "Car loan",
+      "lease": "Lease",
+      "publicTransport": "Public transport",
+      "cash": "Cash",
+      "bankAccount": "Bank account",
+      "bankAccountN": "Bank account {{n}}",
+      "creditCard": "Credit card",
+      "creditCardN": "Credit card {{n}}",
+      "savings": "Savings",
+      "fxAccount": "{{currency}} account",
+      "health": "Health",
+      "clothing": "Clothing",
+      "leisure": "Leisure",
+      "phone": "Phone and subscriptions",
+      "gifts": "Gifts and donations",
+      "travel": "Travel",
+      "sport": "Sport",
+      "beauty": "Beauty",
+      "pets": "Pets",
+      "education": "Adult education"
+    }
+  },
   "accountDetail": {
     "titleFallback": "Account",
     "notFound": "Account not found.",
@@ -197,6 +334,7 @@
     "saveChanges": "Save changes",
     "addNested": "Add nested",
     "entries": "Entries",
+    "openingBalance": "Opening balance",
     "deleteConfirm": "Delete {{name}}?"
   },
   "accountForm": {
@@ -206,6 +344,15 @@
     "currencyLabel": "Currency",
     "openingBalanceLabel": "Opening balance (optional)",
     "saveAccount": "Save account"
+  },
+  "openingBalanceForm": {
+    "title": "Opening balance",
+    "backToAccount": "Back to account",
+    "dateLabel": "Date",
+    "amountLabel": "Amount",
+    "save": "Save",
+    "notAvailable": "Opening balance isn't available for this account.",
+    "clearHint": "Leave blank to remove the opening balance."
   },
   "journal": {
     "title": "Journal",

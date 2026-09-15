@@ -48,6 +48,7 @@ import { importJson as importBookJson } from "../adapters/import-book";
 import { bookToJson } from "../adapters/json-codec";
 import i18n from "../app/i18n";
 import { todayCalendarDate } from "./dates";
+import { rootsPlan, type StarterAccount } from "./starter-plan";
 
 export const HOUSEHOLD_BOOK_NAME = "Household";
 
@@ -290,24 +291,42 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       return runExclusive(() => repo.clear());
     },
 
-    async createHousehold(homeCurrency: CurrencyCode): Promise<Result<Book>> {
+    /**
+     * Create the book and its account tree in one commit. The default plan is the four
+     * roots — today's behaviour. The onboarding wizard passes `planStarterBook(...)`,
+     * whose names are i18n keys resolved here, in the language chosen on its first
+     * screen, exactly as `ROOT_SEEDS` resolve the root names.
+     */
+    async createHousehold(
+      homeCurrency: CurrencyCode,
+      plan: readonly StarterAccount[] = rootsPlan(homeCurrency),
+    ): Promise<Result<Book>> {
       const created = createBook({ name: HOUSEHOLD_BOOK_NAME, homeCurrency }, nowIso());
       if (!created.ok) return created;
       let book = created.value;
-      for (const seed of ROOT_SEEDS) {
+      const ids = new Map<string, string>();
+      for (const item of plan) {
+        const parentId = item.parentKey === null ? null : ids.get(item.parentKey);
+        if (item.parentKey !== null && parentId === undefined) {
+          return err("ACCOUNT_PARENT_INVALID", "Starter plan names a parent it has not created", {
+            parentKey: item.parentKey,
+          });
+        }
+        const before = new Set(book.accounts.map((a) => a.id));
         const next = createAccount(
           book,
           {
-            parentId: null,
-            name: seed.name,
-            type: seed.type,
-            currency: homeCurrency,
-            isPlaceholder: true,
+            parentId: parentId ?? null,
+            name: i18n.t(item.nameKey, item.nameArgs),
+            type: item.type,
+            currency: item.currency,
+            isPlaceholder: item.isPlaceholder,
           },
           nowIso(),
         );
         if (!next.ok) return next;
         book = next.value;
+        ids.set(item.key, book.accounts.find((a) => !before.has(a.id))!.id);
       }
       return commit(book);
     },
@@ -416,6 +435,47 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       );
       if (!updated.ok) return updated;
       return commit(updated.value);
+    },
+
+    async setOpeningBalance(
+      book: Book,
+      input: { accountId: string; amount: MinorUnits; date: string },
+    ): Promise<Result<Book>> {
+      if (isSystemAccountId(input.accountId)) {
+        return err("ACCOUNT_IS_SYSTEM", "System accounts cannot have an opening balance", {
+          id: input.accountId,
+        });
+      }
+      const hadEntry = book.journal.some((e) => e.id === `opening:${input.accountId}`);
+      const recorded = recordOpeningBalance(
+        book,
+        {
+          accountId: input.accountId,
+          amount: input.amount,
+          date: input.date,
+          groupName: i18n.t("accounts.openingBalances"),
+        },
+        nowIso(),
+      );
+      if (!recorded.ok) return recorded;
+      // amount 0 with no prior entry is the kernel's own no-op (it clones the book
+      // unchanged) — skip the commit so clearing a balance that was never set doesn't
+      // still persist and fire afterCommit/sync for nothing.
+      if (input.amount === 0 && !hadEntry) return ok(book);
+      return commit(recorded.value);
+    },
+
+    openingBalanceOf(
+      book: Book,
+      accountId: string,
+    ): { amount: MinorUnits; date: string } | undefined {
+      const entry = book.journal.find(
+        (e) => e.id === `opening:${accountId}` && e.kind === "opening",
+      );
+      if (!entry) return undefined;
+      const posting = entry.postings.find((p) => p.accountId === accountId);
+      if (!posting) return undefined;
+      return { amount: posting.amount, date: entry.date };
     },
 
     async removeAccount(book: Book, id: string): Promise<Result<Book>> {

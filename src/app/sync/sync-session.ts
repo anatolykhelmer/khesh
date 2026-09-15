@@ -442,6 +442,14 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       // A load that threw leaves nothing settled, so this has to come back off on the
       // failure path too, or one transient IDB error is the same permanent latch by
       // another name.
+      //
+      // **It clears the flag; it does not retry.** Nothing re-invokes on the failure path,
+      // so a thrown `load()` defers the whole question to the next `setBook` — and at boot
+      // there may not be one: `SyncProvider`'s effect fires on `book` identity, so a tab
+      // whose only book arrived before the throw sits unresumed until something else moves
+      // the book or the page reloads. Re-invoking from here instead would loop against a
+      // permanently broken IndexedDB with no ceiling, which is why it does not; stating the
+      // gap is the honest half of that choice.
       .finally(() => {
         resuming = false;
       });

@@ -504,6 +504,7 @@
     "SYNC_ENVELOPE_INVALID": "The Drive copy could not be read.",
     "SYNC_FORMAT_UNSUPPORTED": "The Drive copy needs a newer app version.",
     "SYNC_MERGE_CONFLICT": "The books could not be merged automatically.",
+    "SYNC_ACCESS_REVOKED": "Your access to this book was revoked.",
     "RECURRENCE_NOT_FOUND": "Recurring transaction not found",
     "RECURRENCE_ID_DUPLICATE": "That recurring transaction already exists",
     "RECURRENCE_SCHEDULE_INVALID": "Check the repeat interval and dates",

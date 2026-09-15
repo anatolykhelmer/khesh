@@ -31,6 +31,11 @@ describe("errorMessage", () => {
     }
   });
 
+  it("covers the new sync-access code rather than falling back", () => {
+    expect(errorMessage("SYNC_ACCESS_REVOKED")).not.toBe("Something went wrong");
+    expect(errorMessage("SYNC_ACCESS_REVOKED")).toMatch(/access/i);
+  });
+
   it("falls back for unknown codes", () => {
     expect(errorMessage("NOT_A_REAL_CODE")).toBe("Something went wrong");
   });

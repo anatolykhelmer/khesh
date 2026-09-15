@@ -510,6 +510,7 @@
     "SYNC_ENVELOPE_INVALID": "לא ניתן לקרוא את העותק ב-Drive.",
     "SYNC_FORMAT_UNSUPPORTED": "העותק ב-Drive דורש גרסה חדשה יותר של האפליקציה.",
     "SYNC_MERGE_CONFLICT": "לא ניתן היה למזג את הספרים אוטומטית.",
+    "SYNC_ACCESS_REVOKED": "הגישה שלכם לספר הזה בוטלה.",
     "RECURRENCE_NOT_FOUND": "התנועה החוזרת לא נמצאה",
     "RECURRENCE_ID_DUPLICATE": "התנועה החוזרת כבר קיימת",
     "RECURRENCE_SCHEDULE_INVALID": "בדקו את מרווח החזרה ואת התאריכים",

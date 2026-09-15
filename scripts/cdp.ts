@@ -11,13 +11,20 @@ export type Cdp = {
 const CHROME =
   process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
-async function poll<T>(attempt: () => Promise<T | null>, ms: number, what: string): Promise<T> {
+// intervalMs defaults to this function's original sleep — callers with their own cadence
+// (screenshots.ts has two) pass it explicitly so reusing this loop changes no timing.
+export async function poll<T>(
+  attempt: () => Promise<T | null>,
+  ms: number,
+  what: string,
+  intervalMs = 100,
+): Promise<T> {
   const deadline = Date.now() + ms;
   for (;;) {
     const value = await attempt();
     if (value !== null) return value;
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 }
 

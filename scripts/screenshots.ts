@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
-import { launchChrome, type Cdp } from "./cdp.ts";
+import { launchChrome, poll, type Cdp } from "./cdp.ts";
 import { buildDemoBook } from "./demo-book.ts";
 import { bookToJson } from "../src/adapters/json-codec.ts";
 
@@ -23,14 +23,23 @@ function run(command: string, args: string[]): Promise<void> {
 }
 
 async function waitForOrigin(): Promise<void> {
-  const deadline = Date.now() + 20_000;
-  for (;;) {
-    const ok = await fetch(ORIGIN).then((response) => response.ok).catch(() => false);
-    if (ok) return;
-    if (Date.now() > deadline) {
+  const what = ORIGIN;
+  try {
+    await poll(
+      () => fetch(ORIGIN).then((response) => (response.ok ? true : null)).catch(() => null),
+      20_000,
+      what,
+      200,
+    );
+  } catch (error) {
+    // poll's own message is generic ("timed out waiting for ..."); only translate that
+    // specific timeout into the one that tells a developer their port might already be
+    // taken by another session — anything else (there isn't one today: the attempt above
+    // never rejects) should propagate as itself.
+    if (error instanceof Error && error.message === `timed out waiting for ${what}`) {
       throw new Error(`nothing answered on ${ORIGIN} — is port ${PORT} taken by another session?`);
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    throw error;
   }
 }
 
@@ -48,15 +57,29 @@ async function evaluate(cdp: Cdp, expression: string): Promise<unknown> {
 
 /** The book loads asynchronously; capturing on `load` photographs an empty frame. */
 async function waitForRender(cdp: Cdp): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  for (;;) {
-    const ready = await evaluate(
-      cdp,
-      `(document.querySelector(".app-shell")?.textContent ?? "").length > 50`,
+  const what = "the app shell to render";
+  try {
+    await poll(
+      async () => {
+        const ready = await evaluate(
+          cdp,
+          `(document.querySelector(".app-shell")?.textContent ?? "").length > 50`,
+        );
+        return ready === true ? true : null;
+      },
+      15_000,
+      what,
+      150,
     );
-    if (ready === true) return;
-    if (Date.now() > deadline) throw new Error("the app never rendered its shell");
-    await new Promise((resolve) => setTimeout(resolve, 150));
+  } catch (error) {
+    // Only translate poll's own timeout. evaluate() can itself throw a real page error (a
+    // "page threw: ..." from an actual exception), and that message is more useful to a
+    // developer than a blanket "never rendered" — the original loop let it propagate
+    // uncaught, before ever reaching its deadline check, so this preserves that.
+    if (error instanceof Error && error.message === `timed out waiting for ${what}`) {
+      throw new Error("the app never rendered its shell");
+    }
+    throw error;
   }
 }
 

@@ -48,11 +48,21 @@ function routePaths(source: string): string[] {
     );
 }
 
+/** Asserts `items` has at least `min` elements, then returns it. A loop written as
+ * `for (const x of eachOf(items, min))` cannot forget the non-vacuity guard a broken
+ * extraction relies on to fail loudly — the guard rides along with getting the list to
+ * loop over, rather than being a separate line every author has to remember to add. (This
+ * file has needed that reminder more than once: a hand-written `expect(...).length` line
+ * next to a loop is easy to add to the first loop over a list and forget on the next.) */
+function eachOf<T>(items: T[], min: number): T[] {
+  expect(items.length).toBeGreaterThanOrEqual(min);
+  return items;
+}
+
 /** Every route the app declares, hoisted so every test below that needs it reuses the
- * same extraction instead of re-running it — but each such test still asserts
- * non-vacuity itself before looping, so any one of them fails on its own (not just the
- * first) if the extraction ever breaks. See the "covers every route the app declares"
- * test for the canonical shape this guard follows. */
+ * same extraction instead of re-running it. Non-vacuity is asserted at each use via
+ * `eachOf`, not here — an unguarded reference to this constant is still possible, but a
+ * loop over it cannot silently run zero times. */
 const appRoutePaths = routePaths(appSource);
 
 describe("SPA fallback rewrite", () => {
@@ -62,9 +72,9 @@ describe("SPA fallback rewrite", () => {
   });
 
   it("covers every route the app declares", () => {
-    // Non-vacuity: a broken extraction would otherwise assert nothing at all.
-    expect(appRoutePaths.length).toBeGreaterThan(10);
-    for (const path of appRoutePaths) {
+    // 11: comfortably below App.tsx's actual route count, just enough to prove the
+    // extraction found real routes rather than nothing.
+    for (const path of eachOf(appRoutePaths, 11)) {
       expect(pattern.test(path), `route ${path} is not covered by the rewrite`).toBe(true);
     }
   });
@@ -129,9 +139,7 @@ describe("navigateFallbackDenylist", () => {
 
   it("leaves every real app route for the precached shell to handle", () => {
     expect(denyPattern?.test("/")).toBe(false);
-    // Non-vacuity: a broken extraction would otherwise assert nothing at all.
-    expect(appRoutePaths.length).toBeGreaterThan(10);
-    for (const path of appRoutePaths) {
+    for (const path of eachOf(appRoutePaths, 11)) {
       expect(denyPattern?.test(path), `route ${path} was wrongly denied`).toBe(false);
     }
   });
@@ -173,13 +181,11 @@ describe("runtimeCaching (offline fallback for the two static pages)", () => {
   });
 
   it("matches exactly the two static pages, not real app routes", () => {
-    // Non-vacuity: a broken extraction would otherwise assert nothing at all.
-    expect(appRoutePaths.length).toBeGreaterThan(10);
-    for (const entry of runtimeCaching) {
+    for (const entry of eachOf(runtimeCaching, 1)) {
       expect(entry.urlPattern({ url: new URL("https://khesh.app/about.html") })).toBe(true);
       expect(entry.urlPattern({ url: new URL("https://khesh.app/privacy.html") })).toBe(true);
       expect(entry.urlPattern({ url: new URL("https://khesh.app/") })).toBe(false);
-      for (const path of appRoutePaths) {
+      for (const path of eachOf(appRoutePaths, 11)) {
         expect(
           entry.urlPattern({ url: new URL(path, "https://khesh.app") }),
           `route ${path} was wrongly claimed by runtimeCaching`,
@@ -189,7 +195,7 @@ describe("runtimeCaching (offline fallback for the two static pages)", () => {
   });
 
   it("serves them network-first with a bounded timeout, not cache-first", () => {
-    for (const entry of runtimeCaching) {
+    for (const entry of eachOf(runtimeCaching, 1)) {
       expect(entry.handler).toBe("NetworkFirst");
       expect(entry.options?.cacheName).toBeTruthy();
       // Unbounded would hang on a dead connection instead of falling back to the cache —

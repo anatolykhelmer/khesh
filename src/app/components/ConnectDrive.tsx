@@ -73,6 +73,8 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
   // alone would sit at "Working…" over a re-enabled button.
   const [running, setRunning] = useState<FirstConnectChoice | null>(null);
 
+  const [activeAction, setActiveAction] = useState<"connect" | "join" | null>(null);
+
   // A pending confirmation belongs to the plan it was opened against. `pendingInspection`
   // is a fresh object per connect and null between them, so this clears the expanded row
   // whenever a plan ends — cancelled, applied, replaced, or dropped because the book moved
@@ -84,6 +86,7 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
   useEffect(() => {
     setConfirming(null);
     setRunning(null);
+    setActiveAction(null);
   }, [inspection]);
 
   if (!sync.configured) return null;
@@ -125,15 +128,46 @@ export function ConnectDrive({ disabled = false }: { disabled?: boolean }) {
               type="button"
               className="row-button"
               disabled={blocked}
-              onClick={() => void sync.connect()}
+              onClick={() => {
+                setActiveAction("connect");
+                void sync.connect().finally(() => setActiveAction(null));
+              }}
             >
-              {t(sync.activity.connecting ? "sync.connecting" : "sync.connect")}
+              {t(
+                sync.activity.connecting && activeAction === "connect"
+                  ? "sync.connecting"
+                  : "sync.connect",
+              )}
             </button>
             <p className="muted row-hint">
               {t(book === null ? "sync.connectRestoreHint" : "sync.connectHint")}
             </p>
-            {sync.lastError !== null ? <p className="row-hint alert">{sync.lastError}</p> : null}
           </li>
+          {sync.pickerConfigured ? (
+            <li className="settings-row">
+              <button
+                type="button"
+                className="row-button"
+                disabled={blocked}
+                onClick={() => {
+                  setActiveAction("join");
+                  void sync.joinShared().finally(() => setActiveAction(null));
+                }}
+              >
+                {t(
+                  sync.activity.connecting && activeAction === "join"
+                    ? "sync.joining"
+                    : "sync.joinShared",
+                )}
+              </button>
+              <p className="muted row-hint">{t("sync.joinSharedHint")}</p>
+            </li>
+          ) : null}
+          {sync.lastError !== null ? (
+            <li className="settings-row">
+              <p className="row-hint alert">{sync.lastError}</p>
+            </li>
+          ) : null}
         </ul>
       </>
     );

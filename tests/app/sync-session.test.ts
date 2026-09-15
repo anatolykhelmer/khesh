@@ -1227,8 +1227,17 @@ describe("sync session: the rest of the surface", () => {
     // inside `reauth`: "`reconnect()` is the supersession that leaves the abandoned
     // connection's engine intact". That was the defect, not a fixture. `reconnect` — and
     // `openConnection` behind it — now releases the connection it displaces, so the claim
-    // to assert is the release itself: the old engine is disposed, and the old auth's token
-    // is revoked, before the replacement ever opens its popup.
+    // to assert is the release itself: the old engine is disposed and the old auth's token
+    // is revoked.
+    //
+    // **Not "before the replacement opens its popup"**, which this comment used to say and
+    // the assertions below contradict — `tokenGate.pending` is already 2 when the revoke is
+    // counted. Both `reconnect` and `openConnection` `void` the release, so `revoke()` is a
+    // network round trip racing the replacement's `getToken(true)`. What *is* ordered is
+    // `releaseConnection`'s synchronous prefix — `released`, `engine.dispose()`,
+    // `current = null` — which lands before the replacement is installed, and that prefix is
+    // the whole of what BL-053 needs. The extra consent screen after a displacement is real;
+    // the strict ordering is not.
     //
     // What the `superseded(conn)` check in `reauth` is worth after that, stated honestly:
     // nothing independently observable. `releaseConnection` nulls `conn.engine` in the same

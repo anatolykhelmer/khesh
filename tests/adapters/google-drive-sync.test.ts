@@ -281,6 +281,14 @@ describe("drive sync store", () => {
     expect(unwrapErr(await other.store.write("PAYLOAD")).code).toBe("SYNC_STORE_FAILED");
   });
 
+  it("maps 403 to SYNC_ACCESS_REVOKED, distinctly from a generic store failure", async () => {
+    const revoked = makeStore(() => json({}, 403), "f9");
+    expect(unwrapErr(await revoked.store.probe()).code).toBe("SYNC_ACCESS_REVOKED");
+
+    const other = makeStore(() => json({}, 500), "f9");
+    expect(unwrapErr(await other.store.probe()).code).toBe("SYNC_STORE_FAILED");
+  });
+
   it("maps 401 to SYNC_AUTH_REQUIRED, 404 to SYNC_FILE_MISSING, thrown fetch to SYNC_STORE_FAILED", async () => {
     const auth = makeStore(() => json({}, 401), "f9");
     expect(unwrapErr(await auth.store.probe()).code).toBe("SYNC_AUTH_REQUIRED");

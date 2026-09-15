@@ -205,6 +205,7 @@ export function createDriveSyncStore(deps: DriveStoreDeps): SyncStorePort {
       return err("SYNC_STORE_FAILED", "Network failure talking to Drive");
     }
     if (response.status === 401) return err("SYNC_AUTH_REQUIRED", "Drive rejected the token");
+    if (response.status === 403) return err("SYNC_ACCESS_REVOKED", "Drive refused this account access to the file");
     if (response.status === 404) return err("SYNC_FILE_MISSING", "Sync file not found in Drive");
     // Only a request that carried If-Match can get this, i.e. the guarded PATCH below.
     if (response.status === 412) {

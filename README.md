@@ -13,9 +13,14 @@ This is an MVP, not accounting, tax, or investment advice. Books use `schemaVers
 ## Sync (optional)
 
 Settings can connect the book to your own Google Drive (`drive.file` scope - the app
-sees only the file it creates). Building with sync enabled needs a Google OAuth client
-id in `VITE_GOOGLE_CLIENT_ID` (env var or `.env.local`); without it the Sync section
-is hidden and the app stays fully offline.
+sees only the file it creates, or a file you explicitly pick to open). Building with
+sync enabled needs a Google OAuth client id in `VITE_GOOGLE_CLIENT_ID` (env var or
+`.env.local`); without it the Sync section is hidden and the app stays fully offline.
+
+Family sharing - joining a book someone else already syncs - additionally needs the
+Google Picker API enabled on the same Google Cloud project, and an API key in
+`VITE_GOOGLE_PICKER_API_KEY`. Without it, "Connect" still works; only "Join a shared
+book" stays hidden.
 
 ## Quick start
 

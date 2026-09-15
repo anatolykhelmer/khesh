@@ -145,13 +145,15 @@
       <ul>
         <li>
           Khesh requests a single scope, <code>drive.file</code>. That scope covers only the
-          files the app itself creates - the one <code>khesh-book.json</code> it writes. The
-          rest of your Drive stays invisible to it.
+          files the app itself creates - the one <code>khesh-book.json</code> it writes - or
+          a file you explicitly open through it, which is how a second Google account joins
+          a book someone shared with them. The rest of your Drive stays invisible to it.
         </li>
         <li>
           Your book is stored in that file as plain, unencrypted JSON in your own Google Drive.
-          Anyone with access to that Drive account can read it. Google's own terms and privacy
-          policy govern the copy stored there.
+          Anyone with access to that Drive account, or anyone you have shared the file with
+          in Drive, can read it. Google's own terms and privacy policy govern the copy stored
+          there.
         </li>
         <li>
           Khesh reads the connected account's email address once, from Google's Drive API, so

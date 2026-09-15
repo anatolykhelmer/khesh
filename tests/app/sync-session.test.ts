@@ -23,6 +23,7 @@ import { syncSignal } from "../../src/app/sync/sync-signal";
 // pins lives in the seam between the two, so an imitation of `performReset` would pin
 // nothing — it would spell the fixed sequence by hand and be green before the fix.
 import { performReset } from "../../src/app/reset-flow";
+import { errorMessage } from "../../src/service/error-messages";
 import { NOW, unwrap } from "../helpers";
 
 /** A book with no user data: `holdsNoUserData` answers true, so `LocalState` is "empty". */
@@ -926,7 +927,12 @@ describe("sync session: the book moving underneath", () => {
     });
     session.setBook(realBook());   // starts the resume load, `resumed` latches
     session.setBook(null);         // arrives before the load resolves; shouldTearDown is a no-op
-    resolveLoad({ connected: true, fileId: "file-1", accountEmail: "a@b.c", lastSyncAt: null });
+    resolveLoad({
+      ...EMPTY_SYNC_META,
+      connected: true,
+      fileId: "file-1",
+      accountEmail: "a@b.c",
+    });
     await flush();
     expect(session.getSnapshot().connected).toBe(false);
     expect(session.getSnapshot().state).toBeNull();   // armEngine never ran
@@ -975,7 +981,12 @@ describe("sync session: the book moving underneath", () => {
     await h.repo.save(book);
     h.session.setBook(book);                    // starts the resume load
     const connecting = h.session.connect();     // claims `current` while it is in flight
-    resolveLoad({ connected: true, fileId: "file-1", accountEmail: "a@b.c", lastSyncAt: null });
+    resolveLoad({
+      ...EMPTY_SYNC_META,
+      connected: true,
+      fileId: "file-1",
+      accountEmail: "a@b.c",
+    });
     await flush();
     expect(h.session.getSnapshot().connected).toBe(false);   // the resume did not commit
     await h.auth.tokenGate.settle(ok("token-1"));
@@ -1828,6 +1839,11 @@ describe("joinShared", () => {
     // needed to reach it.
     const h = makeSession({ pickFile: async () => "shared-file" });
     h.drive.files.set("shared-file", remotePayload());
+    // A decoy, so the fake's single-file fallback (`discoverId()` in
+    // `tests/helpers/sync-harness.ts`, which answers the only file present whenever
+    // `io.getFileId()` is null and `files.size === 1`) cannot make this pass on its own —
+    // only the real picked id, persisted through `recordFileId`, can.
+    h.drive.files.set("other-file", "");
 
     const joining = h.session.joinShared();
     await h.auth.tokenGate.settle(ok("token-1"));
@@ -1866,6 +1882,28 @@ describe("joinShared", () => {
     expect(snap.activity.connecting).toBe(false);
   });
 
+  it("surfaces a picker-specific error when the Picker fails to open", async () => {
+    // The adapter's script load can reject, and it now also rejects on its own 15s
+    // ceiling. Either way the user tapped Join, went through an OAuth popup, and must not
+    // be left with the silence of a plain cancel — nor with "Could not reach Google
+    // Drive", which names a call this path has not made yet.
+    const h = makeSession({
+      pickFile: async () => {
+        throw new Error("picker unavailable");
+      },
+    });
+
+    const joining = h.session.joinShared();
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await joining;
+
+    const snap = h.session.getSnapshot();
+    expect(snap.lastError).toBe(errorMessage("SYNC_PICKER_FAILED"));
+    expect(snap.lastError).not.toBe(errorMessage("SYNC_STORE_FAILED"));
+    expect(snap.connected).toBe(false);
+    expect(snap.activity.connecting).toBe(false);
+  });
+
   it("does nothing when the Picker API key is not configured", async () => {
     const h = makeSession({
       pickerConfigured: false,
@@ -1878,5 +1916,192 @@ describe("joinShared", () => {
 
     expect(h.session.getSnapshot().activity.connecting).toBe(false);
     expect(h.auth.tokenGate.calls).toBe(0);
+  });
+
+  /** Asserted on `patches` and not only on `record`: `joinedViaPicker` defaults to `false`,
+   * so a `finalize` that stopped writing the field at all would leave the record reading
+   * exactly what the ordinary-connect test below expects. The patch is what says the claim
+   * write carried an answer rather than inheriting one. */
+  it("remembers on the record that this connection came from the Picker", async () => {
+    const h = makeSession({ pickFile: async () => "shared-file" });
+    h.drive.files.set("shared-file", remotePayload());
+
+    const joining = h.session.joinShared();
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await joining;
+    await h.session.applyChoice("useRemote", () => {});
+
+    expect(h.session.getSnapshot().connected).toBe(true);
+    expect(h.meta.record.joinedViaPicker).toBe(true);
+    expect(h.meta.patches.find((patch) => patch.connected === true)?.joinedViaPicker).toBe(true);
+  });
+
+  it("records an ordinary connect as not having come from the Picker", async () => {
+    const h = await connectedSession();
+
+    expect(h.meta.record.joinedViaPicker).toBe(false);
+    expect(h.meta.patches.find((patch) => patch.connected === true)?.joinedViaPicker).toBe(false);
+  });
+
+  /**
+   * The product trap the `'me' in owners` name-search filter introduced, and the reason
+   * `joinedViaPicker` is persisted at all.
+   *
+   * `reconnect()` is the `SYNC_FILE_MISSING` recovery, and it always ran `runConnect(false)`
+   * — a name search now scoped to files the user owns. For an invitee that search finds
+   * nothing, so the recovery created a fresh private `khesh-book.json` and silently forked
+   * the device off the family's book, while the copy beside it still read "Reconnect to
+   * create it again". A book joined through the Picker has to be recovered through the
+   * Picker.
+   *
+   * The whole chain in one test, deliberately: the Join is what writes the flag, and the
+   * reconnect is what reads it back. `pickCalls` rising to 2 is the claim — the fake Drive
+   * here models one Drive with no notion of ownership, so a file count could not tell the
+   * two paths apart.
+   */
+  it("recovers a joined book through the Picker rather than forking a private one", async () => {
+    let pickCalls = 0;
+    const h = makeSession({
+      pickFile: async () => {
+        pickCalls += 1;
+        return "shared-file";
+      },
+    });
+    h.drive.files.set("shared-file", remotePayload());
+
+    const joining = h.session.joinShared();
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await joining;
+    await h.session.applyChoice("useRemote", () => {});
+    expect(h.session.getSnapshot().connected).toBe(true);
+    expect(pickCalls).toBe(1);
+    await flush();                                  // finalize's own fire-and-forget syncNow
+
+    const reconnecting = h.session.reconnect();
+    await flush();                                  // past reconnect's own meta load and write
+    await h.auth.tokenGate.settle(ok("token-2"));   // the replacement connection's popup
+    await reconnecting;
+
+    expect(pickCalls).toBe(2);
+    // And the `usePicker && connected` guard in `runConnect` did not quietly swallow it:
+    // `reconnect` writes no `connected`, so the session is still connected here and a
+    // recovery that hit that guard would have returned before the popup above.
+    expect(h.auth.tokenGate.calls).toBe(2);
+  });
+
+  /**
+   * The fork the round above left standing, reached through a blind upload rather than
+   * through the merge.
+   *
+   * `reconnect()` writes `{fileId: null}` and writes no `connected` — deliberately, the user
+   * is reconnecting and not disconnecting. If the interactive step that follows is then
+   * dismissed, `runConnect` returns before anything writes a replacement id, and the
+   * persisted record is left reading `connected: true` at no file at all. `finalize` is the
+   * only writer of `connected: true` and it runs strictly after `recordFileId`, so that pair
+   * can never be a connection anyone completed — but `resumeStoredConnection` asked only
+   * `meta.connected`, adopted it on the next boot, and armed an engine with `fileId: null`.
+   * The cycle then probes and reads nothing (the `'me' in owners` search finds no file an
+   * invitee does not own), takes the engine's null-remote branch, and uploads the local book
+   * into a brand-new private `khesh-book.json`: the family forked, by a write with nothing
+   * to merge against rather than by a merge that chose wrong.
+   *
+   * **Not new to family sharing.** Before the Picker existed, the only interactive step in a
+   * reconnect was the OAuth popup, and dismissing *that* leaves the identical record — the
+   * `fileId: null` already written, then `!token.ok` returning early. The Picker's cancel
+   * button is a second and far likelier way to the same place, which is why the guard is on
+   * the invariant (`connected: true` at no file is never complete) and not on the Picker.
+   *
+   * Driven end to end — join, reconnect, cancel, boot — because the record under test is one
+   * no single call writes: it is what two half-finished writes leave between them. A test
+   * that seeded `{connected: true, fileId: null}` by hand would pin the guard and not the
+   * path that reaches it.
+   */
+  it("refuses on the next boot to resume a reconnect whose Picker was cancelled", async () => {
+    let picked: string | null = "shared-file";
+    let pickCalls = 0;
+    const h = makeSession({
+      pickFile: async () => {
+        pickCalls += 1;
+        return picked;
+      },
+    });
+    h.drive.files.set("shared-file", remotePayload());
+
+    const joining = h.session.joinShared();
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await joining;
+    await h.session.applyChoice("useRemote", () => {});
+    expect(h.session.getSnapshot().connected).toBe(true);
+    await flush();                                  // finalize's own fire-and-forget syncNow
+
+    // Reconnect, and close the dialog it opens without picking anything.
+    picked = null;
+    const reconnecting = h.session.reconnect();
+    await flush();                                  // past reconnect's own meta load and write
+    await h.auth.tokenGate.settle(ok("token-2"));   // the replacement connection's popup
+    await reconnecting;
+    expect(pickCalls).toBe(2);
+
+    // The record the cancel leaves behind, which is the premise of everything below.
+    expect(h.meta.record.connected).toBe(true);
+    expect(h.meta.record.fileId).toBeNull();
+    expect(h.meta.record.joinedViaPicker).toBe(true);
+
+    // A fresh boot against that same record: a reload, or the next tab.
+    let armed = 0;
+    let bootPicks = 0;
+    const boot = makeSession({
+      metaStore: h.meta,
+      createEngine: (deps: SyncEngineDeps) => {
+        armed += 1;
+        return createSyncEngine(deps);
+      },
+      pickFile: async () => {
+        bootPicks += 1;
+        return null;
+      },
+    });
+    // Tokens for free, and a real engine above rather than a stub: an engine that did get
+    // armed has to be able to run a whole cycle here, or the Drive assertion below could
+    // never fail and would be pinning the gated token instead of the guard.
+    boot.auth.tokenGate.automatic(ok("token-boot"));
+    const book = realBook();
+    await boot.repo.save(book);
+    boot.session.setBook(book);
+    await flush();
+
+    expect(boot.session.getSnapshot().connected).toBe(false);
+    expect(armed).toBe(0);
+    // The fork itself, in the one place it is visible: this Drive is empty, and stays empty.
+    expect(boot.drive.files.size).toBe(0);
+    // Nothing interactive fired at a record there was no point interrogating either.
+    expect(bootPicks).toBe(0);
+    expect(boot.auth.tokenGate.calls).toBe(0);
+  });
+
+  it("leaves an ordinary reconnect on the name-search path, with no Picker in the way", async () => {
+    let pickCalls = 0;
+    const h = makeSession({
+      pickFile: async () => {
+        pickCalls += 1;
+        return null;
+      },
+    });
+    const book = emptyBook();
+    await h.repo.save(book);
+    h.session.setBook(book);
+    const connecting = h.session.connect();
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    expect(h.session.getSnapshot().connected).toBe(true);
+    await flush();
+
+    const reconnecting = h.session.reconnect();
+    await flush();                                  // past reconnect's own meta load and write
+    await h.auth.tokenGate.settle(ok("token-2"));
+    await reconnecting;
+
+    expect(pickCalls).toBe(0);
+    expect(h.session.getSnapshot().connected).toBe(true);
   });
 });

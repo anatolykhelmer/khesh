@@ -16,6 +16,7 @@ describe("sync meta store", () => {
       fileId: "f1",
       accountEmail: null,
       lastSyncAt: "2026-09-02T10:00:00.000Z",
+      joinedViaPicker: false,
     });
   });
 });

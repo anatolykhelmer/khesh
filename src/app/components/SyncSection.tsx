@@ -12,6 +12,7 @@ const SPECIFIC_ERROR_KEYS: Partial<Record<LedgerErrorCode, string>> = {
   SYNC_FORMAT_UNSUPPORTED: "sync.errorUpdateApp",
   SYNC_FILE_MISSING: "sync.errorFileMissing",
   SYNC_FILE_AMBIGUOUS: "sync.errorFileAmbiguous",
+  SYNC_ACCESS_REVOKED: "sync.errorAccessRevoked",
 };
 
 /**
@@ -131,6 +132,13 @@ export function SyncSection() {
   // has since tidied up in Drive) keeps Sync now; retrying there is meaningful.
   const isUnsupportedFormatError = errorCode === "SYNC_FORMAT_UNSUPPORTED";
   const isFileMissingError = errorCode === "SYNC_FILE_MISSING";
+  // `SYNC_ACCESS_REVOKED` is deliberately *not* a third case here, though it reads like
+  // one. It is mapped from a bare 403, and Drive also returns 403 for rate limits and
+  // quota — which are transient and retryable. Hiding the button would dead-end every one
+  // of those, for ordinary single-account users too, on the strength of a guess at what
+  // the 403 meant. It keeps its own hint text (SPECIFIC_ERROR_KEYS above); what it does
+  // not get is a removed escape hatch. A retry that says nothing new beats a confident
+  // message with no way forward.
 
   const manualResolution =
     sync.state?.kind === "manualResolution" ? (

@@ -75,8 +75,34 @@ export default defineConfig({
         // invariant vercel.json's SPA rewrite already depends on (see
         // tests/app/spa-fallback.test.ts): no `<Route path="…">` in App.tsx contains a
         // dot, so this can only ever exclude a real static file — including any added
-        // after this comment — never an app route.
+        // after this comment — never an app route. Workbox registers this NavigationRoute
+        // before the runtimeCaching route below, so denying here is what lets that later
+        // route actually get a turn — without it, this one would claim the navigation
+        // first and the runtime cache would never run.
         navigateFallbackDenylist: [/^\/(?:[^/?]*\/)*[^/?]*\.[^/?]+(?:\?.*)?$/],
+        // SettingsScreen.tsx and SetupStep.tsx link to these same two pages from inside
+        // the installed, offline-first app shell. Excluding them from the precache (above)
+        // fixed the staleness defect but broke that: offline, the browser now gets a
+        // fetch failure instead of the stale-but-present page it used to serve. NetworkFirst
+        // restores both properties at once — online, the network always wins so the page
+        // stays fresh; offline, the last copy this runtime cache saw is served instead of
+        // nothing. 3s timeout: the same value Workbox's own "offline copy of pages" recipe
+        // uses — enough for a normal fetch, short enough that a genuinely offline visitor
+        // isn't left waiting before the cached copy renders. No `expiration` plugin: two
+        // small pages don't need cache-size or age limits, and it isn't otherwise needed
+        // here (workbox-expiration ships with vite-plugin-pwa's workbox already, but
+        // pulling it in for nothing would just be another moving part).
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) =>
+              url.pathname === "/about.html" || url.pathname === "/privacy.html",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "static-pages",
+              networkTimeoutSeconds: 3,
+            },
+          },
+        ],
       },
     }),
   ],

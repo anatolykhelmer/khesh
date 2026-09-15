@@ -128,3 +128,63 @@ describe("navigateFallbackDenylist", () => {
     }
   });
 });
+
+/** BL-060 (review follow-up): SettingsScreen.tsx and SetupStep.tsx link to about.html and
+ * privacy.html from inside the installed, offline-first app shell. navigateFallbackDenylist
+ * above stops the app shell from answering for those two paths, but by itself that would
+ * leave an offline visitor with nothing — this runtimeCaching entry is what actually serves
+ * them, network-first with a cache fallback, so the in-app links keep working offline. */
+
+type RuntimeCachingEntry = {
+  urlPattern: (arg: { url: URL }) => boolean;
+  handler: string;
+  options?: { cacheName?: string; networkTimeoutSeconds?: number };
+};
+
+// Same concern as navigateFallbackDenylist above: this array holds an object (not a plain
+// string), and the object's own braces don't help a lazy `[...]` match, but — unlike that
+// regex literal — nothing inside this block contains a literal "]", so the first one really
+// is the array's close. Anchored on the field that follows it in vite.config.ts (workbox's
+// closing brace) so a reordering wouldn't silently start matching too much either.
+const runtimeCachingMatch = /runtimeCaching:\s*\[([\s\S]*?)\]\s*,?\s*\n\s*\},/.exec(
+  viteConfigSource,
+);
+const runtimeCachingSource = runtimeCachingMatch?.[1]?.trim() ?? "";
+// eslint-disable-next-line no-eval
+const runtimeCaching: RuntimeCachingEntry[] = runtimeCachingSource
+  ? (eval(`[${runtimeCachingSource}]`) as RuntimeCachingEntry[])
+  : [];
+
+describe("runtimeCaching (offline fallback for the two static pages)", () => {
+  it("is declared in vite.config.ts", () => {
+    // Non-vacuity, same reasoning as above: a regex that stopped matching would hand every
+    // assertion below an empty array, and `for (const e of [])` runs zero times and passes.
+    expect(runtimeCachingMatch).not.toBeNull();
+    expect(runtimeCachingSource.length).toBeGreaterThan(0);
+    expect(runtimeCaching.length).toBeGreaterThan(0);
+  });
+
+  it("matches exactly the two static pages, not real app routes", () => {
+    for (const entry of runtimeCaching) {
+      expect(entry.urlPattern({ url: new URL("https://khesh.app/about.html") })).toBe(true);
+      expect(entry.urlPattern({ url: new URL("https://khesh.app/privacy.html") })).toBe(true);
+      expect(entry.urlPattern({ url: new URL("https://khesh.app/") })).toBe(false);
+      for (const path of routePaths(appSource)) {
+        expect(
+          entry.urlPattern({ url: new URL(path, "https://khesh.app") }),
+          `route ${path} was wrongly claimed by runtimeCaching`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("serves them network-first with a bounded timeout, not cache-first", () => {
+    for (const entry of runtimeCaching) {
+      expect(entry.handler).toBe("NetworkFirst");
+      expect(entry.options?.cacheName).toBeTruthy();
+      // Unbounded would hang on a dead connection instead of falling back to the cache —
+      // see the comment in vite.config.ts for why 3s specifically.
+      expect(entry.options?.networkTimeoutSeconds).toBeGreaterThan(0);
+    }
+  });
+});

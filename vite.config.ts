@@ -41,7 +41,14 @@ export default defineConfig({
         // online or offline. They still ship in dist (the @font-face rules reference
         // them) but stop costing ~37 KB in every user's precache.
         // Like globPatterns above, this array replaces the default, so it restates workbox's own node_modules exclusion.
-        globIgnores: ["**/node_modules/**/*", "**/heebo-math-*", "**/heebo-symbols-*"],
+        globIgnores: [
+          "**/node_modules/**/*",
+          "**/heebo-math-*",
+          "**/heebo-symbols-*",
+          // 1200x630 social card. Never requested by the app itself — only by scrapers,
+          // which do not go through the service worker.
+          "**/og.png",
+        ],
       },
     }),
   ],

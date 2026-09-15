@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { launchChrome, poll, type Cdp } from "./cdp.ts";
 import { buildDemoBook } from "./demo-book.ts";
+import { ogCardHtml } from "./og-card.ts";
 import { bookToJson } from "../src/adapters/json-codec.ts";
 
 const PORT = 4399;
@@ -118,6 +119,32 @@ async function capture(cdp: Cdp, format: "webp" | "png"): Promise<Buffer> {
   return Buffer.from(shot.data, "base64");
 }
 
+const FONT = "node_modules/@fontsource-variable/heebo/files/heebo-latin-wght-normal.woff2";
+
+async function shootCard(cdp: Cdp): Promise<void> {
+  const font = await readFile(FONT);
+  const shot = await readFile(`${SHOTS}/dashboard-light.webp`);
+  const html = ogCardHtml({
+    fontDataUri: `data:font/woff2;base64,${font.toString("base64")}`,
+    shotDataUri: `data:image/webp;base64,${shot.toString("base64")}`,
+  });
+
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 1200,
+    height: 630,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  // The card is self-contained, so it needs no origin and no server — setDocumentContent
+  // puts it straight into the frame.
+  const { frameTree } = await cdp.send("Page.getFrameTree");
+  await cdp.send("Page.setDocumentContent", { frameId: frameTree.frame.id, html });
+  await evaluate(cdp, "document.fonts.ready.then(() => true)");
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  await writeFile("public/og.png", await capture(cdp, "png"));
+  console.log("og.png");
+}
+
 async function main(): Promise<void> {
   await run("npm", ["run", "build"]);
   const preview = spawn(
@@ -167,6 +194,8 @@ async function shoot(cdp: Cdp): Promise<void> {
       console.log(`${screen.name}-${theme}.webp`);
     }
   }
+
+  await shootCard(cdp);
 }
 
 await main();

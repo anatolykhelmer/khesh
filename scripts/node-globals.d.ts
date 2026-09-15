@@ -19,6 +19,7 @@ declare module "node:child_process" {
 declare module "node:fs/promises" {
   export function mkdtemp(prefix: string): Promise<string>;
   export function readFile(path: string, encoding: "utf8"): Promise<string>;
+  export function readFile(path: string): Promise<Buffer>;
   export function mkdir(path: string, options?: { recursive?: boolean }): Promise<string | undefined>;
   export function writeFile(path: string, data: Uint8Array): Promise<void>;
 }
@@ -35,4 +36,5 @@ declare const process: { env: Record<string, string | undefined> };
 
 declare class Buffer extends Uint8Array {
   static from(data: string, encoding: "base64"): Buffer;
+  toString(encoding?: "base64"): string;
 }

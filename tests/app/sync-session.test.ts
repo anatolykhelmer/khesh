@@ -1828,6 +1828,11 @@ describe("joinShared", () => {
     // needed to reach it.
     const h = makeSession({ pickFile: async () => "shared-file" });
     h.drive.files.set("shared-file", remotePayload());
+    // A decoy, so the fake's single-file fallback (`discoverId()` in
+    // `tests/helpers/sync-harness.ts`, which answers the only file present whenever
+    // `io.getFileId()` is null and `files.size === 1`) cannot make this pass on its own —
+    // only the real picked id, persisted through `recordFileId`, can.
+    h.drive.files.set("other-file", "");
 
     const joining = h.session.joinShared();
     await h.auth.tokenGate.settle(ok("token-1"));

@@ -485,6 +485,14 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     // `activity.blocking`, and this is the half that does not depend on every future screen
     // remembering to. `resumeStoredConnection` asks the same question for the same reason.
     if (connecting || applying || disconnecting || erasing) return;
+    // A join while already connected would open a second connection, run the Picker, and
+    // persist a picked file id into a meta record that still reads `connected: true` — an
+    // abandoned join followed by a reload could then resume onto a different family
+    // member's book with no choice ever applied. Unreachable from today's UI (no Join
+    // button exists before Task 6, and it will only render while disconnected), but this
+    // function already guards defensively rather than trusting its callers, and this is
+    // that same discipline applied to the one new way in.
+    if (usePicker && connected) return;
     connecting = true;
     lastError = null;
     // The notice asked for this tap and the button beside it is already disabled, so the
@@ -525,7 +533,24 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
         return;
       }
       if (usePicker) {
-        const pickedFileId = await ports.pickFile(token.value);
+        // The real adapter's script-load can reject, unlike the other ports this function
+        // awaits. Caught here, specifically, rather than falling through to the outer
+        // `catch` below: that one only logs to `console.error` (see `swallow`'s own doc),
+        // so a rejected pickFile would look identical to a plain cancel to the user, right
+        // after they already went through an OAuth popup. Every other failure path in this
+        // function — `!token.ok`, `!inspection.ok` — sets `lastError`; this is that same
+        // treatment for the one port call that can throw instead of resolving to a Result.
+        let pickedFileId: string | null;
+        try {
+          pickedFileId = await ports.pickFile(token.value);
+        } catch {
+          if (superseded(conn) || userEnds !== endsAtStart) {
+            await releaseConnection(conn);
+            return;
+          }
+          lastError = errorMessage("SYNC_STORE_FAILED");
+          return;
+        }
         if (superseded(conn) || userEnds !== endsAtStart) {
           await releaseConnection(conn);
           return;

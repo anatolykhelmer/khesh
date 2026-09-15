@@ -3,13 +3,17 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.15.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "tsc --noEmit && vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "screenshots": "node --import ./scripts/node-ts-extensions.mjs scripts/screenshots.ts"
   },
   "dependencies": {
     "@fontsource-variable/heebo": "^5.3.0",

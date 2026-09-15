@@ -10,6 +10,20 @@
       name="description"
       content="Khesh is a free, open-source household ledger that runs entirely in your browser, keeping your money in double-entry books. No account, no server, no telemetry."
     />
+    <link rel="canonical" href="https://www.khesh.app/about.html" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://www.khesh.app/about.html" />
+    <meta property="og:title" content="Khesh — a household ledger that runs in your browser" />
+    <meta property="og:description" content="Free and open source. Double-entry books for a household, kept in your own browser — no account, no server, and optional sync through your own Google Drive." />
+    <meta property="og:image" content="https://www.khesh.app/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="The Khesh dashboard on a phone, beside the words: double-entry, no account or server, your own Drive."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://www.khesh.app/og.png" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Khesh - Offline-first household ledger</title>
     <style>
@@ -24,6 +38,7 @@
         --ink-muted: #6d655e;
         --line: #e7e2dc;
         --accent: #7c3aed;
+        --accent-ink: #ffffff;
       }
 
       @media (prefers-color-scheme: dark) {
@@ -34,6 +49,7 @@
           --ink-muted: #948c82;
           --line: #332f28;
           --accent: #c4b5fd;
+          --accent-ink: #1c1917;
         }
       }
 
@@ -111,7 +127,88 @@
       footer a + a {
         margin-inline-start: 4px;
       }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+        margin: 24px 0 0;
+      }
+
+      .button {
+        display: inline-block;
+        background: var(--accent);
+        color: var(--accent-ink);
+        text-decoration: none;
+        font-weight: 600;
+        padding: 12px 24px;
+        border-radius: 999px;
+        line-height: 20px;
+      }
+
+      .claims {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        list-style: none;
+        padding: 0;
+        margin: 40px 0;
+      }
+
+      .claims li {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 0;
+      }
+
+      .claims strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .shots {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        margin: 40px 0;
+      }
+
+      figure {
+        margin: 0;
+      }
+
+      .shots img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+      }
+
+      figcaption {
+        margin-top: 8px;
+        text-align: center;
+        font-size: 13px;
+        color: var(--ink-muted);
+      }
     </style>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Khesh",
+        "url": "https://www.khesh.app/",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Any browser",
+        "description": "A free, open-source household ledger that runs entirely in your browser, keeping your money in double-entry books.",
+        "license": "https://opensource.org/licenses/MIT",
+        "screenshot": "https://www.khesh.app/shots/dashboard-light.webp",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
   </head>
   <body>
     <main>
@@ -124,6 +221,66 @@
         method an accountant uses, so the numbers always balance and you can see where the
         money actually went.
       </p>
+
+      <p class="hero-actions">
+        <a class="button" href="/">Open app</a>
+        <a href="https://github.com/anatolykhelmer/khesh">Source on GitHub</a>
+      </p>
+
+      <ul class="claims">
+        <li>
+          <strong>Double-entry, not a spreadsheet.</strong> Every entry moves money from one
+          account to another, so the numbers always balance.
+        </li>
+        <li>
+          <strong>No account, no server.</strong> The book lives in your browser. Nothing to sign
+          up for, and nothing of ours behind it.
+        </li>
+        <li>
+          <strong>Your Drive, not ours.</strong> Optional sync keeps one JSON file in your own
+          Google Drive - switch it off and the app works exactly the same.
+        </li>
+      </ul>
+
+      <div class="shots">
+        <figure>
+          <picture>
+            <source srcset="/shots/dashboard-dark.webp" media="(prefers-color-scheme: dark)" />
+            <img
+              src="/shots/dashboard-light.webp"
+              width="390"
+              height="844"
+              alt="The dashboard: account balances, this month's income and spending, and a breakdown by category."
+            />
+          </picture>
+          <figcaption>Dashboard</figcaption>
+        </figure>
+        <figure>
+          <picture>
+            <source srcset="/shots/journal-dark.webp" media="(prefers-color-scheme: dark)" />
+            <img
+              src="/shots/journal-light.webp"
+              width="390"
+              height="844"
+              alt="The journal: entries by date with their description, category and amount."
+            />
+          </picture>
+          <figcaption>Journal</figcaption>
+        </figure>
+        <figure>
+          <picture>
+            <source srcset="/shots/budget-dark.webp" media="(prefers-color-scheme: dark)" />
+            <img
+              src="/shots/budget-light.webp"
+              width="390"
+              height="844"
+              alt="The budget screen: a monthly limit per category with how much of it is left."
+            />
+          </picture>
+          <figcaption>Budget</figcaption>
+        </figure>
+      </div>
+
       <p>
         It runs entirely in your web browser. There is no account to create, nothing to sign
         up for, and no server of ours behind it - the book is stored on your own device, and

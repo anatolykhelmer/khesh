@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 // `?raw` rather than node:fs: the project's tsconfig deliberately ships no node types,
 // and Vite resolves these relative to this file instead of the working directory.
 import indexHtml from "../../index.html?raw";
@@ -27,6 +28,30 @@ const publicImageFiles = import.meta.glob("../../public/**/*.{png,webp,svg,ico,j
 const toRootUrl = (globKey: string) => globKey.replace(/^.*\/public\//, "/");
 
 const existingImageUrls = new Set(Object.keys(publicImageFiles).map(toRootUrl));
+
+/** Every image URL a page's markup points at — from attribute refs (src/href/content) and
+ * srcset candidates — normalized to a root-relative path. Shared by the "exists" check
+ * below and the "still referenced" one, so both see the same notion of a reference. */
+function refsIn(html: string): string[] {
+  const attrRefs = [
+    ...html.matchAll(/(?:src|href|content)="([^"]+\.(?:png|webp|svg|ico|jpe?g))"/g),
+  ].map((match) => match[1]);
+
+  // srcset is a comma-separated list of "<url> <descriptor>?" candidates (e.g.
+  // "a.webp 1x, b.webp 2x"). Every use on these pages is a single candidate today,
+  // but parsing it as the list the spec allows means a future 2x candidate stays
+  // covered instead of silently dropping out of this check.
+  const srcsetRefs = [...html.matchAll(/srcset="([^"]+)"/g)].flatMap((match) =>
+    match[1]
+      .split(",")
+      .map((candidate) => candidate.trim().split(/\s+/)[0])
+      .filter((url) => /\.(?:png|webp|svg|ico|jpe?g)$/.test(url)),
+  );
+
+  return [...attrRefs, ...srcsetRefs]
+    .map((ref) => (ref.startsWith(SITE) ? ref.slice(SITE.length) : ref))
+    .filter((ref) => ref.startsWith("/"));
+}
 
 describe("static pages", () => {
   for (const page of PAGES) {
@@ -70,6 +95,13 @@ describe("static pages", () => {
     (page) => page.file === "index.html" || page.file === "public/about.html",
   );
 
+  it("covers exactly the two pages with a share card", () => {
+    // Non-vacuity: if the predicate above ever stopped matching, the `it()` blocks below
+    // would vanish silently instead of failing. Mirrors the guard at
+    // tests/app/spa-fallback.test.ts:58.
+    expect(SHARE_CARD_PAGES).toHaveLength(2);
+  });
+
   for (const page of SHARE_CARD_PAGES) {
     it(`${page.file} carries a share card`, () => {
       const html = page.html;
@@ -84,29 +116,23 @@ describe("static pages", () => {
 
   it("references only image files that exist", () => {
     for (const page of PAGES) {
-      const attrRefs = [
-        ...page.html.matchAll(/(?:src|href|content)="([^"]+\.(?:png|webp|svg|ico|jpe?g))"/g),
-      ].map((match) => match[1]);
-
-      // srcset is a comma-separated list of "<url> <descriptor>?" candidates (e.g.
-      // "a.webp 1x, b.webp 2x"). Every use on these pages is a single candidate today,
-      // but parsing it as the list the spec allows means a future 2x candidate stays
-      // covered instead of silently dropping out of this check.
-      const srcsetRefs = [...page.html.matchAll(/srcset="([^"]+)"/g)].flatMap((match) =>
-        match[1]
-          .split(",")
-          .map((candidate) => candidate.trim().split(/\s+/)[0])
-          .filter((url) => /\.(?:png|webp|svg|ico|jpe?g)$/.test(url)),
-      );
-
-      const refs = [...attrRefs, ...srcsetRefs]
-        .map((ref) => (ref.startsWith(SITE) ? ref.slice(SITE.length) : ref))
-        .filter((ref) => ref.startsWith("/"));
+      const refs = refsIn(page.html);
       expect(refs.length).toBeGreaterThan(0);
       for (const ref of refs) {
         expect(existingImageUrls.has(ref), `${page.file} references ${ref}`).toBe(true);
       }
     }
+  });
+
+  // The check above catches a screenshot file being renamed or deleted, but not the markup
+  // referencing it being cut — e.g. removing the whole `.shots` block from about.html would
+  // still leave the favicon and og:image refs behind, so `refs.length > 0` and every
+  // remaining ref would still resolve, and this would ship with no screenshots on the page.
+  it("still shows every screenshot it has", () => {
+    const shots = [...existingImageUrls].filter((url) => url.startsWith("/shots/"));
+    expect(shots).toHaveLength(6);
+    const aboutRefs = refsIn(aboutHtml);
+    for (const shot of shots) expect(aboutRefs).toContain(shot);
   });
 
   it("keeps the share card out of every user's precache", () => {

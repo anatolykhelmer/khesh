@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import { ogCardHtml } from "../../scripts/og-card.ts";
 
 const INPUT = { fontDataUri: "data:font/woff2;base64,FONT", shotDataUri: "data:image/webp;base64,SHOT" };

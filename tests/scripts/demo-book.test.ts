@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import { buildDemoBook } from "../../scripts/demo-book.ts";
 import { dueOccurrences } from "../../src/kernel/occurrences";
 import { budgetReport, periodTotals } from "../../src/kernel/queries";

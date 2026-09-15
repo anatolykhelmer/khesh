@@ -11,6 +11,9 @@ npm run build
 
 Kernel code (`src/kernel`) must not import React, IndexedDB, or DOM APIs.
 
+`npm run screenshots` rebuilds the landing page's screenshots and share card; see
+[scripts/README.md](scripts/README.md) before running it.
+
 One concern per pull request. Use English for issues and pull requests when a remote exists.
 
 Design notes under `docs/superpowers/` and `docs/product/` are local maintainer files and are not in the repository.

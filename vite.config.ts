@@ -35,6 +35,11 @@ export default defineConfig({
         // self-hosted font would not be either. This list is that default plus the
         // asset types the app really ships. Keep `wasm`: we replace the default rather
         // than extend it, so anything dropped here is dropped silently and for good.
+        // Deliberately no `webp` here: the six landing-page screenshots (~310 KB total)
+        // would otherwise land in every installed user's precache for a page most of them
+        // never open offline. The cost is that an installed-PWA user who does open
+        // About.html offline sees three broken images instead of none — accepted, not an
+        // oversight.
         globPatterns: ["**/*.{js,wasm,css,html,ico,png,svg,woff2}"],
         // After the glyph-to-SVG sweep, nothing the app renders falls in the math or
         // symbols subsets' unicode-range, so the browser never requests these files —

@@ -470,12 +470,20 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       const conn = openConnection();
       const token = await conn.auth.getToken(true);
       // Doomed, so let go of it — the same answer `applyAndFinalize` and `finalize` give
-      // further down this flow, and for the same reason. A bare `return` here left a
-      // connection nothing would ever dispose or revoke: it is no longer `current`, so no
-      // later teardown finds it, and nothing else holds a reference. (Bare was survivable
-      // only while `openConnection` overwrote `current` silently, which is the defect this
-      // pairs with.) Releasing twice is free, so the disjunction needs no unpicking: an
-      // already-released connection short-circuits inside `releaseConnection` itself.
+      // further down this flow, and for the same reason: a bare `return` leaves a connection
+      // no later teardown can find, because it is no longer `current` and nothing else holds
+      // a reference.
+      //
+      // **This call cannot be observed to do anything today, and that is the proof the fix
+      // above is at the right layer, not an argument for deleting it.** Both halves of the
+      // condition now imply the connection is already released: `superseded` because
+      // `openConnection` releases what it displaces, and a `userEnds` bump because only a
+      // `userAction` teardown makes one, in the same synchronous step as releasing whatever
+      // was `current`. So `releaseConnection` short-circuits on `conn.released` every time —
+      // mutating this line away turns no test red, and no test is written to pretend
+      // otherwise. It stays because the alternative is a bare `return` whose safety rests
+      // entirely on that invariant holding elsewhere, and this is the site that would leak
+      // if it ever stopped.
       if (superseded(conn) || userEnds !== endsAtStart) {
         await releaseConnection(conn);
         return;

@@ -11,6 +11,9 @@ import type { SyncActivity } from "./sync-session";
 export type SyncContextValue = {
   /** VITE_GOOGLE_CLIENT_ID is present: without it the whole feature stays hidden. */
   configured: boolean;
+  /** VITE_GOOGLE_PICKER_API_KEY is present: without it, plain Connect still works, but
+   * "Join a shared book" stays hidden — there is no way to open the Picker. */
+  pickerConfigured: boolean;
   connected: boolean;
   email: string | null;
   state: SyncState | null;
@@ -42,6 +45,10 @@ export type SyncContextValue = {
    * button on exactly the operation it means rather than on one shared `applying`. */
   activity: SyncActivity;
   connect: () => Promise<void>;
+  /** Opens the Google Picker so the user can pick a book someone else shared with them
+   * in Drive, then runs it through the same first-connect pipeline `connect()` uses.
+   * Only meaningful when `pickerConfigured` is true; a no-op otherwise. */
+  joinShared: () => Promise<void>;
   /** Recovery for SYNC_FILE_MISSING: forget the dead file id and run `connect` again,
    * inspection and all, so a Drive that does hold a book still reaches the choice UI. */
   reconnect: () => Promise<void>;

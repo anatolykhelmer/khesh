@@ -4,6 +4,7 @@ import {
   createGoogleAuth,
   fetchAccountEmail,
 } from "../../adapters/google-drive-sync";
+import { pickSharedFile } from "../../adapters/google-picker";
 import { createSyncMetaStore } from "../../adapters/sync-meta-store";
 import { createSyncEngine } from "../../service/sync-engine";
 import { useLedger } from "../ledger-context";
@@ -12,6 +13,7 @@ import { createSyncSession, type SyncSession } from "./sync-session";
 import { runExclusive } from "./sync-lock";
 
 const CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? "";
+const PICKER_API_KEY = (import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined) ?? "";
 
 export function SyncProvider({ children }: { children: ReactNode }) {
   const { book, repo, announceBookChanged } = useLedger();
@@ -36,12 +38,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       runExclusive,
       announceBookChanged,
       fetchAccountEmail: (getToken) => fetchAccountEmail(getToken),
-      // Placeholder pending Task 5, which wires the real Google Picker adapter
-      // (`src/adapters/google-picker.ts`'s `pickSharedFile`) and its API key here.
-      // `pickerConfigured: false` keeps `joinShared()` an inert no-op — unreachable from
-      // the UI today regardless — so this is required only to satisfy `SyncSessionPorts`.
-      pickerConfigured: false,
-      pickFile: async () => null,
+      pickerConfigured: PICKER_API_KEY !== "",
+      pickFile: (accessToken) => pickSharedFile(PICKER_API_KEY, accessToken),
     });
   }
   const session = sessionRef.current;
@@ -86,6 +84,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const choosing = snap.stage.kind === "choosing" ? snap.stage : null;
     return {
       configured: snap.configured,
+      pickerConfigured: snap.pickerConfigured,
       connected: snap.connected,
       email: snap.email,
       state: snap.state,
@@ -96,6 +95,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       activity: snap.activity,
       lastError: snap.lastError,
       connect: () => session.connect(),
+      joinShared: () => session.joinShared(),
       reconnect: () => session.reconnect(),
       applyChoice: (choice, onStarted) => session.applyChoice(choice, onStarted),
       cancelConnect: () => session.cancelConnect(),

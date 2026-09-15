@@ -67,6 +67,17 @@ export function SettingsScreen() {
             {t("settings.privacyLink")}
           </a>
         </li>
+        <li className="settings-row">
+          <a
+            className="row-button"
+            href="https://github.com/anatolykhelmer/khesh/discussions"
+            target="_blank"
+            rel="noopener"
+          >
+            {t("settings.feedbackLink")}
+          </a>
+          <p className="muted row-hint">{t("settings.feedbackHint")}</p>
+        </li>
       </ul>
 
       <DangerZone />

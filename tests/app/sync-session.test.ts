@@ -927,7 +927,12 @@ describe("sync session: the book moving underneath", () => {
     });
     session.setBook(realBook());   // starts the resume load, `resumed` latches
     session.setBook(null);         // arrives before the load resolves; shouldTearDown is a no-op
-    resolveLoad({ connected: true, fileId: "file-1", accountEmail: "a@b.c", lastSyncAt: null });
+    resolveLoad({
+      ...EMPTY_SYNC_META,
+      connected: true,
+      fileId: "file-1",
+      accountEmail: "a@b.c",
+    });
     await flush();
     expect(session.getSnapshot().connected).toBe(false);
     expect(session.getSnapshot().state).toBeNull();   // armEngine never ran
@@ -976,7 +981,12 @@ describe("sync session: the book moving underneath", () => {
     await h.repo.save(book);
     h.session.setBook(book);                    // starts the resume load
     const connecting = h.session.connect();     // claims `current` while it is in flight
-    resolveLoad({ connected: true, fileId: "file-1", accountEmail: "a@b.c", lastSyncAt: null });
+    resolveLoad({
+      ...EMPTY_SYNC_META,
+      connected: true,
+      fileId: "file-1",
+      accountEmail: "a@b.c",
+    });
     await flush();
     expect(h.session.getSnapshot().connected).toBe(false);   // the resume did not commit
     await h.auth.tokenGate.settle(ok("token-1"));
@@ -1906,5 +1916,102 @@ describe("joinShared", () => {
 
     expect(h.session.getSnapshot().activity.connecting).toBe(false);
     expect(h.auth.tokenGate.calls).toBe(0);
+  });
+
+  /** Asserted on `patches` and not only on `record`: `joinedViaPicker` defaults to `false`,
+   * so a `finalize` that stopped writing the field at all would leave the record reading
+   * exactly what the ordinary-connect test below expects. The patch is what says the claim
+   * write carried an answer rather than inheriting one. */
+  it("remembers on the record that this connection came from the Picker", async () => {
+    const h = makeSession({ pickFile: async () => "shared-file" });
+    h.drive.files.set("shared-file", remotePayload());
+
+    const joining = h.session.joinShared();
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await joining;
+    await h.session.applyChoice("useRemote", () => {});
+
+    expect(h.session.getSnapshot().connected).toBe(true);
+    expect(h.meta.record.joinedViaPicker).toBe(true);
+    expect(h.meta.patches.find((patch) => patch.connected === true)?.joinedViaPicker).toBe(true);
+  });
+
+  it("records an ordinary connect as not having come from the Picker", async () => {
+    const h = await connectedSession();
+
+    expect(h.meta.record.joinedViaPicker).toBe(false);
+    expect(h.meta.patches.find((patch) => patch.connected === true)?.joinedViaPicker).toBe(false);
+  });
+
+  /**
+   * The product trap the `'me' in owners` name-search filter introduced, and the reason
+   * `joinedViaPicker` is persisted at all.
+   *
+   * `reconnect()` is the `SYNC_FILE_MISSING` recovery, and it always ran `runConnect(false)`
+   * — a name search now scoped to files the user owns. For an invitee that search finds
+   * nothing, so the recovery created a fresh private `khesh-book.json` and silently forked
+   * the device off the family's book, while the copy beside it still read "Reconnect to
+   * create it again". A book joined through the Picker has to be recovered through the
+   * Picker.
+   *
+   * The whole chain in one test, deliberately: the Join is what writes the flag, and the
+   * reconnect is what reads it back. `pickCalls` rising to 2 is the claim — the fake Drive
+   * here models one Drive with no notion of ownership, so a file count could not tell the
+   * two paths apart.
+   */
+  it("recovers a joined book through the Picker rather than forking a private one", async () => {
+    let pickCalls = 0;
+    const h = makeSession({
+      pickFile: async () => {
+        pickCalls += 1;
+        return "shared-file";
+      },
+    });
+    h.drive.files.set("shared-file", remotePayload());
+
+    const joining = h.session.joinShared();
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await joining;
+    await h.session.applyChoice("useRemote", () => {});
+    expect(h.session.getSnapshot().connected).toBe(true);
+    expect(pickCalls).toBe(1);
+    await flush();                                  // finalize's own fire-and-forget syncNow
+
+    const reconnecting = h.session.reconnect();
+    await flush();                                  // past reconnect's own meta load and write
+    await h.auth.tokenGate.settle(ok("token-2"));   // the replacement connection's popup
+    await reconnecting;
+
+    expect(pickCalls).toBe(2);
+    // And the `usePicker && connected` guard in `runConnect` did not quietly swallow it:
+    // `reconnect` writes no `connected`, so the session is still connected here and a
+    // recovery that hit that guard would have returned before the popup above.
+    expect(h.auth.tokenGate.calls).toBe(2);
+  });
+
+  it("leaves an ordinary reconnect on the name-search path, with no Picker in the way", async () => {
+    let pickCalls = 0;
+    const h = makeSession({
+      pickFile: async () => {
+        pickCalls += 1;
+        return null;
+      },
+    });
+    const book = emptyBook();
+    await h.repo.save(book);
+    h.session.setBook(book);
+    const connecting = h.session.connect();
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await connecting;
+    expect(h.session.getSnapshot().connected).toBe(true);
+    await flush();
+
+    const reconnecting = h.session.reconnect();
+    await flush();                                  // past reconnect's own meta load and write
+    await h.auth.tokenGate.settle(ok("token-2"));
+    await reconnecting;
+
+    expect(pickCalls).toBe(0);
+    expect(h.session.getSnapshot().connected).toBe(true);
   });
 });

@@ -19,6 +19,7 @@ function choosing(plannedFor: LocalState): ConnectStage {
     inspection: { kind: "empty" },
     plan: { kind: "explain", reason: "remoteEmpty" },
     plannedFor,
+    viaPicker: false,
   };
 }
 

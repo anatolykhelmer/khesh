@@ -465,7 +465,12 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       });
   }
 
-  async function runConnect(usePicker: boolean): Promise<void> {
+  /**
+   * `recovering` says this is `reconnect()` rebuilding the connection the session already
+   * has, rather than a fresh Connect or Join. It exists for one guard, four lines down —
+   * see there. Defaulted, so the two ordinary call sites read as they always did.
+   */
+  async function runConnect(usePicker: boolean, recovering = false): Promise<void> {
     // `disconnecting` and `erasing`, not just `connecting`/`applying`. A `disconnect()`
     // already under way bumps `userEnds` synchronously, ahead of anything this function
     // could capture *when `connect()` is the caller* — there is no await between that bump
@@ -492,7 +497,19 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     // button exists before Task 6, and it will only render while disconnected), but this
     // function already guards defensively rather than trusting its callers, and this is
     // that same discipline applied to the one new way in.
-    if (usePicker && connected) return;
+    //
+    // **`recovering` is the one exception, and without it the joined-book Reconnect below
+    // is inert.** `reconnect()` deliberately writes no `connected` — the user is
+    // reconnecting, not disconnecting, and the row it is tapped from lives in the connected
+    // view — so `connected` is still `true` when it calls in here, and a bare
+    // `usePicker && connected` turns the Picker recovery away without a trace. The hazard
+    // above is about a *second, fresh* connection opened beside a live one; a recovery is
+    // the same connection being rebuilt, and it has already released its predecessor two
+    // lines before this call. The residual it does still carry — an abandoned pick leaving
+    // a foreign file id under a record that reads `connected: true` — is the one the
+    // ordinary name-search reconnect has always carried, and the resume it feeds runs a
+    // normal engine cycle with its own conflict resolution rather than a blind overwrite.
+    if (usePicker && connected && !recovering) return;
     connecting = true;
     lastError = null;
     // The notice asked for this tap and the button beside it is already disabled, so the
@@ -581,10 +598,16 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       const seenLocal = localState();
       const plan = firstConnectOptions(seenLocal, inspection.value);
       if (plan.kind === "apply") {
-        await applyAndFinalize(conn, plan.choice, endsAtStart);
+        await applyAndFinalize(conn, plan.choice, endsAtStart, usePicker);
         return;
       }
-      stage = { kind: "choosing", inspection: inspection.value, plan, plannedFor: seenLocal };
+      stage = {
+        kind: "choosing",
+        inspection: inspection.value,
+        plan,
+        plannedFor: seenLocal,
+        viaPicker: usePicker,
+      };
     } catch (error) {
       swallow("connect", error);
     } finally {
@@ -678,6 +701,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     conn: Connection,
     choice: FirstConnectChoice,
     endsAtStart: number,
+    viaPicker: boolean,
   ): Promise<void> {
     const applied = await applyFirstConnect(choice, {
       repo: ports.getRepo(),
@@ -696,7 +720,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       return;
     }
     ports.announceBookChanged(applied.value);
-    await finalize(conn, endsAtStart);
+    await finalize(conn, endsAtStart, viaPicker);
   }
 
   /**
@@ -709,7 +733,11 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
    * "an erase the user asked for outranks a connect started under it" has to mean if it is
    * to be a property of the code rather than of the timing.
    */
-  async function finalize(conn: Connection, endsAtStart: number): Promise<void> {
+  async function finalize(
+    conn: Connection,
+    endsAtStart: number,
+    viaPicker: boolean,
+  ): Promise<void> {
     const emailResult = await ports.fetchAccountEmail((interactive = false) =>
       conn.auth.getToken(interactive),
     );
@@ -731,7 +759,11 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     // simply `null` in that case — the "no account name" UI state a working, still-nameless
     // connection is supposed to render.
     const accountEmail = emailResult.ok ? emailResult.value : null;
-    await ports.metaStore.save({ connected: true, accountEmail });
+    // `joinedViaPicker` rides along with the write that claims the connection, so the two
+    // can never disagree: a record saying connected always says *how*. `reconnect()` reads
+    // it back to recover a joined book through the Picker instead of through a name search
+    // that is scoped to the user's own files and would find nothing.
+    await ports.metaStore.save({ connected: true, accountEmail, joinedViaPicker: viaPicker });
     // The one write below that the rollback's own `teardown` cannot undo for itself.
     // `connected`, `email` and `engineState` it overwrites unconditionally; `stage` it
     // *reads* — `afterTeardown` answers from the stage it finds — so the `IDLE` on the next
@@ -856,6 +888,14 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
         // popup on a reconnect an erase had already overtaken, which is the very thing
         // defect 2 closed on the other route in.
         const endsAtStart = userEnds;
+        // Read before forgetting: a connection this device joined via the Picker must
+        // recover through the Picker too. The ordinary name search — `'me' in owners`,
+        // added to stop a shared file colliding with the user's own book as
+        // `SYNC_FILE_AMBIGUOUS` on an ordinary Connect — finds nothing for a file someone
+        // else owns, so recovering a joined book through it would silently create a fresh
+        // private `khesh-book.json` and fork the family off the shared one, while the copy
+        // still called it "Reconnect to create it again".
+        const meta = await ports.metaStore.load();
         // Forget the *persisted* address, and nothing else. `reconnect` has one call site,
         // the `SYNC_FILE_MISSING` row: the cached id names a Drive file that is gone, so
         // "forget the id, look again, create one if it really is gone" is the recovery, and
@@ -886,7 +926,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
             swallow("reconnect: release", error),
           );
         }
-        await runConnect(false);
+        await runConnect(meta.joinedViaPicker, true);
       } catch (error) {
         swallow("reconnect", error);
       }
@@ -916,8 +956,14 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       // been dropped as stale, cancelled, or replaced by a second Connect. The screens
       // disable these buttons too; this is the half that does not depend on every future
       // screen remembering to.
+      // `live === null` spelled out rather than left to `live?.plan ?? null`: the null case
+      // is the same refusal either way (`isChoiceOffered(null, …)` is false), but written
+      // this way TypeScript narrows `live` to non-null past the guard, which is what lets
+      // the `applyAndFinalize` below read `live.viaPicker` — the Picker flag the plan was
+      // reached through, which `runConnect`'s own local `usePicker` is long out of scope for
+      // by the time a user taps a button on this screen.
       const live = stage.kind === "choosing" ? stage : null;
-      if (!isChoiceOffered(live?.plan ?? null, choice)) return;
+      if (live === null || !isChoiceOffered(live.plan, choice)) return;
       if (connecting || applying) return;
       const conn = current;
       if (!conn) return;
@@ -930,7 +976,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       publish();
       const endsAtStart = userEnds;
       try {
-        await applyAndFinalize(conn, choice, endsAtStart);
+        await applyAndFinalize(conn, choice, endsAtStart, live.viaPicker);
       } catch (error) {
         swallow("applyChoice", error);
       } finally {

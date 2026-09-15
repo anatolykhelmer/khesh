@@ -20,6 +20,13 @@ export type ConnectStage =
       plan: FirstConnectPlan;
       /** What `localState` was when `firstConnectOptions` produced `plan`. */
       plannedFor: LocalState;
+      /** Whether this plan was reached via the Google Picker (joinShared) rather than the
+       * ordinary name-search connect. Carried on the stage, not just as a local variable
+       * in runConnect, because a real user can leave the choice screen open for a while
+       * before tapping a button — by the time applyChoice runs, runConnect's own local
+       * `usePicker` is long out of scope. finalize() needs this value to persist
+       * `joinedViaPicker` correctly regardless of which path produced the choice. */
+      viaPicker: boolean;
     }
   | { kind: "dropped" };
 

@@ -217,7 +217,7 @@
     "connectHint": "Autosaves the book to your own Google Drive and keeps your other devices in step.",
     "joinShared": "Join a shared book",
     "joining": "Joining…",
-    "joinSharedHint": "Pick a book someone in your family shared with you in Google Drive.",
+    "joinSharedHint": "Pick a book someone in your family shared with you in Google Drive. Use Join on every device - Connect looks for a book of your own instead.",
     "neverSynced": "Not synced yet",
     "syncNow": "Sync now",
     "syncing": "Syncing…",

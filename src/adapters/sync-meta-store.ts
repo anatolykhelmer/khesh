@@ -5,6 +5,11 @@ export interface SyncMeta {
   fileId: string | null;
   accountEmail: string | null;
   lastSyncAt: string | null;
+  /** Whether the current connection was established by picking a file someone else
+   * shared, rather than by the ordinary name search. Read back by `reconnect()`, which
+   * must recover a joined book the same way it was joined — the name search it otherwise
+   * runs is scoped to the user's own files and would find nothing for a shared one. */
+  joinedViaPicker: boolean;
 }
 
 export const EMPTY_SYNC_META: SyncMeta = {
@@ -12,6 +17,7 @@ export const EMPTY_SYNC_META: SyncMeta = {
   fileId: null,
   accountEmail: null,
   lastSyncAt: null,
+  joinedViaPicker: false,
 };
 
 export interface SyncMetaStore {

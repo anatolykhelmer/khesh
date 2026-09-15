@@ -51,9 +51,30 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // is created once in the ref above and survives StrictMode's dev cycle of
   // setup → cleanup → setup, so wiring them at construction and removing them in
   // `dispose()` left them gone for good after the first dev remount.
+  //
+  // **Cleanup detaches and nothing else. There is deliberately no `dispose()` effect.**
+  // The session lives in a ref *so that* it survives that cycle; a sibling effect cleanup
+  // that released the connection and cleared the listeners undid exactly what the ref was
+  // for, and did it incoherently — `dispose()` writes no connection state, so a remount
+  // could render `connected: true` over `current === null`: no engine, so local commits go
+  // to `current?.engine` and vanish, and a resume that had already latched never runs
+  // again. The two halves were a contradiction, not a bug in either half.
+  //
+  // Disposing terminally instead — nulling the ref so a remount builds a fresh session —
+  // does not close it: React does not re-render between StrictMode's cleanup and the second
+  // setup, so that setup, and the `useSyncExternalStore` subscription beside it, would both
+  // run against the session just disposed while the ref says to make a new one. The
+  // incoherence would only move.
+  //
+  // What settles it is what `dispose()` *is*: it revokes the user's Google token. That is a
+  // decision the user makes (Disconnect, the Settings erase), not a lifecycle event — an
+  // unmount that signed them out of Drive would be wrong even if React only ever did it
+  // once. So the session's lifetime is this tab's, and a genuine unmount of this provider
+  // leaks the connection object: the page listeners come off here, the local-commit signal
+  // with them, and the most an orphaned engine can still do is finish one already-scheduled
+  // debounce cycle (`sync-engine.ts` has no other timer). The provider is at the root and
+  // never unmounts, so in this app that path does not arise.
   useEffect(() => session.attach(), [session]);
-
-  useEffect(() => () => session.dispose(), [session]);
 
   const value: SyncContextValue = useMemo(() => {
     const choosing = snap.stage.kind === "choosing" ? snap.stage : null;

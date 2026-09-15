@@ -53,7 +53,30 @@ export default defineConfig({
           // 1200x630 social card. Never requested by the app itself — only by scrapers,
           // which do not go through the service worker.
           "**/og.png",
+          // about.html and privacy.html render from their own inline <style> with zero
+          // JavaScript — no bundle, no fonts, no script. That's deliberate (they're the
+          // pages Google's listing and consent screen point at), but it also means
+          // neither page can ever run the app's update prompt (useAppUpdate), which is
+          // the only thing that lets a `registerType: "prompt"` service worker take over.
+          // A precached copy of either page can therefore go stale forever with no way
+          // for the visitor to know. Exclude both so they're always fetched from the
+          // network instead. See navigateFallbackDenylist below — without it, dropping
+          // these from the precache alone would let every navigation to them fall
+          // through to the app shell.
+          "**/about.html",
+          "**/privacy.html",
         ],
+        // The NavigationRoute below has no allowlist of its own (matches `[/./]` by
+        // default) and no denylist, so today it would win every navigation that isn't
+        // served directly by precacheAndRoute — which is exactly how /about.html and
+        // /privacy.html survive: precacheAndRoute registers its route first and wins.
+        // Excluding those two pages from globIgnores above removes that protection, so
+        // deny any navigation whose last path segment contains a dot. That's the same
+        // invariant vercel.json's SPA rewrite already depends on (see
+        // tests/app/spa-fallback.test.ts): no `<Route path="…">` in App.tsx contains a
+        // dot, so this can only ever exclude a real static file — including any added
+        // after this comment — never an app route.
+        navigateFallbackDenylist: [/^\/(?:[^/?]*\/)*[^/?]*\.[^/?]+(?:\?.*)?$/],
       },
     }),
   ],

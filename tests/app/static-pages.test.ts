@@ -155,4 +155,17 @@ describe("static pages", () => {
     expect(patterns).not.toBeNull();
     expect(patterns?.[1]).not.toContain("webp");
   });
+
+  // BL-060: about.html and privacy.html render from their own inline <style> with zero
+  // JavaScript, so neither can ever run the app's update prompt — a precached copy would
+  // go stale forever with no way for a visitor to notice. See vite.config.ts for the
+  // matching navigateFallbackDenylist entry this relies on (asserted in spa-fallback.test.ts):
+  // dropping these from the precache without it would hand every navigation to them the
+  // app shell instead.
+  it("keeps about.html and privacy.html out of every user's precache", () => {
+    const ignores = /globIgnores:\s*\[([\s\S]*?)\]/.exec(viteConfigSource);
+    expect(ignores).not.toBeNull();
+    expect(ignores?.[1]).toContain("about.html");
+    expect(ignores?.[1]).toContain("privacy.html");
+  });
 });

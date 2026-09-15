@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 // and Vite resolves these relative to this file instead of the working directory.
 import appSource from "../../src/app/App.tsx?raw";
 import vercelJson from "../../vercel.json?raw";
+import viteConfigSource from "../../vite.config.ts?raw";
 
 /** The hosting rewrite that makes a direct GET for a React Router path work (BL-032).
  *
@@ -80,5 +81,50 @@ describe("SPA fallback rewrite", () => {
     expect(pattern.test("/favicon.svg")).toBe(false);
     expect(pattern.test("/sw.js")).toBe(false);
     expect(pattern.test("/manifest.webmanifest")).toBe(false);
+  });
+});
+
+/** BL-060: the service worker's NavigationRoute has no allowlist of its own, so once
+ * about.html and privacy.html are excluded from the precache (vite.config.ts globIgnores),
+ * something has to stop that route from handing every navigation to them the cached app
+ * shell instead. navigateFallbackDenylist does that by denying any path whose last segment
+ * contains a dot — deliberately the same invariant the Vercel rewrite above rests on, so
+ * these two suites stay in lockstep instead of drifting apart. */
+
+// Unlike globIgnores/globPatterns above (plain quoted strings), this array holds a regex
+// literal whose character classes (`[^/?]`) contain their own "]" and "/" — a lazy match
+// to the first "]" would stop inside the literal instead of at the array's real close. Stay
+// on one line and take the last "]" on it, which the literal itself never abuts with a comma.
+const denylistMatch = /navigateFallbackDenylist:\s*\[(.*)\],?\s*$/m.exec(viteConfigSource);
+const denylistSource = denylistMatch?.[1]?.trim() ?? "";
+// The captured text is a JavaScript RegExp literal (e.g. `/…/`), so it's evaluable as one.
+// Guarded by the non-vacuity test below: if the source regex above stops matching,
+// `denylistSource` is "" and this stays `undefined` instead of throwing here at import
+// time, so the failure shows up as a normal assertion failure inside `it()`.
+// eslint-disable-next-line no-eval
+const denyPattern: RegExp | undefined = denylistSource ? eval(denylistSource) : undefined;
+
+describe("navigateFallbackDenylist", () => {
+  it("is declared in vite.config.ts", () => {
+    // Non-vacuity: a regex that stopped matching would hand every assertion below
+    // `undefined`, and `expect(undefined?.test(...)).toBe(false)` passes — a guard that
+    // quietly stops guarding, which is the failure this test exists to prevent.
+    expect(denylistMatch).not.toBeNull();
+    expect(denylistSource.length).toBeGreaterThan(0);
+  });
+
+  it("denies navigation to the two static pages", () => {
+    expect(denyPattern?.test("/about.html")).toBe(true);
+    expect(denyPattern?.test("/privacy.html")).toBe(true);
+    // A tracking query string is normal for a landing page and must not defeat the guard —
+    // the regex is tested against pathname + search, never pathname alone.
+    expect(denyPattern?.test("/about.html?utm_source=newsletter")).toBe(true);
+  });
+
+  it("leaves every real app route for the precached shell to handle", () => {
+    expect(denyPattern?.test("/")).toBe(false);
+    for (const path of routePaths(appSource)) {
+      expect(denyPattern?.test(path), `route ${path} was wrongly denied`).toBe(false);
+    }
   });
 });

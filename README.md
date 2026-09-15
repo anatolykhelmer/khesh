@@ -2,6 +2,15 @@
 
 Offline-first household ledger using double-entry bookkeeping. Frontend-only (Vite + React); the working copy lives in IndexedDB on this device.
 
+**[Try it: www.khesh.app](https://www.khesh.app)** - no signup, nothing to install.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="public/shots/dashboard-dark.webp">
+  <img src="public/shots/dashboard-light.webp" width="390" alt="Khesh dashboard: balances, this month's spending, and a breakdown of where it went">
+</picture>
+
+Double-entry, because every transfer between two of your own accounts should net to zero - no guessing whether "moved $200 to savings" was income, an expense, or nothing at all. No server, because the book doesn't need one: it lives in this device's IndexedDB, and stays there unless you turn on the optional Google Drive sync yourself.
+
 ## Privacy
 
 No accounts, no server, no telemetry. Data never leaves the browser unless you export it yourself from Settings, or you connect the optional sync to your own Google Drive - then the book is stored, unencrypted, in a `khesh-book.json` file in that Google account's Drive and nowhere else. There is still no server of ours and no telemetry. The full policy is at [privacy.html](public/privacy.html), served at `/privacy.html`. A plain-language description of the app - what it does, and what the Drive scope is for - is at [about.html](public/about.html), served at `/about.html`; that URL is the one registered with Google as the app's home page.

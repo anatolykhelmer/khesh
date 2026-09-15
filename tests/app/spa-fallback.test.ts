@@ -48,6 +48,13 @@ function routePaths(source: string): string[] {
     );
 }
 
+/** Every route the app declares, hoisted so every test below that needs it reuses the
+ * same extraction instead of re-running it — but each such test still asserts
+ * non-vacuity itself before looping, so any one of them fails on its own (not just the
+ * first) if the extraction ever breaks. See the "covers every route the app declares"
+ * test for the canonical shape this guard follows. */
+const appRoutePaths = routePaths(appSource);
+
 describe("SPA fallback rewrite", () => {
   it("sends unmatched paths to the app shell", () => {
     expect(rewrite.destination).toBe("/index.html");
@@ -55,10 +62,9 @@ describe("SPA fallback rewrite", () => {
   });
 
   it("covers every route the app declares", () => {
-    const paths = routePaths(appSource);
     // Non-vacuity: a broken extraction would otherwise assert nothing at all.
-    expect(paths.length).toBeGreaterThan(10);
-    for (const path of paths) {
+    expect(appRoutePaths.length).toBeGreaterThan(10);
+    for (const path of appRoutePaths) {
       expect(pattern.test(path), `route ${path} is not covered by the rewrite`).toBe(true);
     }
   });
@@ -123,7 +129,9 @@ describe("navigateFallbackDenylist", () => {
 
   it("leaves every real app route for the precached shell to handle", () => {
     expect(denyPattern?.test("/")).toBe(false);
-    for (const path of routePaths(appSource)) {
+    // Non-vacuity: a broken extraction would otherwise assert nothing at all.
+    expect(appRoutePaths.length).toBeGreaterThan(10);
+    for (const path of appRoutePaths) {
       expect(denyPattern?.test(path), `route ${path} was wrongly denied`).toBe(false);
     }
   });
@@ -165,11 +173,13 @@ describe("runtimeCaching (offline fallback for the two static pages)", () => {
   });
 
   it("matches exactly the two static pages, not real app routes", () => {
+    // Non-vacuity: a broken extraction would otherwise assert nothing at all.
+    expect(appRoutePaths.length).toBeGreaterThan(10);
     for (const entry of runtimeCaching) {
       expect(entry.urlPattern({ url: new URL("https://khesh.app/about.html") })).toBe(true);
       expect(entry.urlPattern({ url: new URL("https://khesh.app/privacy.html") })).toBe(true);
       expect(entry.urlPattern({ url: new URL("https://khesh.app/") })).toBe(false);
-      for (const path of routePaths(appSource)) {
+      for (const path of appRoutePaths) {
         expect(
           entry.urlPattern({ url: new URL(path, "https://khesh.app") }),
           `route ${path} was wrongly claimed by runtimeCaching`,

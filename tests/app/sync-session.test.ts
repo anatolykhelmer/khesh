@@ -1220,23 +1220,41 @@ describe("sync session: the rest of the surface", () => {
     // cannot recover from. Same assertion shape the `disconnect` test above already makes,
     // on the flow that actually wants the id forgotten.
     //
+    // **Deleting the file from the Drive is what makes this test about its own name**, and
+    // leaving it in place is how the first version of it passed for the wrong reason. The
+    // fake name-searches before it creates, exactly as `resolveFileId` does, so a doomed
+    // write with a nulled id found the still-present seeded file and never minted anything:
+    // `files.size` could not move either way, and the assertion a future reader would trust
+    // was inert. It was the `getFileId()` line that failed under the mutation.
+    //
+    // A deleted file is also simply the truth of this flow. `reconnect`'s only caller is the
+    // `SYNC_FILE_MISSING` row, which the user reaches precisely because the file the cached
+    // id names is gone. With the Drive empty there is nothing to discover, so the two
+    // behaviours separate: holding its own id, the doomed write 404s; with the id nulled it
+    // takes the create path and the user ends up with two `khesh-book.json`.
+    //
     // The write has to go through the *displaced* connection's own io, captured before the
     // reconnect opens its replacement — `io()` hands back the most recent one.
     const { session, auth, drive, io, meta } = await connectedSession();
     await flush();                                // finalize's own syncNow, out of the way
-    const before = drive.files.size;
     const staleIo = io();
     const staleId = staleIo.getFileId();
     expect(staleId).not.toBeNull();
+    drive.files.delete(staleId as string);        // the state the Reconnect row exists for
+    const before = drive.files.size;              // nothing left to discover: 0
     const reconnecting = session.reconnect();
     await flush();                                // past the `fileId: null` meta write
-    expect(meta.record.fileId).toBeNull();         // the persisted address really is gone…
-    expect(staleIo.getFileId()).toBe(staleId);     // …and the abandoned connection keeps its own
+    expect(meta.record.fileId).toBeNull();        // the persisted address really is gone
     const doomed = await drive.storeFor(staleIo).write(remotePayload());
-    expect(doomed.ok).toBe(true);                  // it still writes: revoke does not fail it
-    expect(drive.files.size).toBe(before);         // but into the file it already owned
+    expect(drive.files.size).toBe(before);        // the claim in the name: nothing was minted
+    expect(doomed.ok).toBe(false);                // because it addressed the dead id and 404'd
+    expect(staleIo.getFileId()).toBe(staleId);    // holding, still, the id it was given
     await auth.tokenGate.settle(ok("token-2"));
     await reconnecting;
+    // And the recovery the row promises: the replacement connection, starting at no id,
+    // creates the one file the user should end with.
+    expect(drive.files.size).toBe(1);
+    expect(session.getSnapshot().connected).toBe(true);
   });
 
   it("an abandoned connect's file id never reaches the shared meta record", async () => {

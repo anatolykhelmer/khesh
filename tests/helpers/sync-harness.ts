@@ -1,4 +1,4 @@
-import { ok, type Result } from "../../src/kernel/result";
+import { err, ok, type Result } from "../../src/kernel/result";
 import type { SyncStorePort } from "../../src/ports/sync-store";
 import type { GoogleAuth } from "../../src/adapters/google-drive-sync";
 import type { SyncMeta, SyncMetaStore } from "../../src/adapters/sync-meta-store";
@@ -138,25 +138,46 @@ export function createFakeDrive(seed?: { id: string; payload: string }): FakeDri
         await io.onFileId(id);
         return id;
       };
+      /**
+       * An id that names no file. Only a *cached* id can be one — a name search returns
+       * what it found and the create path puts the entry there itself — and that is
+       * exactly the state `SYNC_FILE_MISSING` reports: the file this connection remembers
+       * was deleted in Drive. `authFetch` maps every 404 to that code
+       * (`google-drive-sync.ts:208`), so a read, a probe and a write all answer it.
+       *
+       * Modelled rather than left to resurrect (the fake used to `files.set` any id it was
+       * handed) because "the remembered file is gone" is the whole premise of `reconnect`,
+       * and a fake that quietly re-creates it makes every assertion about that flow inert:
+       * a doomed write can then never be told apart from a duplicating one by counting
+       * files, which is the only way this suite can see BL-053 at all.
+       */
+      const missing = <T,>(id: string): Result<T> =>
+        err("SYNC_FILE_MISSING", `no file ${id} in this Drive`);
       return {
         async probe() {
           const token = await io.getToken(false);
           if (!token.ok) return token;
           const id = await discoverId();
-          const payload = id === null ? undefined : files.get(id);
-          return ok(payload === undefined || payload === "" ? null : { rev: "1" });
+          if (id === null) return ok(null);
+          if (!files.has(id)) return missing(id);
+          // An empty string is a file that exists and holds nothing yet — the create path
+          // seeds one before the write that follows it lands.
+          return ok(files.get(id) === "" ? null : { rev: "1" });
         },
         async read() {
           const token = await io.getToken(false);
           if (!token.ok) return token;
           const id = await discoverId();
-          const payload = id === null ? undefined : files.get(id);
-          return ok(payload === undefined || payload === "" ? null : { payload, rev: "1" });
+          if (id === null) return ok(null);
+          if (!files.has(id)) return missing(id);
+          const payload = files.get(id) as string;
+          return ok(payload === "" ? null : { payload, rev: "1" });
         },
         async write(payload: string) {
           const token = await io.getToken(false);
           if (!token.ok) return token;
           const id = await resolveId();
+          if (!files.has(id)) return missing(id);
           files.set(id, payload);
           return ok({ rev: "1" });
         },

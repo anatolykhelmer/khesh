@@ -5,20 +5,23 @@ import type { Result } from "../kernel/result";
 /** The pieces `performReset` needs from `useSync()` — not the whole context, so a test
  * can stub exactly this shape without touching React. */
 export type ResetSyncDeps = {
-  connected: boolean;
-  /** Non-null means the first-connect choice UI is open: the session already holds a
-   * connection — its own auth, store and file id, bound to the user's real Drive file —
-   * even though `connected` is still false, so this alone must also trigger teardown;
-   * otherwise the choice UI survives the reset armed at the old file. */
-  pendingInspection: unknown;
+  /** Run unconditionally, and **deliberately without a `connected` or `pendingInspection`
+   * field to gate it on** — the same shape, for the same reason, as `StartOverDeps`.
+   * Carrying those fields is what invited the gate that skipped this call; see
+   * `performReset`'s own "why unconditionally". */
   disconnect: () => Promise<void>;
   /** Clears whatever the first-connect flow has on screen — the session's
-   * `cancelConnect`, which writes `IDLE` and nothing else. Needed beyond `disconnect`
-   * because a *dropped*
-   * plan holds neither a connection nor an inspection: both fields above read quiet, the
-   * gate below skips the teardown that would have cleared it, and the notice explaining a
-   * book move that happened before the erase rides through onto the fresh onboarding
-   * screen.
+   * `cancelConnect`, which writes `IDLE` and nothing else.
+   *
+   * **No longer the thing that closes the dropped-plan hole.** It was, while the
+   * `disconnect()` above was gated: a dropped plan holds neither a connection nor an
+   * inspection, so the gate read quiet, skipped the teardown, and the notice explaining a
+   * book move from before the erase rode onto the fresh onboarding screen. With the gate
+   * gone, `afterTeardown(stage, { cause: "userAction" })` answers `IDLE` from every stage,
+   * so the teardown already clears it — exactly as `performStartOver` relies on, which is
+   * why that flow carries no `cancelConnect` at all. What is left here is one `setState`
+   * that needs no connection, no port and no await: the teardown's own stage write sits
+   * past two round trips whose failures it swallows, and this does not.
    *
    * **It is not cancellation**, and comments elsewhere used to lean on it as though it
    * were. It cannot see a `connect()` that is in flight, let alone stop one: an inspection
@@ -43,11 +46,38 @@ export type ResetDeps = {
 };
 
 /**
- * The reset sequence Settings' danger zone drives: disconnect Drive sync (when there is
- * anything to disconnect — a live connection or a still-pending first-connect choice),
- * erase the local book, and only then announce the null book. Announcing before the erase
- * lands would race the onboarding screen against a book that still exists; disconnecting
- * after it would leave a window where a live engine can see the newly-empty storage.
+ * The reset sequence Settings' danger zone drives: disconnect Drive sync, erase the local
+ * book, and only then announce the null book. Announcing before the erase lands would race
+ * the onboarding screen against a book that still exists; disconnecting after it would
+ * leave a window where a live engine can see the newly-empty storage.
+ *
+ * **Why the disconnect is unconditional.** It used to ask first —
+ * `if (connected || pendingInspection !== null)` — and both fields are a React snapshot,
+ * which is a *photograph of something that can still become true*. The window is a tab at
+ * boot: `setBook(book)` has started `resumeStoredConnection`, its `metaStore.load()` is
+ * still in flight, and until it lands `connected` is false and there is no inspection. Erase
+ * in there and the gate read quiet, so nothing wrote `connected: false`; `resetAll()` clears
+ * the ledger database and does not touch `sync-meta`. The resume then refuses — for
+ * `erasing`, or for the null book — and a refusal is deliberately not an answer, so the
+ * question is asked again the moment the wizard's fresh seed arrives. That retry loads a
+ * record still saying `connected: true` at the old `fileId`, adopts it, arms an engine, and
+ * its first cycle pulls the Drive book back over the seed. **The user erased their book and
+ * it came back** — BL-040's own class, reached through the retry.
+ *
+ * So this asks nothing. `disconnect()` is idempotent and null-safe: `teardown` captures
+ * `current` as null, skips the release, and still writes
+ * `{ connected: false, accountEmail: null, lastSyncAt: null }` and settles the snapshot. The
+ * cost on a genuinely idle tab is one meta write, on a path that is one line from erasing
+ * everything; what it buys is that the post-erase retry loads a *decided negative* and
+ * settles quietly instead of adopting. `performStartOver` already reasoned its way to the
+ * same unconditional call for the same class of hole, and the fields are gone from
+ * `ResetSyncDeps` so the gate cannot come back without a type change.
+ *
+ * The residual this does not close: `teardown` swallows a rejecting `metaStore.save`, so an
+ * erase whose meta write fails leaves the stored record still saying connected and the
+ * retry still adopts. That is a defect in the teardown's own failure reporting, one layer
+ * down, and not something a second guard here could honestly fix — it survives a reload,
+ * which nothing in this function does.
  *
  * **This sequence leaves a window it cannot close on `cancelConnect()` alone.**
  * `disconnect()` ends with `connected: false`, so from the moment it resolves until
@@ -76,9 +106,7 @@ export async function performReset(deps: ResetDeps): Promise<void> {
   deps.sync.beginErase();
   try {
     try {
-      if (deps.sync.connected || deps.sync.pendingInspection !== null) {
-        await deps.sync.disconnect();
-      }
+      await deps.sync.disconnect();
     } catch {
       // sync.disconnect() cannot reject today (see SyncProvider), but this button is the
       // app's most destructive: an unhandled rejection here must still reach the user as a
@@ -96,8 +124,14 @@ export async function performReset(deps: ResetDeps): Promise<void> {
     deps.setError(null);
     // After the erase and before the announce: whatever the first-connect flow had to say
     // was about the book that no longer exists, and the screen this is one line from
-    // opening is onboarding's. Not earlier — an erase that fails leaves the book, and with
-    // it every reason the notice was put up.
+    // opening is onboarding's.
+    //
+    // Redundant as of the unconditional `disconnect()` above, and kept as the one clear
+    // that runs through no port — see `ResetSyncDeps.cancelConnect`. Say plainly what that
+    // costs, since the placement below the erase used to be load-bearing: the teardown
+    // clears the notice on the *failed*-erase path too now, where this line alone would
+    // have left it up with the book it describes still there. That was already true
+    // whenever anything was connected; it is now true always.
     //
     // Clearing the screen only. This line has been cited more than once as though it made
     // the erase safe against a connect started underneath it; it does not, and cannot —
@@ -116,7 +150,8 @@ export async function performReset(deps: ResetDeps): Promise<void> {
 export type StartOverDeps = {
   /** Only `disconnect` — deliberately not `connected` or `pendingInspection`. See below:
    * the connection this flow has to end is the one in the sync-meta database, which
-   * neither field reports. Carrying them would only invite the gate that skips it. */
+   * neither field reports. Carrying them would only invite the gate that skips it, which
+   * is precisely what happened in `performReset` until it was removed there too. */
   sync: { disconnect: () => Promise<void> };
   /** `LedgerProvider.startOver`: clears `bootError`, writes nothing. */
   startOver: () => void;
@@ -139,14 +174,13 @@ export type StartOverDeps = {
  * bypassed on the very path this screen was added for. The start-over warning even says
  * "connect Google Drive first", promising Drive is inert until you do.
  *
- * **Why unconditionally**, where `performReset` asks whether there is anything to
- * disconnect. That question reads `useSync()`, and here `useSync()` cannot see the thing
- * that does the damage. `connected` is false: the resume effect is gated on
- * `book !== null`, so it never runs while a book has failed to load — which is exactly
- * why the *stored* `meta.connected` can still be true, sitting in its own database,
- * untouched by whatever corrupted the ledger. That stored record is what Continue would
- * resume from. A `performReset`-style gate would find both fields quiet in precisely the
- * common case and skip the one write that makes Continue safe.
+ * **Why unconditionally.** An "is there anything to disconnect?" question reads
+ * `useSync()`, and here `useSync()` cannot see the thing that does the damage. `connected`
+ * is false: the resume effect is gated on `book !== null`, so it never runs while a book
+ * has failed to load — which is exactly why the *stored* `meta.connected` can still be
+ * true, sitting in its own database, untouched by whatever corrupted the ledger. That
+ * stored record is what Continue would resume from. Such a gate would find both fields
+ * quiet in precisely the common case and skip the one write that makes Continue safe.
  *
  * Note what is *not* the reason: `pendingInspection` is not always idle here. This screen
  * renders `ConnectDrive` (BL-043), so an unapplied choice is a live connection — the
@@ -154,15 +188,19 @@ export type StartOverDeps = {
  * inspects it. It is a second thing worth tearing down, not an argument that there is
  * nothing to tear down.
  *
- * The same gate is correct where `performReset` uses it: Settings is reachable only with
- * a book, so the resume effect has run and `connected` does reflect the stored record.
+ * This doc used to add that the gate was nonetheless correct in `performReset`, because
+ * Settings is reachable only with a book so the resume has run and `connected` reflects the
+ * stored record. That was false, and it was the hole: the resume is asynchronous, and a
+ * Settings screen reached before its `metaStore.load()` lands reads `connected: false` over
+ * a record that says otherwise. `performReset` now disconnects unconditionally too, and its
+ * own doc carries the walk-through.
  *
  * The session's teardown is idempotent and does nothing at all when there is no
  * connection, so running it against a genuinely idle tab costs one best-effort write to
  * the meta database. It is
- * also why this flow needs no `cancelConnect` of its own where `performReset` does: the
- * unconditional call ends the first-connect flow on every path, dropped plan included
- * (`afterTeardown`, cause `userAction`).
+ * also why this flow needs no `cancelConnect` of its own: the unconditional call ends the
+ * first-connect flow on every path, dropped plan included (`afterTeardown`, cause
+ * `userAction`).
  *
  * **It erases nothing.** No repository, no `resetAll` — the type above carries no way to
  * reach storage, and that is the point. The stored book stays until onboarding's Continue

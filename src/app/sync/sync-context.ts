@@ -54,8 +54,10 @@ export type SyncContextValue = {
   applyChoice: (choice: FirstConnectChoice, onStarted?: () => void) => Promise<void>;
   /** Ends the first-connect flow *as the screen shows it*: no plan, no inspection, no
    * dropped-plan notice. The Cancel button, and `performReset` once the erase has landed —
-   * an erase leaves nothing for either to be about, and a dropped plan is invisible to the
-   * "is anything connected?" gate that decides whether that flow disconnects at all.
+   * an erase leaves nothing for either to be about. (`performReset` used to *need* it for
+   * a dropped plan, which is invisible to an "is anything connected?" gate; that gate is
+   * gone and its `disconnect()` is unconditional, so the call is now a second, portless
+   * write of the same `IDLE`. See `ResetSyncDeps.cancelConnect`.)
    *
    * Not a cancellation, despite the name: it is one `setState`. A `connect()` already in
    * flight keeps running, and the store, auth and file id it bound to the user's real

@@ -10,8 +10,6 @@ import { NOW, unwrap } from "../helpers";
 /** Builds ResetDeps whose sync/resetAll/announce push into one shared `calls` array, so
  * tests can assert relative order — not merely that each step ran. */
 function tracked(overrides?: {
-  connected?: boolean;
-  pendingInspection?: unknown;
   disconnect?: () => Promise<void>;
   resetAll?: () => Promise<ReturnType<typeof ok<void>> | ReturnType<typeof err<void>>>;
   beginErase?: () => void;
@@ -23,8 +21,6 @@ function tracked(overrides?: {
 
   const deps: ResetDeps = {
     sync: {
-      connected: overrides?.connected ?? false,
-      pendingInspection: overrides?.pendingInspection ?? null,
       disconnect:
         overrides?.disconnect ??
         (async () => {
@@ -56,40 +52,55 @@ function tracked(overrides?: {
 
 describe("performReset", () => {
   it("disconnects before erasing, and erases before announcing", async () => {
-    const { deps, calls } = tracked({ connected: true });
+    const { deps, calls } = tracked();
     await performReset(deps);
     expect(calls).toEqual(["disconnect", "erase", "cancelConnect", "announce"]);
   });
 
-  it("tears down a pending first-connect choice even though connected is false", async () => {
-    const { deps, calls } = tracked({ connected: false, pendingInspection: { kind: "book" } });
+  it("disconnects unconditionally, because an idle-looking snapshot is not an idle session", async () => {
+    // The Important finding on PR #7, and the sequence half of its pin. This used to ask
+    // `if (connected || pendingInspection !== null)` first, and both are a React snapshot —
+    // a photograph of something that can still become true. A tab at boot has started
+    // `resumeStoredConnection` and its `metaStore.load()` has not landed, so `connected` is
+    // false and there is no inspection; erase in there and the gate read quiet, nothing
+    // wrote `connected: false`, and `resetAll` does not touch `sync-meta`. The resume then
+    // refuses (for `erasing`, then for the null book), a refusal is deliberately not an
+    // answer, and the retry the wizard's fresh seed triggers loads a record still saying
+    // connected, adopts the old `fileId`, and pulls the Drive book back over the seed. The
+    // user erased their book and it came back.
+    //
+    // `ResetSyncDeps` no longer carries either field, so the gate cannot return without a
+    // type change — `performStartOver`'s own discipline, for the same class of hole. This
+    // test is what fails if a gate is reintroduced through some other reading of the
+    // session; `tracked()` stubs a session with nothing live in it at all.
+    const { deps, calls } = tracked();
     await performReset(deps);
-    expect(calls).toEqual(["disconnect", "erase", "cancelConnect", "announce"]);
+    expect(calls[0]).toBe("disconnect");
   });
 
-  it("skips disconnect entirely when sync is idle", async () => {
-    const { deps, calls } = tracked({ connected: false, pendingInspection: null });
-    await performReset(deps);
-    expect(calls).toEqual(["erase", "cancelConnect", "announce"]);
-  });
-
-  it("ends the first-connect flow even where there is no connection to tear down", async () => {
-    // A dropped-plan notice is neither `connected` nor a `pendingInspection`, so the gate
-    // above skips the teardown that would otherwise have cleared it — and `dropped` is
-    // terminal, so nothing else recomputes it. Without this call the sentence "the book on
-    // this device changed, so those options no longer apply" rides the erase onto the
-    // onboarding screen the next line opens, describing a book that no longer exists.
-    const { deps, calls } = tracked({ connected: false, pendingInspection: null });
+  it("ends the first-connect flow with one write that needs no port", async () => {
+    // `cancelConnect` used to be the *only* thing that cleared a dropped-plan notice here:
+    // `dropped` is neither `connected` nor a `pendingInspection`, so the old gate skipped
+    // the teardown, and `dropped` is terminal so nothing else recomputed it. With the
+    // disconnect unconditional, `afterTeardown(stage, { cause: "userAction" })` answers
+    // `IDLE` from every stage and already clears it — which is why `performStartOver`
+    // carries no `cancelConnect` at all. What this still pins is the ordering: the clear
+    // lands before the announce that opens onboarding, so the sentence "the book on this
+    // device changed, so those options no longer apply" cannot ride onto a screen about a
+    // book that no longer exists.
+    const { deps, calls } = tracked();
     await performReset(deps);
     expect(calls).toContain("cancelConnect");
     expect(calls.indexOf("cancelConnect")).toBeLessThan(calls.indexOf("announce"));
   });
 
-  it("leaves the first-connect flow alone when the erase failed", async () => {
-    // Nothing was erased, so every reason the notice went up still holds.
+  it("does not reach its own cancelConnect when the erase failed", async () => {
+    // Placement, not outcome — and the difference is worth stating, because it used to be
+    // the outcome. Nothing was erased, so this function does not go on to clear the screen
+    // itself; but the unconditional `disconnect()` at the top has already run its teardown,
+    // and that clears the notice regardless. The notice no longer survives a failed erase.
+    // (It already did not whenever anything was connected; it is now true always.)
     const { deps, calls } = tracked({
-      connected: false,
-      pendingInspection: null,
       resetAll: async () => {
         calls.push("erase");
         return err("STORAGE_WRITE_FAILED", "disk full");
@@ -99,9 +110,26 @@ describe("performReset", () => {
     expect(calls).not.toContain("cancelConnect");
   });
 
+  it("surfaces a disconnect failure and erases nothing", async () => {
+    // Untested until the disconnect became unconditional, and reachable on every erase now
+    // rather than only on a connected one. `SyncSession.disconnect` swallows its own
+    // failures, so this is about what happens if that ever stops being true: the erase must
+    // not proceed on a teardown whose outcome is unknown — a live engine against
+    // newly-empty storage is BL-040 itself — and the user must see a banner rather than a
+    // button that did nothing.
+    const { deps, calls, errors, announced } = tracked({
+      disconnect: async () => {
+        throw new Error("revoke exploded");
+      },
+    });
+    await performReset(deps);
+    expect(calls).toEqual([]);
+    expect(announced).toEqual([]);
+    expect(errors.at(-1)).not.toBeNull();
+  });
+
   it("surfaces the error and does not announce when resetAll fails", async () => {
     const { deps, calls, errors, announced } = tracked({
-      connected: true,
       resetAll: async () => {
         calls.push("erase");
         return err("STORAGE_WRITE_FAILED", "disk full");
@@ -114,7 +142,7 @@ describe("performReset", () => {
   });
 
   it("announces null and clears the error on success", async () => {
-    const { deps, errors, announced } = tracked({ connected: true });
+    const { deps, errors, announced } = tracked();
     await performReset(deps);
     expect(announced).toEqual([null]);
     expect(errors.at(-1)).toBeNull();
@@ -127,7 +155,6 @@ describe("performReset", () => {
     // would otherwise add to it.
     const calls: string[] = [];
     const { deps } = tracked({
-      connected: true,
       beginErase: () => calls.push("begin"),
       endErase: () => calls.push("end"),
       disconnect: async () => {

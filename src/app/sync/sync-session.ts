@@ -388,12 +388,20 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
    * Everything below the load is a *commitment*: it arms an engine at the user's real Drive
    * file. `runConnect` is refused outright while `erasing` because screens cannot be trusted
    * to hold that line, and this is the other path that commits, so it asks the same
-   * question. `performReset` is why it has to: it skips its own `disconnect()` when the
-   * React snapshot still reads `connected === false`, so a stored resume landing inside the
-   * `resetAll()` window would arm an engine at the real file while the local book is being
-   * erased — BL-040's window, reopened through the one path this session adds. A refusal is
-   * not an answer, so `resumeSettled` stays false and the next `setBook` with a book asks
-   * again: after the erase the record says `connected: false` and this settles quietly.
+   * question — otherwise a stored resume landing inside `performReset`'s `resetAll()` window
+   * arms an engine at the real file while the local book is being erased: BL-040's window,
+   * reopened through the one path this session adds.
+   *
+   * **A refusal is not an answer**, so `resumeSettled` stays false and the next `setBook`
+   * with a book asks again. What makes that retry safe is not anything here — it is that
+   * `performReset` now runs its `disconnect()` unconditionally, so by the time the wizard's
+   * fresh seed arrives the record reads `connected: false` and the branch above settles
+   * quietly. This comment used to assert that outcome while `performReset` still gated its
+   * teardown on a `connected`/`pendingInspection` snapshot that is false for exactly the tab
+   * this load belongs to; nothing wrote `connected: false` on that path, and the retry
+   * adopted the old Drive file onto the new book. The guarantee lives in `reset-flow.ts`,
+   * which carries the walk-through and the test, and the one residual it names — a teardown
+   * whose meta write was swallowed — reaches this retry unchanged.
    */
   function resumeStoredConnection(): void {
     if (resumeSettled || resuming || connected || book === null || ports.clientId === "") return;

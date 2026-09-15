@@ -19,6 +19,10 @@ import type { Book } from "../../src/kernel/types";
 import { err, ok, type Result } from "../../src/kernel/result";
 import { createSyncEngine, type SyncEngine, type SyncEngineDeps } from "../../src/service/sync-engine";
 import { syncSignal } from "../../src/app/sync/sync-signal";
+// The erase test below drives the real reset sequence against a real session: the defect it
+// pins lives in the seam between the two, so an imitation of `performReset` would pin
+// nothing — it would spell the fixed sequence by hand and be green before the fix.
+import { performReset } from "../../src/app/reset-flow";
 import { NOW, unwrap } from "../helpers";
 
 /** A book with no user data: `holdsNoUserData` answers true, so `LocalState` is "empty". */
@@ -930,15 +934,19 @@ describe("sync session: the book moving underneath", () => {
     // `runConnect` is refused outright while `erasing` because no screen can be trusted to
     // hold that line. Resume is the other path that *commits* a connection — it arms an
     // engine at the user's real Drive file — and it consulted nothing but `meta.connected`
-    // and the book. `performReset` skips its own `disconnect()` whenever the React snapshot
-    // still reads `connected === false`, which is exactly the state a tab that has not
-    // resumed yet is in, so a stored resume landing inside the `resetAll()` window armed an
-    // engine at the real file while the book was being erased: BL-040's window, reopened
-    // through the one path this session adds.
+    // and the book. A stored resume landing inside `performReset`'s `resetAll()` window
+    // armed an engine at the real file while the book was being erased: BL-040's window,
+    // reopened through the one path this session adds.
     //
     // The second half is the latch. `resumed` was set on entry, before the load, so this
     // refusal — like a thrown `load()` or a book that vanished under one — left the stored
     // connection unadoptable for the life of the tab. A refusal is not an answer.
+    //
+    // **This is the failed-erase case, and only that.** The retry below asks against the
+    // *same* book with the record still connected, which is where an erase that did not
+    // land leaves things — adopting is then correct. The successful erase is the opposite
+    // shape (the book goes null, a fresh seed arrives, the record must already read
+    // disconnected) and is pinned separately, below.
     const { session } = makeSession({
       metaStore: createGatedMetaStore({ connected: true, fileId: "file-1", accountEmail: "a@b.c" }),
     });
@@ -1010,6 +1018,68 @@ describe("sync session: the book moving underneath", () => {
     await drainMetaSaves(meta);
     await disconnecting;
     expect(armed).toBe(0);
+    expect(meta.record.connected).toBe(false);
+  });
+
+  it("an erase that began before the resume landed cannot be undone by the retry after it", async () => {
+    // The Important finding on PR #7, session-side. Every guard here was already in place
+    // and the book still came back, because the hole is in the *seam*: `performReset` gated
+    // its `disconnect()` on a `connected`/`pendingInspection` snapshot, which is false for
+    // exactly the tab whose `resumeStoredConnection` load has not landed yet. So the erase
+    // skipped the teardown, `resetAll` cleared the ledger and not `sync-meta`, the resume
+    // refused (for `erasing`, then for the null book) without settling — deliberately, so
+    // the question is asked again — and the wizard's fresh seed asked it again against a
+    // record still saying `connected: true` at the old `fileId`. Adopted, engine armed,
+    // first cycle pulls the Drive book back over the seed: the user erased their book and
+    // it came back.
+    //
+    // Driven through the real `performReset` rather than an imitation of it, because an
+    // imitation is free to spell the fixed sequence and would be green before the fix. The
+    // wiring is production's: `announceBookChanged` is `LedgerProvider`'s, which calls
+    // `setBook`, which `SyncProvider`'s effect hands to the session.
+    let armed = 0;
+    const meta = createGatedMetaStore({ connected: true, fileId: "file-1", accountEmail: "a@b.c" });
+    const { session } = makeSession({
+      metaStore: meta,
+      createEngine: () => {
+        armed += 1;
+        return {
+          async syncNow() {},
+          notifyLocalChange() {},
+          async resolveUseLocal() {},
+          async resolveUseRemote() {},
+          getState: () => ({ kind: "idle", lastSyncAt: null }),
+          dispose() {},
+        } satisfies SyncEngine;
+      },
+    });
+
+    // Boot. No `flush()` on purpose: the load is in flight, so the snapshot `performReset`
+    // is about to photograph reads `connected: false` with no inspection — the whole
+    // premise. Flushing here instead reaches the case that was never broken.
+    session.setBook(realBook());
+    expect(session.getSnapshot().connected).toBe(false);
+
+    await performReset({
+      sync: {
+        disconnect: () => session.disconnect(),
+        cancelConnect: () => session.cancelConnect(),
+        beginErase: () => session.beginErase(),
+        endErase: () => session.endErase(),
+      },
+      resetAll: async () => ok(undefined),
+      announceBookChanged: (next) => session.setBook(next),
+      setError: () => {},
+    });
+
+    session.setBook(emptyBook());   // the wizard mints a seed; the resume asks again
+    await flush();
+
+    expect(session.getSnapshot().connected).toBe(false);
+    expect(armed).toBe(0);                          // nothing pointed at the old Drive file
+    expect(session.getSnapshot().state).toBeNull();
+    // The reason the retry settles instead of adopting: the unconditional teardown left a
+    // decided negative behind it, with no connection of its own to release.
     expect(meta.record.connected).toBe(false);
   });
 
@@ -1192,10 +1262,11 @@ describe("sync session: the rest of the surface", () => {
     // do — but a refusal means no claim is ever made, and the old engine would stay armed
     // at the real Drive file with the persisted address already cleared.
     //
-    // The refusal that matters is `erasing`: `performReset` skips its own `disconnect()`
-    // whenever the React snapshot still reads `connected === false`, so an erase can be
-    // running with a live connection nothing has torn down. The engine has to go, and the
-    // reconnect must not open a popup on top of the erase.
+    // The refusal that matters is `erasing`. `performReset` disconnects unconditionally now,
+    // but it does so at its own start and the erase runs on well past that: a reconnect
+    // tapped inside the `resetAll()` window opens a connection the erase's teardown has
+    // already been and gone. The engine has to go, and the reconnect must not open a popup
+    // on top of the erase.
     const { session, auth, meta, engines } = await connectedWithRecordingEngines();
     await flush();
     meta.saveGate.manual();

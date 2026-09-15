@@ -2,6 +2,7 @@ import { createAccount } from "../src/kernel/accounts.ts";
 import { setBudget } from "../src/kernel/budgets.ts";
 import { createBook } from "../src/kernel/create-book.ts";
 import { postEntry } from "../src/kernel/journal.ts";
+import { createRecurrence } from "../src/kernel/recurrences.ts";
 import type { Result } from "../src/kernel/result.ts";
 import type { AccountType, Book, CurrencyCode } from "../src/kernel/types.ts";
 
@@ -107,9 +108,39 @@ export function buildDemoBook(today: string): Book {
     { baseCurrency: "USD", quoteCurrency: "EUR", baseAmount: 54000, quoteAmount: 50000 },
   );
 
-  for (const [category, limit] of [["Groceries", 90000], ["Eating out", 30000], ["Transport", 20000]] as const) {
+  for (const [category, limit] of [
+    ["Groceries", 90000],
+    ["Eating out", 30000],
+    ["Transport", 20000],
+    ["Rent", 230000],
+    ["Utilities", 22000],
+  ] as const) {
     book = must(setBudget(book, { accountId: id[category], period: "month", currency: "USD", limit }, NOW));
   }
+
+  // Two bills that repeat, so the Dashboard's recurring card is never empty. The start date
+  // is the first of `today`'s own month, not a date months back: occurrences are derived
+  // from it, and an earlier start would queue up a due occurrence for every month since.
+  const startOfThisMonth = `${today.slice(0, 7)}-01`;
+  const recur = (description: string, toAccount: string, amount: number) => {
+    book = must(
+      createRecurrence(
+        book,
+        {
+          description,
+          fromAccountId: id.Checking,
+          lines: [{ toAccountId: id[toAccount], amount }],
+          every: 1,
+          unit: "month",
+          startDate: startOfThisMonth,
+          endDate: null,
+        },
+        NOW,
+      ),
+    );
+  };
+  recur("Rent", "Rent", 210000);
+  recur("Electricity and water", "Utilities", 18400);
 
   return book;
 }

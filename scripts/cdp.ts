@@ -87,19 +87,34 @@ export async function launchChrome(): Promise<{ cdp: Cdp; stop: () => void }> {
     { stdio: "ignore" },
   );
 
+  // spawn's ENOENT (nothing at CHROME) arrives asynchronously on the child's 'error' event,
+  // not as a throw, so the try/catch below never sees it on its own — the DevToolsActivePort
+  // poll would just run its own 15s timeout and report a generic message with no mention of
+  // CHROME. Race the poll against this so the real cause, and the fix, surface immediately.
+  const failedToStart = new Promise<never>((_, reject) => {
+    child.on("error", (error) =>
+      reject(
+        new Error(`could not start Chrome at "${CHROME}" (${error.message}) — set CHROME to override the path`),
+      ),
+    );
+  });
+
   // Everything below can throw (the poll timeout, the fetch, "no page target", connect) —
   // wrap it so a failure here still kills the spawned Chrome instead of orphaning it, and
   // reraise unchanged so a caller debugging e.g. a timeout still sees the timeout.
   try {
-    const port = await poll(
-      async () => {
-        const text = await readFile(join(profile, "DevToolsActivePort"), "utf8").catch(() => "");
-        const first = text.split("\n")[0];
-        return /^\d+$/.test(first) ? Number(first) : null;
-      },
-      15_000,
-      "timed out waiting for Chrome's debugging port",
-    );
+    const port = await Promise.race([
+      poll(
+        async () => {
+          const text = await readFile(join(profile, "DevToolsActivePort"), "utf8").catch(() => "");
+          const first = text.split("\n")[0];
+          return /^\d+$/.test(first) ? Number(first) : null;
+        },
+        15_000,
+        "timed out waiting for Chrome's debugging port",
+      ),
+      failedToStart,
+    ]);
 
     const targets = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as {
       type: string;

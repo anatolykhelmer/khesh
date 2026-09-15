@@ -13,6 +13,7 @@ declare module "node:child_process" {
   ): {
     kill(): void;
     on(event: "exit", listener: (code: number | null) => void): void;
+    on(event: "error", listener: (error: Error) => void): void;
   };
 }
 

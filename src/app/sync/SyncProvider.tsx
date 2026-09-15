@@ -36,6 +36,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       runExclusive,
       announceBookChanged,
       fetchAccountEmail: (getToken) => fetchAccountEmail(getToken),
+      // Placeholder pending Task 5, which wires the real Google Picker adapter
+      // (`src/adapters/google-picker.ts`'s `pickSharedFile`) and its API key here.
+      // `pickerConfigured: false` keeps `joinShared()` an inert no-op — unreachable from
+      // the UI today regardless — so this is required only to satisfy `SyncSessionPorts`.
+      pickerConfigured: false,
+      pickFile: async () => null,
     });
   }
   const session = sessionRef.current;

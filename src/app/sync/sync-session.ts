@@ -43,6 +43,7 @@ export type SyncActivity = {
 
 export type SyncSnapshot = {
   configured: boolean;
+  pickerConfigured: boolean;
   connected: boolean;
   email: string | null;
   state: SyncState | null;
@@ -71,6 +72,12 @@ export type SyncSessionPorts = {
   fetchAccountEmail: (
     getToken: (interactive?: boolean) => Promise<Result<string>>,
   ) => Promise<Result<string>>;
+  /** VITE_GOOGLE_PICKER_API_KEY is present. Without it, joinShared is a no-op — there is
+   * no way to open the Picker at all. */
+  pickerConfigured: boolean;
+  /** Opens the Google Picker with the given (already-fetched) access token and resolves
+   * to the picked file's id, or null if the dialog was closed without picking one. */
+  pickFile: (accessToken: string) => Promise<string | null>;
 };
 
 export interface SyncSession {
@@ -82,6 +89,7 @@ export interface SyncSession {
   attach(): () => void;
   setBook(book: Book | null): void;
   connect(): Promise<void>;
+  joinShared(): Promise<void>;
   reconnect(): Promise<void>;
   applyChoice(choice: FirstConnectChoice, onStarted?: () => void): Promise<void>;
   cancelConnect(): void;
@@ -104,6 +112,7 @@ type Connection = {
   readonly store: SyncStorePort;
   engine: SyncEngine | null;
   fileId: string | null;
+  readonly recordFileId: (id: string) => Promise<void>;
   released: boolean;
 };
 
@@ -259,6 +268,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       store: ports.createStore(io),
       engine: null,
       fileId: null,
+      recordFileId: io.onFileId,
       released: false,
     };
     nextConnectionId += 1;
@@ -455,7 +465,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       });
   }
 
-  async function runConnect(): Promise<void> {
+  async function runConnect(usePicker: boolean): Promise<void> {
     // `disconnecting` and `erasing`, not just `connecting`/`applying`. A `disconnect()`
     // already under way bumps `userEnds` synchronously, ahead of anything this function
     // could capture *when `connect()` is the caller* — there is no await between that bump
@@ -513,6 +523,21 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       if (!token.ok) {
         lastError = errorMessage(token.error.code);
         return;
+      }
+      if (usePicker) {
+        const pickedFileId = await ports.pickFile(token.value);
+        if (superseded(conn) || userEnds !== endsAtStart) {
+          await releaseConnection(conn);
+          return;
+        }
+        // Cancelled: no-op, same shape as the plain-failure branch above — nothing took
+        // over, so the connection is left inert for whatever comes next.
+        if (pickedFileId === null) return;
+        await conn.recordFileId(pickedFileId);
+        if (superseded(conn) || userEnds !== endsAtStart) {
+          await releaseConnection(conn);
+          return;
+        }
       }
       const inspection = await inspectRemote(conn.store);
       if (superseded(conn) || userEnds !== endsAtStart) {
@@ -719,6 +744,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
   function buildSnapshot(): SyncSnapshot {
     return {
       configured: ports.clientId !== "",
+      pickerConfigured: ports.pickerConfigured,
       connected,
       email,
       state: engineState,
@@ -788,7 +814,8 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       applyStalenessGate();
       resumeStoredConnection();
     },
-    connect: runConnect,
+    connect: () => runConnect(false),
+    joinShared: () => (ports.pickerConfigured ? runConnect(true) : Promise.resolve()),
     async reconnect() {
       if (connecting || applying) return;
       try {
@@ -829,7 +856,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
             swallow("reconnect: release", error),
           );
         }
-        await runConnect();
+        await runConnect(false);
       } catch (error) {
         swallow("reconnect", error);
       }

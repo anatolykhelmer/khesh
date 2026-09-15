@@ -82,6 +82,8 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     runExclusive: serialLock(),
     announceBookChanged: () => {},
     fetchAccountEmail: async () => ok("someone@example.com"),
+    pickerConfigured: true,
+    pickFile: async () => null,
     ...overrides,
   });
   return { session, auth, drive, meta, repo, io: () => capturedIo! };
@@ -1816,5 +1818,65 @@ describe("sync session: window and signal wiring", () => {
     expect(() => session.syncNow()).not.toThrow();
     expect(() => session.resolveUseLocal()).not.toThrow();
     expect(() => session.resolveUseRemote()).not.toThrow();
+  });
+});
+
+describe("joinShared", () => {
+  it("adopts a book picked through the Google Picker", async () => {
+    // No `setBook` call: the session's `book` starts at `null` by construction, which is
+    // exactly the "no local book yet" case this test is about, and `setBook` is not
+    // needed to reach it.
+    const h = makeSession({ pickFile: async () => "shared-file" });
+    h.drive.files.set("shared-file", remotePayload());
+
+    const joining = h.session.joinShared();
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await joining;
+
+    // No local book, so firstConnectOptions offers exactly one choice — a screen, not
+    // an auto-apply — same as any second device connecting for the first time.
+    const snap = h.session.getSnapshot();
+    expect(snap.stage.kind).toBe("choosing");
+    expect(snap.stage.kind === "choosing" && snap.stage.plan).toEqual({
+      kind: "choose",
+      choices: ["useRemote"],
+    });
+    // Persisted before the choice is even made: recordFileId (Connection.recordFileId,
+    // the same function the ordinary connect path uses when it discovers or creates a
+    // file) runs ahead of inspectRemote.
+    expect(h.meta.record.fileId).toBe("shared-file");
+
+    await h.session.applyChoice("useRemote", () => {});
+    expect(h.session.getSnapshot().connected).toBe(true);
+    const loaded = await h.repo.load();
+    expect(loaded.ok && loaded.value?.journal.length).toBe(1);
+  });
+
+  it("is a no-op when the picker is cancelled", async () => {
+    const h = makeSession({ pickFile: async () => null });
+
+    const joining = h.session.joinShared();
+    await h.auth.tokenGate.settle(ok("token-1"));
+    await joining;
+
+    const snap = h.session.getSnapshot();
+    expect(snap.connected).toBe(false);
+    expect(snap.stage.kind).toBe("idle");
+    expect(snap.lastError).toBeNull();
+    expect(snap.activity.connecting).toBe(false);
+  });
+
+  it("does nothing when the Picker API key is not configured", async () => {
+    const h = makeSession({
+      pickerConfigured: false,
+      pickFile: async () => {
+        throw new Error("must not be called");
+      },
+    });
+
+    await h.session.joinShared();
+
+    expect(h.session.getSnapshot().activity.connecting).toBe(false);
+    expect(h.auth.tokenGate.calls).toBe(0);
   });
 });

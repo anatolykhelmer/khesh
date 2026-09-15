@@ -134,7 +134,20 @@ export async function pickSharedFile(
   accessToken: string,
   appId: string,
 ): Promise<string | null> {
-  await withTimeout(loadPickerModule(), PICKER_TIMEOUT_MS, "Picker failed to load in time");
+  try {
+    await withTimeout(loadPickerModule(), PICKER_TIMEOUT_MS, "Picker failed to load in time");
+  } catch (error) {
+    // `gapiLoading` is memoised, so a load that *hangs* is worse than one that fails: the
+    // `onerror` path clears it and a later Join retries, but a `<script>` that fires neither
+    // `onload` nor `onerror` leaves that promise pending forever, and every Join afterwards
+    // awaits the same corpse and dies on the same ceiling — a page reload the only way out.
+    // Cleared here rather than inside the timeout so the two failure shapes get the same
+    // answer in one place: the next attempt appends a fresh tag and starts over. Clearing it
+    // on the module-registration hang too costs nothing — `gapi` is already on the page by
+    // then, so `loadGapiScript` short-circuits and no second tag is appended.
+    gapiLoading = undefined;
+    throw error;
+  }
   const picker = googlePicker()!.picker;
   return new Promise((resolve) => {
     const view = new picker.DocsView(picker.ViewId.DOCS)

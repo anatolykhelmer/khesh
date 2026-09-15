@@ -9,11 +9,14 @@ type PickerCallback = (response: { action: string; docs?: { id: string }[] }) =>
  * a builder that records the callback it was given, and a `build().setVisible()` the
  * test can observe was called.
  *
- * **Every configuring call records its argument** into `calls`, rather than no-opping to
- * keep the chain from throwing. A fake that only kept the chain alive made the whole
- * configuration of the dialog unassertable: deleting `.setAppId(appId)` — without which the
- * per-file grant a pick creates is not attributed to this app, so the id comes back and the
- * very next Drive call still fails under `drive.file` — left every test here green.
+ * **Every configuring call is recorded** into `calls` — its argument, or for `addView` the
+ * fact that a configured view is what it was handed — rather than no-opping to keep the
+ * chain from throwing. A fake that only kept the chain alive made the whole configuration of
+ * the dialog unassertable: deleting `.setAppId(appId)` — without which the per-file grant a
+ * pick creates is not attributed to this app, so the id comes back and the very next Drive
+ * call still fails under `drive.file` — left every test here green. The comment used to
+ * claim all seven while three still no-opped, so deleting `.setOAuthToken`, `.setDeveloperKey`
+ * or `.addView` was the same free mutation one layer along; every one of them is pinned now.
  *
  * `deferModuleLoad` holds `gapi.load`'s callback instead of invoking it, which is the
  * "script loaded, module registration never comes back" freeze `PICKER_TIMEOUT_MS` exists
@@ -23,7 +26,15 @@ function installFakePicker(options: { deferModuleLoad?: boolean } = {}) {
   let capturedCallback: PickerCallback | null = null;
   let madeVisible = false;
   let moduleCallback: (() => void) | null = null;
-  const calls: { appId?: string; mimeTypes?: string; mode?: string; ownedByMe?: boolean } = {};
+  const calls: {
+    appId?: string;
+    developerKey?: string;
+    mimeTypes?: string;
+    mode?: string;
+    oauthToken?: string;
+    ownedByMe?: boolean;
+    viewAdded?: boolean;
+  } = {};
 
   class FakeDocsView {
     setOwnedByMe(ownedByMe: boolean) {
@@ -40,13 +51,16 @@ function installFakePicker(options: { deferModuleLoad?: boolean } = {}) {
     }
   }
   class FakePickerBuilder {
-    addView() {
+    addView(view: unknown) {
+      calls.viewAdded = view instanceof FakeDocsView;
       return this;
     }
-    setOAuthToken() {
+    setOAuthToken(token: string) {
+      calls.oauthToken = token;
       return this;
     }
-    setDeveloperKey() {
+    setDeveloperKey(key: string) {
+      calls.developerKey = key;
       return this;
     }
     setAppId(appId: string) {
@@ -93,10 +107,34 @@ function installFakePicker(options: { deferModuleLoad?: boolean } = {}) {
   };
 }
 
+type FakeScript = { src?: string; async?: boolean; onload?: () => void; onerror?: () => void };
+
+/**
+ * Just enough `document` for `loadGapiScript` to append its `<script>` tag under
+ * `environment: "node"`, where there is none. Every other test here installs `gapi` first,
+ * so `loadGapiScript` short-circuits and the tag is never reached; the retry test below is
+ * the one that wants the real script path, hang and all.
+ *
+ * Returns the appended tags, so a test can answer (or pointedly not answer) each one.
+ */
+function installFakeDocument(): FakeScript[] {
+  const scripts: FakeScript[] = [];
+  (globalThis as Record<string, unknown>).document = {
+    createElement: (): FakeScript => ({}),
+    head: {
+      appendChild: (script: FakeScript) => {
+        scripts.push(script);
+      },
+    },
+  };
+  return scripts;
+}
+
 describe("pickSharedFile", () => {
   afterEach(() => {
     delete (globalThis as Record<string, unknown>).gapi;
     delete (globalThis as Record<string, unknown>).google;
+    delete (globalThis as Record<string, unknown>).document;
   });
 
   it("resolves the picked file's id and shows the dialog", async () => {
@@ -116,21 +154,32 @@ describe("pickSharedFile", () => {
     expect(await pending).toBeNull();
   });
 
-  /** Each of these four is load-bearing and each was previously unassertable, because the
-   * fake no-opped them to keep the builder chain from throwing. `setAppId` above all: under
+  /** Each of these is load-bearing and each was previously unassertable, because the fake
+   * no-opped them to keep the builder chain from throwing. `setAppId` above all: under
    * `drive.file` the per-file grant a pick creates is attributed by app id, so without it
    * the picked id comes back and the next Drive call still fails. Deleting any one of these
-   * lines from `pickSharedFile` now turns this test red. */
-  it("configures the view and the app id the drive.file grant needs", async () => {
+   * lines from `pickSharedFile` now turns this test red.
+   *
+   * The token and the developer key are the last two to be pinned, and they are not
+   * cosmetic: without `setOAuthToken` the dialog has no identity to list "Shared with me"
+   * under, and without `setDeveloperKey` the Picker API rejects the call outright. Both were
+   * deletable for free while the fake swallowed them — the same free mutation `setAppId`
+   * used to be. */
+  it("configures the view, the token, the key and the app id the drive.file grant needs", async () => {
     const fake = installFakePicker();
     const pending = pickSharedFile("api-key", "token-1", "app-id");
     await flush();
     fake.fire({ action: "picked", docs: [{ id: "file-9" }] });
     await pending;
     expect(fake.calls.appId).toBe("app-id");
+    expect(fake.calls.oauthToken).toBe("token-1");
+    expect(fake.calls.developerKey).toBe("api-key");
     expect(fake.calls.mimeTypes).toBe("application/json");
     expect(fake.calls.mode).toBe("list"); // the fake's DocsViewMode.LIST
     expect(fake.calls.ownedByMe).toBe(false); // "shared with me", not the user's own files
+    // And the configured view actually reached the builder: without this the four view
+    // assertions above pass against a view the dialog was never given.
+    expect(fake.calls.viewAdded).toBe(true);
   });
 
   /** The *load* is a foreign script: it answers, or it answers nothing at all. The session
@@ -164,6 +213,31 @@ describe("pickSharedFile", () => {
       vi.advanceTimersByTime(15000);
       await expect(pending).rejects.toThrow(/failed to load in time/i);
       await watched;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** The other side of the same ceiling, and what keeps the test above from passing for a
+   * trivial reason: a deferred module registration that *does* come back, inside the
+   * ceiling, must open the dialog like any other load. Without this, a `withTimeout` that
+   * rejected unconditionally — or a `loadPickerModule` that never resolved at all — would be
+   * indistinguishable from the fix. */
+  it("opens the dialog when a slow module registration still lands inside the ceiling", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = installFakePicker({ deferModuleLoad: true });
+      const pending = pickSharedFile("api-key", "token-1", "app-id");
+      await flush();
+      expect(fake.wasMadeVisible()).toBe(false); // still loading: no dialog yet
+      vi.advanceTimersByTime(14000); // slow, but inside the ceiling
+      fake.finishModuleLoad();
+      await flush();
+      expect(fake.wasMadeVisible()).toBe(true);
+      // And the ceiling it beat is gone rather than left to fire into an open dialog.
+      expect(vi.getTimerCount()).toBe(0);
+      fake.fire({ action: "picked", docs: [{ id: "file-9" }] });
+      expect(await pending).toBe("file-9");
     } finally {
       vi.useRealTimers();
     }
@@ -217,6 +291,50 @@ describe("pickSharedFile", () => {
       fake.fire({ action: "cancel" });
       expect(await pending).toBeNull();
       expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * The ceiling made the hang *visible*; it did not make it recoverable. `gapiLoading`
+   * memoises the script load, and `onerror` clears it so a load that fails can be retried —
+   * but a `<script>` that fires neither `onload` nor `onerror` left that promise pending for
+   * the life of the page. Every later Join then awaited the same dead promise and rejected
+   * on its own ceiling, identically, forever: the timeout turned "Join hangs" into "Join
+   * fails", and left "Join can never succeed again without a page reload" exactly where it
+   * was.
+   *
+   * A second `<script>` tag is the observable claim, and the only one available from out
+   * here: `gapiLoading` is module-private, and whether the retry re-fetches or awaits the
+   * corpse is precisely the difference between the two.
+   *
+   * Runs the real script path, which every other test in this file skips by installing
+   * `gapi` up front — so it is deliberately last, and leaves `gapiLoading` holding a
+   * resolved promise rather than a pending one.
+   */
+  it("lets the next Join retry a script load that hung, not inherit its dead promise", async () => {
+    vi.useFakeTimers();
+    try {
+      const scripts = installFakeDocument(); // and no `gapi`: the real load path
+      const first = pickSharedFile("api-key", "token-1", "app-id");
+      expect(scripts.length).toBe(1);
+
+      // The tag answers nothing at all. Only the ceiling ends this attempt.
+      vi.advanceTimersByTime(15000);
+      await expect(first).rejects.toThrow(/failed to load in time/i);
+
+      const second = pickSharedFile("api-key", "token-1", "app-id");
+      await flush();
+      expect(scripts.length).toBe(2); // a fresh tag, not a second wait on the first
+
+      // And the retry can still finish, which is the whole point of letting it happen.
+      const fake = installFakePicker();
+      scripts[1].onload?.();
+      await flush();
+      expect(fake.wasMadeVisible()).toBe(true);
+      fake.fire({ action: "picked", docs: [{ id: "file-9" }] });
+      expect(await second).toBe("file-9");
     } finally {
       vi.useRealTimers();
     }

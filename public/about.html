@@ -337,8 +337,9 @@
       <ul>
         <li>
           When you connect it, Khesh asks Google for one scope, <code>drive.file</code>. That
-          scope covers only files the app itself creates, so the rest of your Drive stays
-          invisible to it.
+          scope covers only files the app itself creates, or a file you explicitly pick to
+          open in it - which is also how a second person joins the same book, if you choose
+          to share it - so the rest of your Drive stays invisible to it.
         </li>
         <li>
           It creates a single file, <code>khesh-book.json</code>, in that Drive account and
@@ -347,7 +348,9 @@
         </li>
         <li>
           The file is plain JSON in your own Drive. It is not sent to us - there is nowhere
-          of ours to send it to - and it is not shared with anyone else.
+          of ours to send it to. You can share it with someone else through Google Drive's
+          own sharing - a partner managing the same household book, say - but Khesh never
+          does this on its own.
         </li>
         <li>
           Disconnect in Settings to stop syncing, and revoke the app's access at any time at

@@ -135,8 +135,14 @@ describe("static pages", () => {
     for (const shot of shots) expect(aboutRefs).toContain(shot);
   });
 
+  // Both this test and the next read vite.config.ts as source, so each asserts its regex
+  // matched before asserting anything about what it captured. Without that, the negative
+  // assertion below is the dangerous one: a regex that stopped matching hands it `undefined`,
+  // and `expect(undefined).not.toContain("webp")` passes — a guard that quietly stops
+  // guarding, which is the failure these two exist to prevent.
   it("keeps the share card out of every user's precache", () => {
     const ignores = /globIgnores:\s*\[([\s\S]*?)\]/.exec(viteConfigSource);
+    expect(ignores).not.toBeNull();
     expect(ignores?.[1]).toContain("og.png");
   });
 
@@ -146,6 +152,7 @@ describe("static pages", () => {
   // by adding webp back to the pattern and never notice this suite stayed green.
   it("keeps webp out of every user's precache", () => {
     const patterns = /globPatterns:\s*\[([\s\S]*?)\]/.exec(viteConfigSource);
+    expect(patterns).not.toBeNull();
     expect(patterns?.[1]).not.toContain("webp");
   });
 });

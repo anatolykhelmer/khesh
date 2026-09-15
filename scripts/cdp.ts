@@ -11,19 +11,25 @@ export type Cdp = {
 const CHROME =
   process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
+// `message` is the whole string to throw on timeout — not a fragment poll composes into a
+// generic sentence — so a caller with its own wording (e.g. one that names a port) gets it
+// verbatim, with nothing downstream needing to pattern-match poll's phrasing back out.
+// Likewise `attempt()` is awaited directly: a rejection there propagates out of poll
+// unwrapped, exactly as it would from a hand-rolled loop, so a caller's own failures are
+// never mistaken for — or mislabeled as — a timeout.
 // intervalMs defaults to this function's original sleep — callers with their own cadence
 // (screenshots.ts has two) pass it explicitly so reusing this loop changes no timing.
 export async function poll<T>(
   attempt: () => Promise<T | null>,
   ms: number,
-  what: string,
+  message: string,
   intervalMs = 100,
 ): Promise<T> {
   const deadline = Date.now() + ms;
   for (;;) {
     const value = await attempt();
     if (value !== null) return value;
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    if (Date.now() > deadline) throw new Error(message);
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 }
@@ -92,7 +98,7 @@ export async function launchChrome(): Promise<{ cdp: Cdp; stop: () => void }> {
         return /^\d+$/.test(first) ? Number(first) : null;
       },
       15_000,
-      "Chrome's debugging port",
+      "timed out waiting for Chrome's debugging port",
     );
 
     const targets = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as {

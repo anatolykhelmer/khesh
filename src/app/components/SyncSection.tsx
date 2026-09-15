@@ -12,6 +12,7 @@ const SPECIFIC_ERROR_KEYS: Partial<Record<LedgerErrorCode, string>> = {
   SYNC_FORMAT_UNSUPPORTED: "sync.errorUpdateApp",
   SYNC_FILE_MISSING: "sync.errorFileMissing",
   SYNC_FILE_AMBIGUOUS: "sync.errorFileAmbiguous",
+  SYNC_ACCESS_REVOKED: "sync.errorAccessRevoked",
 };
 
 /**
@@ -131,6 +132,10 @@ export function SyncSection() {
   // has since tidied up in Drive) keeps Sync now; retrying there is meaningful.
   const isUnsupportedFormatError = errorCode === "SYNC_FORMAT_UNSUPPORTED";
   const isFileMissingError = errorCode === "SYNC_FILE_MISSING";
+  // A 403 that used to succeed: the owner pulled this account's access. Neither Sync
+  // now nor Reconnect can fix that — only the owner re-sharing the file can — so, like
+  // the two cases above, this one is excluded from the retry button entirely.
+  const isAccessRevokedError = errorCode === "SYNC_ACCESS_REVOKED";
 
   const manualResolution =
     sync.state?.kind === "manualResolution" ? (
@@ -183,7 +188,7 @@ export function SyncSection() {
             <p className="muted row-hint">{t("sync.reconnectHint")}</p>
           </li>
         ) : null}
-        {!isUnsupportedFormatError && !isFileMissingError ? (
+        {!isUnsupportedFormatError && !isFileMissingError && !isAccessRevokedError ? (
           <li className="settings-row">
             <button
               type="button"

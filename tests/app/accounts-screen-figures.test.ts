@@ -9,6 +9,11 @@ import source from "../../src/app/screens/AccountsScreen.tsx?raw";
 describe("AccountsScreen figures", () => {
   it("resolves figures through balancesByAccount", () => {
     expect(source).toContain("balancesByAccount(");
+    // Two calls is the architecture: a running map and a month map gated on
+    // monthFigure. A per-row call (inside figureLabel or renderNodes) would push
+    // this to 3+, which is exactly the O(rows x journal) regression this guards.
+    expect(source.match(/balancesByAccount\(/g) ?? []).toHaveLength(2);
+    expect(source).toContain('monthFigure && monthFigure.kind === "month"');
   });
 
   it("makes no per-row balance query", () => {

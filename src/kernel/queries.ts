@@ -56,7 +56,8 @@ function signedTotal(account: Account, totals: Map<string, Totals>): number {
  * A leaf yields one amount in its own currency; a group buckets its non-placeholder
  * descendants by currency and omits currencies that net to zero. The window is whoever
  * built `totals`: `balance` and `balanceAsOf` answer "up to a date", `balanceInRange`
- * answers "inside a period", which is what income and expense rows show.
+ * answers "inside a period", which is what income and expense rows show, and
+ * `balancesByAccount` answers whichever of those its bounds describe.
  */
 function balanceFromTotals(
   book: Book,
@@ -173,7 +174,8 @@ export function balanceInRange(
  * Every account's balance from one pass over the journal, in the shape `balance` returns
  * for each: `{}` is a running balance, `{ to }` is `balanceAsOf`, `{ from, to }` is
  * `balanceInRange`. Groups and empty leaves are present, so a lookup by a real id is
- * never `undefined`. For a screen that shows the whole tree at once.
+ * never `undefined`. For a screen that shows the whole tree at once. `bounds` is only
+ * `from`/`to`; passed a wider `JournalFilter`, its `accountId` is not honoured.
  */
 export function balancesByAccount(
   book: Book,

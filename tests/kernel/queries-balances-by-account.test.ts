@@ -119,6 +119,10 @@ describe("balancesByAccount", () => {
     }
   });
 
+  // The value-pinning case: the two equivalence tests above only pin the bounds
+  // plumbing (both sides share journalTotalsByAccount and balanceFromTotals), so
+  // this is what actually pins { ILS: 4000, USD: 9000 } and the zero leaf. Do not
+  // trim it as "redundant with the equivalence loop".
   it("holds every account — groups and a leaf with no postings included", () => {
     const { book, expenses, rent } = fixture();
     const all = unwrap(balancesByAccount(book, AUGUST));
@@ -131,12 +135,13 @@ describe("balancesByAccount", () => {
   });
 
   it("rejects a malformed bound and treats an inverted range as empty", () => {
-    const { book, expenses } = fixture();
+    const { book, expenses, rent } = fixture();
     expect(unwrapErr(balancesByAccount(book, { from: "2026-13-01" })).code).toBe(
       "ENTRY_DATE_INVALID",
     );
     expect(unwrapErr(balancesByAccount(book, { to: "nope" })).code).toBe("ENTRY_DATE_INVALID");
     const inverted = unwrap(balancesByAccount(book, { from: "2026-08-31", to: "2026-08-01" }));
     expect(inverted.get(expenses)).toEqual({ kind: "placeholder", balances: {} });
+    expect(inverted.get(rent)).toEqual({ kind: "leaf", currency: "ILS", amount: 0 });
   });
 });

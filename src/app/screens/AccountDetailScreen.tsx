@@ -1,14 +1,29 @@
 import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { accountPathLabel, formatAccountBalance } from "../format";
-import { accountFigure, monthFigureLabel } from "../account-figure";
+import {
+  accountPathLabel,
+  formatAccountBalance,
+  formatTurnoverField,
+  type TurnoverField,
+} from "../format";
 import { currencySymbol } from "../currencies";
 import { AccountKindChoice } from "../components/AccountKindChoice";
 import { ChevronBack } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { useLedger } from "../ledger-context";
+import {
+  SUMMARY_PRESETS,
+  SUMMARY_PRESET_KEYS,
+  isSummaryPreset,
+  parseSummaryState,
+  summaryBounds,
+  summaryLabel,
+  summaryMonthParam,
+  toSummaryParams,
+  type SummaryState,
+} from "../period-summary";
 import { useLedgerMutation } from "../use-ledger-mutation";
 
 export function AccountDetailScreen() {
@@ -17,6 +32,8 @@ export function AccountDetailScreen() {
   const navigate = useNavigate();
   const { book, app } = useLedger();
   const { busy, run } = useLedgerMutation();
+  const [params, setParams] = useSearchParams();
+  const summary = useMemo(() => parseSummaryState(params), [params]);
 
   const account = book?.accounts.find((a) => a.id === accountId);
   const moveOptions = useMemo(
@@ -57,16 +74,45 @@ export function AccountDetailScreen() {
     setEditing(true);
   }
 
-  const figure = accountFigure(currentAccount.type);
+  const isCategory = currentAccount.type === "income" || currentAccount.type === "expense";
 
-  function figureLabel(): string {
-    const result =
-      figure.kind === "month"
-        ? app.balanceInRange(currentBook, currentAccount.id, figure.range)
-        : app.balanceOf(currentBook, currentAccount.id);
+  function balanceLabel(): string {
+    const result = app.balanceOf(currentBook, currentAccount.id);
     if (!result.ok) return "—";
     return formatAccountBalance(result.value, currentBook.homeCurrency);
   }
+
+  function writeSummary(next: SummaryState) {
+    setParams(toSummaryParams(next));
+  }
+
+  function onPresetChange(value: string) {
+    if (!isSummaryPreset(value)) return;
+    if (value === "custom") {
+      writeSummary(summary.preset === "custom" ? summary : { preset: "custom", from: "", to: "" });
+    } else {
+      writeSummary({ preset: value });
+    }
+  }
+
+  const bounds = summaryBounds(summary);
+  const turnover = bounds ? app.turnoverInRange(currentBook, currentAccount.id, bounds) : null;
+
+  function summaryValue(field: TurnoverField): string {
+    if (!turnover || !turnover.ok) return "—";
+    return formatTurnoverField(turnover.value, field, currentBook.homeCurrency);
+  }
+
+  const summaryRows: Array<{ key: string; field: TurnoverField }> =
+    currentAccount.type === "income"
+      ? [{ key: "received", field: "net" }]
+      : currentAccount.type === "expense"
+        ? [{ key: "spent", field: "net" }]
+        : [
+            { key: "inflow", field: "inflow" },
+            { key: "outflow", field: "outflow" },
+            { key: "change", field: "net" },
+          ];
 
   async function onSave(event: FormEvent) {
     event.preventDefault();
@@ -114,14 +160,14 @@ export function AccountDetailScreen() {
             <dd>{currencySymbol(currentAccount.currency)}</dd>
           </div>
         )}
-        <div>
-          <dt>
-            {figure.kind === "month" ? monthFigureLabel(figure) : t("accountDetail.balanceLabel")}
-          </dt>
-          <dd>
-            <Ltr>{figureLabel()}</Ltr>
-          </dd>
-        </div>
+        {isCategory ? null : (
+          <div>
+            <dt>{t("accountDetail.balanceLabel")}</dt>
+            <dd>
+              <Ltr>{balanceLabel()}</Ltr>
+            </dd>
+          </div>
+        )}
         {currentAccount.isPlaceholder ? (
           <div>
             <dt>{t("accountDetail.nestedLabel")}</dt>
@@ -129,6 +175,58 @@ export function AccountDetailScreen() {
           </div>
         ) : null}
       </dl>
+
+      <section className="stack-form" aria-labelledby="period-summary-heading">
+        <div className="group form-group">
+          <label>
+            {t("periodSummary.label")}
+            <select value={summary.preset} onChange={(e) => onPresetChange(e.target.value)}>
+              {SUMMARY_PRESETS.map((preset) => (
+                <option key={preset} value={preset}>
+                  {t(SUMMARY_PRESET_KEYS[preset])}
+                </option>
+              ))}
+            </select>
+          </label>
+          {summary.preset === "custom" ? (
+            <>
+              <label>
+                {t("periodSummary.from")}
+                <input
+                  type="date"
+                  dir="ltr"
+                  value={summary.from}
+                  onChange={(e) => writeSummary({ ...summary, from: e.target.value })}
+                />
+              </label>
+              <label>
+                {t("periodSummary.to")}
+                <input
+                  type="date"
+                  dir="ltr"
+                  value={summary.to}
+                  onChange={(e) => writeSummary({ ...summary, to: e.target.value })}
+                />
+              </label>
+            </>
+          ) : null}
+        </div>
+        <h2 id="period-summary-heading">{summaryLabel(summary)}</h2>
+        {bounds === null ? (
+          <p className="muted">{t("periodSummary.incomplete")}</p>
+        ) : (
+          <dl className="detail-list">
+            {summaryRows.map((row) => (
+              <div key={row.key}>
+                <dt>{t(`periodSummary.${row.key}`)}</dt>
+                <dd>
+                  <Ltr>{summaryValue(row.field)}</Ltr>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </section>
 
       {editing ? (
         <form className="stack-form" onSubmit={onSave}>
@@ -174,7 +272,7 @@ export function AccountDetailScreen() {
           ) : null}
           <Link
             className="secondary link-button"
-            to={`/journal?account=${currentAccount.id}&month=all`}
+            to={`/journal?account=${currentAccount.id}&month=${summaryMonthParam(summary)}`}
           >
             {t("accountDetail.entries")}
           </Link>

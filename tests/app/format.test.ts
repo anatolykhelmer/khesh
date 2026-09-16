@@ -5,6 +5,7 @@ import {
   formatMinor,
   formatRate,
   formatRelativeTime,
+  formatTurnoverField,
   monthLabel,
   relativeSyncTime,
 } from "../../src/app/format";
@@ -163,5 +164,42 @@ describe("relativeSyncTime", () => {
     // Intl.RelativeTimeFormat throw rather than format.
     expect(relativeSyncTime("not-a-date", NOW, "en")).toBeNull();
     expect(relativeSyncTime("", NOW, "en")).toBeNull();
+  });
+});
+
+describe("formatTurnoverField", () => {
+  const leaf = {
+    kind: "leaf" as const,
+    currency: "USD",
+    turnover: { inflow: 12345, outflow: 100, net: 12245 },
+  };
+  const group = {
+    kind: "placeholder" as const,
+    byCurrency: {
+      USD: { inflow: 100, outflow: 0, net: 100 },
+      EUR: { inflow: 200, outflow: 50, net: 150 },
+      ILS: { inflow: 300, outflow: 300, net: 0 },
+    },
+  };
+
+  it("formats one field of a leaf in the leaf's currency", () => {
+    expect(formatTurnoverField(leaf, "inflow", "ILS")).toBe("123.45 $");
+    expect(formatTurnoverField(leaf, "outflow", "ILS")).toBe("1.00 $");
+    expect(formatTurnoverField(leaf, "net", "ILS")).toBe("122.45 $");
+  });
+
+  it("orders a group home currency first, then alphabetically", () => {
+    expect(formatTurnoverField(group, "inflow", "ILS")).toBe("3.00 ₪ · 2.00 € · 1.00 $");
+  });
+
+  it("drops a currency from a row only where that field is zero", () => {
+    expect(formatTurnoverField(group, "outflow", "ILS")).toBe("3.00 ₪ · 0.50 €");
+    expect(formatTurnoverField(group, "net", "ILS")).toBe("1.50 € · 1.00 $");
+  });
+
+  it("shows a zero in the home currency when nothing is left", () => {
+    expect(formatTurnoverField({ kind: "placeholder", byCurrency: {} }, "net", "ILS")).toBe(
+      "0.00 ₪",
+    );
   });
 });

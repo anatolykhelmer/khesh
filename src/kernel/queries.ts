@@ -80,29 +80,6 @@ function balanceFromTotals(
   return { kind: "placeholder", balances };
 }
 
-function entryIncluded(date: string, asOf: string | undefined): boolean {
-  if (!asOf) return true;
-  return date <= asOf;
-}
-
-function leafTotals(
-  book: Book,
-  accountId: string,
-  asOf?: string,
-): { debit: number; credit: number } {
-  let debit = 0;
-  let credit = 0;
-  for (const entry of book.journal) {
-    if (!entryIncluded(entry.date, asOf)) continue;
-    for (const posting of entry.postings) {
-      if (posting.accountId !== accountId) continue;
-      if (posting.side === "debit") debit += posting.amount;
-      else credit += posting.amount;
-    }
-  }
-  return { debit, credit };
-}
-
 export function accountPath(book: Book, id: string): Result<string> {
   const account = findAccount(book, id);
   if (!account) return err("ACCOUNT_NOT_FOUND", "Account not found", { id });
@@ -151,9 +128,10 @@ export function trialBalance(book: Book, asOf?: string): Result<TrialBalance> {
   }
 
   const byCurrency: TrialBalance["byCurrency"] = {};
+  const totals = journalTotalsByAccount(book, { to: asOf });
   for (const account of book.accounts) {
     if (account.isPlaceholder) continue;
-    const { debit, credit } = leafTotals(book, account.id, asOf);
+    const { debit, credit } = totals.get(account.id) ?? { debit: 0, credit: 0 };
     if (debit === 0 && credit === 0) continue;
     const bucket = byCurrency[account.currency] ?? {
       rows: [],
@@ -172,28 +150,6 @@ export function trialBalance(book: Book, asOf?: string): Result<TrialBalance> {
   }
 
   return ok({ asOf: asOf ?? null, byCurrency });
-}
-
-function entryInRange(date: string, range: { from: string; to: string }): boolean {
-  return date >= range.from && date <= range.to;
-}
-
-function periodSigned(
-  book: Book,
-  account: Account,
-  range: { from: string; to: string },
-): number {
-  let debit = 0;
-  let credit = 0;
-  for (const entry of book.journal) {
-    if (!entryInRange(entry.date, range)) continue;
-    for (const posting of entry.postings) {
-      if (posting.accountId !== account.id) continue;
-      if (posting.side === "debit") debit += posting.amount;
-      else credit += posting.amount;
-    }
-  }
-  return signedAmount(account.type, debit, credit);
 }
 
 /** Signed turnover of one account within an inclusive date range, in the shape `balance` returns. */
@@ -227,12 +183,13 @@ export function periodTotals(
   }
 
   const totals: PeriodTotals = { [book.homeCurrency]: { income: 0, expense: 0 } };
+  const byAccount = journalTotalsByAccount(book, range);
 
   for (const account of book.accounts) {
     if (account.isPlaceholder) continue;
     if (account.type !== "income" && account.type !== "expense") continue;
     const bucket = (totals[account.currency] ??= { income: 0, expense: 0 });
-    const signed = periodSigned(book, account, range);
+    const signed = signedTotal(account, byAccount);
     if (account.type === "income") bucket.income += signed;
     else bucket.expense += signed;
   }
@@ -301,10 +258,11 @@ export function periodBreakdown(
     ? descendants(book, accountId).filter((a) => !a.isPlaceholder && a.type === "expense")
     : [account];
 
+  const totals = journalTotalsByAccount(book, range);
   const leafAmount = new Map<string, number>();
   const byCurrency: Record<string, number> = {};
   for (const leaf of leaves) {
-    const signed = periodSigned(book, leaf, range);
+    const signed = signedTotal(leaf, totals);
     leafAmount.set(leaf.id, signed);
     if (signed !== 0) {
       byCurrency[leaf.currency] = (byCurrency[leaf.currency] ?? 0) + signed;
@@ -403,10 +361,11 @@ export function budgetReport(
     return err("ENTRY_DATE_INVALID", `Invalid date ${range.to}`, { date: range.to });
   }
 
+  const totals = journalTotalsByAccount(book, range);
   const leafAmount = new Map<string, number>();
   for (const account of book.accounts) {
     if (account.isPlaceholder || account.type !== "expense") continue;
-    leafAmount.set(account.id, periodSigned(book, account, range));
+    leafAmount.set(account.id, signedTotal(account, totals));
   }
 
   const inPeriod = book.budgets.filter((budget: Budget) => budget.period === period);

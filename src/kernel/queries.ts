@@ -195,6 +195,58 @@ export function balancesByAccount(
   return ok(all);
 }
 
+export type Turnover = { inflow: MinorUnits; outflow: MinorUnits; net: number };
+
+export type AccountTurnover =
+  | { kind: "leaf"; currency: CurrencyCode; turnover: Turnover }
+  | { kind: "placeholder"; byCurrency: Record<CurrencyCode, Turnover> };
+
+function turnoverOf(account: Account, totals: Map<string, Totals>): Turnover {
+  const { debit, credit } = totals.get(account.id) ?? { debit: 0, credit: 0 };
+  return { inflow: debit, outflow: credit, net: signedAmount(account.type, debit, credit) };
+}
+
+/**
+ * What moved through one account inside the bounds. `inflow` is its debit total,
+ * `outflow` its credit total, `net` the signed difference — the same number
+ * `balanceInRange` returns as `amount`. A debit is always value arriving at the account,
+ * so there is no branch on type: for a credit card "in" is a repayment and "out" a charge.
+ * A group buckets its non-placeholder descendants by currency and omits only a currency
+ * with nothing on either side; a currency that moved and netted to zero stays, which is
+ * the one way this differs from `balanceFromTotals`. `{}` is all time.
+ */
+export function turnoverInRange(
+  book: Book,
+  accountId: string,
+  bounds: DateBounds = {},
+): Result<AccountTurnover> {
+  if (bounds.from !== undefined && !isCalendarDate(bounds.from)) {
+    return err("ENTRY_DATE_INVALID", `Invalid date ${bounds.from}`, { date: bounds.from });
+  }
+  if (bounds.to !== undefined && !isCalendarDate(bounds.to)) {
+    return err("ENTRY_DATE_INVALID", `Invalid date ${bounds.to}`, { date: bounds.to });
+  }
+  const account = findAccount(book, accountId);
+  if (!account) return err("ACCOUNT_NOT_FOUND", "Account not found", { id: accountId });
+
+  const totals = journalTotalsByAccount(book, bounds);
+  if (!account.isPlaceholder) {
+    return ok({ kind: "leaf", currency: account.currency, turnover: turnoverOf(account, totals) });
+  }
+
+  const byCurrency: Record<CurrencyCode, Turnover> = {};
+  for (const child of descendants(book, account.id)) {
+    if (child.isPlaceholder) continue;
+    const moved = turnoverOf(child, totals);
+    if (moved.inflow === 0 && moved.outflow === 0) continue;
+    const bucket = (byCurrency[child.currency] ??= { inflow: 0, outflow: 0, net: 0 });
+    bucket.inflow += moved.inflow;
+    bucket.outflow += moved.outflow;
+    bucket.net += moved.net;
+  }
+  return ok({ kind: "placeholder", byCurrency });
+}
+
 export type PeriodTotals = Record<CurrencyCode, { income: MinorUnits; expense: MinorUnits }>;
 
 export function periodTotals(

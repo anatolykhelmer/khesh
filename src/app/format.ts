@@ -3,9 +3,11 @@ import {
   isOpeningBalancesGroupId,
   isOpeningBalancesLeafId,
   type AccountBalance,
+  type AccountTurnover,
   type Book,
   type CurrencyCode,
   type FxSpec,
+  type Turnover,
 } from "../kernel";
 import { minorToMajor } from "../service/money";
 import { currencySymbol } from "./currencies";
@@ -126,4 +128,29 @@ export function formatAccountBalance(
     })
     .map(([currency, amount]) => formatMinor(amount, currency));
   return parts.length === 0 ? formatMinor(0, homeCurrency) : parts.join(" · ");
+}
+
+export type TurnoverField = keyof Turnover;
+
+/**
+ * One row of the account page's period summary: the named field of a turnover, in the
+ * shape `formatAccountBalance` prints a balance. Projecting onto `AccountBalance` rather
+ * than formatting here keeps ordering, zero-dropping and the empty case identical to the
+ * Balance row — a group can never disagree with itself across the two.
+ */
+export function formatTurnoverField(
+  turnover: AccountTurnover,
+  field: TurnoverField,
+  homeCurrency: CurrencyCode,
+): string {
+  const projected: AccountBalance =
+    turnover.kind === "leaf"
+      ? { kind: "leaf", currency: turnover.currency, amount: turnover.turnover[field] }
+      : {
+          kind: "placeholder",
+          balances: Object.fromEntries(
+            Object.entries(turnover.byCurrency).map(([code, moved]) => [code, moved[field]]),
+          ),
+        };
+  return formatAccountBalance(projected, homeCurrency);
 }

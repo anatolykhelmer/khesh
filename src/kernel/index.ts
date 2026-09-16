@@ -25,11 +25,12 @@ export { canonicalJson } from "./canonical-json";
 export { bookFingerprint, mergeBooks } from "./merge";
 export { budgetKeyOf } from "./tombstones";
 export { descendants } from "./book-utils";
+export { isCalendarDate } from "./dates";
 export { validateBook } from "./validate";
 export { EPOCH, normalizeBook } from "./normalize";
 export type { StoredBook } from "./normalize";
-export { accountPath, balance, balanceAsOf, balanceInRange, balancesByAccount, budgetReport, chart, journal, journalScope, matchesJournalFilter, periodBreakdown, periodTotals, trialBalance } from "./queries";
-export type { BudgetReport, BudgetRow, DateBounds, JournalFilter, PeriodBreakdown, PeriodSlice, PeriodTotals } from "./queries";
+export { accountPath, balance, balanceAsOf, balanceInRange, balancesByAccount, budgetReport, chart, journal, journalScope, matchesJournalFilter, periodBreakdown, periodTotals, trialBalance, turnoverInRange } from "./queries";
+export type { AccountTurnover, BudgetReport, BudgetRow, DateBounds, JournalFilter, PeriodBreakdown, PeriodSlice, PeriodTotals, Turnover } from "./queries";
 export type {
   Account,
   AccountBalance,

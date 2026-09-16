@@ -343,6 +343,23 @@
     "openingBalance": "Opening balance",
     "deleteConfirm": "Delete {{name}}?"
   },
+  "periodSummary": {
+    "label": "Period",
+    "thisMonth": "This month",
+    "lastMonth": "Last month",
+    "thisYear": "This year",
+    "lastYear": "Last year",
+    "all": "All time",
+    "custom": "Custom range",
+    "from": "From",
+    "to": "To",
+    "incomplete": "Pick a start and an end date, start first.",
+    "inflow": "In",
+    "outflow": "Out",
+    "change": "Change",
+    "received": "Received",
+    "spent": "Spent"
+  },
   "accountForm": {
     "title": "New account",
     "parentLabel": "Parent",

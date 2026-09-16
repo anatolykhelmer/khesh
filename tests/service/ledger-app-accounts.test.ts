@@ -165,6 +165,49 @@ describe("LedgerApp addAccount", () => {
     expect(running.get(cash)).toEqual(unwrap(app.balanceOf(current, cash)));
   });
 
+  it("turnoverInRange returns what the kernel returns for the same arguments", async () => {
+    const { app, book, expenses } = await seeded();
+    const assets = byName(book, "Assets");
+    let current = unwrap(
+      await app.addAccount(book, { parentId: assets.id, name: "Cash", isPlaceholder: false }),
+    );
+    current = unwrap(
+      await app.addAccount(current, { parentId: expenses.id, name: "Food", isPlaceholder: false }),
+    );
+    const cash = byName(current, "Cash").id;
+    const food = byName(current, "Food").id;
+    current = unwrap(
+      await app.addEntry(current, {
+        date: "2026-08-10",
+        description: "in range",
+        fromAccountId: cash,
+        lines: [{ toAccountId: food, amount: 1200 }],
+      }),
+    );
+    current = unwrap(
+      await app.addEntry(current, {
+        date: "2026-09-02",
+        description: "out of range",
+        fromAccountId: cash,
+        lines: [{ toAccountId: food, amount: 5000 }],
+      }),
+    );
+
+    const august = { from: "2026-08-01", to: "2026-08-31" };
+    expect(unwrap(app.turnoverInRange(current, cash, august))).toEqual({
+      kind: "leaf",
+      currency: "USD",
+      turnover: { inflow: 0, outflow: 1200, net: -1200 },
+    });
+    expect(unwrap(app.turnoverInRange(current, expenses.id, august))).toEqual({
+      kind: "placeholder",
+      byCurrency: { USD: { inflow: 1200, outflow: 0, net: 1200 } },
+    });
+    expect(unwrap(app.turnoverInRange(current, cash))).toMatchObject({
+      turnover: { outflow: 6200 },
+    });
+  });
+
   it("inherits the parent type rather than the root type", async () => {
     const { app, book, expenses } = await seeded();
     const next = unwrap(

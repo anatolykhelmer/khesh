@@ -11,6 +11,7 @@ import {
   periodBreakdown,
   periodTotals,
   trialBalance,
+  turnoverInRange,
 } from "../../src/kernel/queries";
 import type { AccountType, Book } from "../../src/kernel/types";
 import { NOW, unwrap } from "../helpers";
@@ -120,5 +121,10 @@ describe("each query reads the journal exactly once", () => {
   it("balancesByAccount", () => {
     const f = fixture();
     expect(passesOf(f.book, (b) => unwrap(balancesByAccount(b, AUGUST)))).toBe(1);
+  });
+
+  it("turnoverInRange of a group", () => {
+    const f = fixture();
+    expect(passesOf(f.book, (b) => unwrap(turnoverInRange(b, f.expenses, AUGUST)))).toBe(1);
   });
 });

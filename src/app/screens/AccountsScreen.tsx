@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { AccountBalance, AccountNode, Result } from "../../kernel";
-import { accountFigure, monthFigureLabel, type AccountFigure } from "../account-figure";
+import { accountFigure, monthFigureLabel } from "../account-figure";
 import { formatAccountBalance } from "../format";
 import { CaretDown, CaretRight } from "../components/icons";
 import { Ltr } from "../components/Ltr";

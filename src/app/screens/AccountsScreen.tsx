@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import type { AccountNode } from "../../kernel";
+import type { AccountBalance, AccountNode, Result } from "../../kernel";
 import { accountFigure, monthFigureLabel, type AccountFigure } from "../account-figure";
 import { formatAccountBalance } from "../format";
 import { CaretDown, CaretRight } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { useLedger } from "../ledger-context";
+
+type Figures = Result<Map<string, AccountBalance>>;
 
 export function AccountsScreen() {
   const { t } = useTranslation();
@@ -27,16 +29,13 @@ export function AccountsScreen() {
     });
   }
 
-  function figureLabel(accountId: string, figure: AccountFigure): string {
-    const result =
-      figure.kind === "month"
-        ? app.balanceInRange(currentBook, accountId, figure.range)
-        : app.balanceOf(currentBook, accountId);
-    if (!result.ok) return "—";
-    return formatAccountBalance(result.value, currentBook.homeCurrency);
+  function figureLabel(accountId: string, figures: Figures): string {
+    const value = figures.ok ? figures.value.get(accountId) : undefined;
+    if (!value) return "—";
+    return formatAccountBalance(value, currentBook.homeCurrency);
   }
 
-  function renderNodes(nodes: AccountNode[], depth: number, figure: AccountFigure) {
+  function renderNodes(nodes: AccountNode[], depth: number, figures: Figures) {
     return nodes.map((node) => {
       const isGroup = node.children.length > 0;
       const open = expanded.has(node.id);
@@ -63,12 +62,12 @@ export function AccountsScreen() {
             <Link className="account-link" to={`/accounts/${node.id}`}>
               <span>{node.name}</span>
               <span className="muted">
-                <Ltr>{figureLabel(node.id, figure)}</Ltr>
+                <Ltr>{figureLabel(node.id, figures)}</Ltr>
               </span>
             </Link>
           </div>
           {isGroup && open ? (
-            <ul className="account-children">{renderNodes(node.children, depth + 1, figure)}</ul>
+            <ul className="account-children">{renderNodes(node.children, depth + 1, figures)}</ul>
           ) : null}
         </li>
       );
@@ -76,14 +75,14 @@ export function AccountsScreen() {
   }
 
   /** One labelled run of root cards; nothing at all when the run is empty. */
-  function renderSection(label: string, roots: { root: AccountNode; figure: AccountFigure }[]) {
+  function renderSection(label: string, roots: { root: AccountNode }[], figures: Figures) {
     if (roots.length === 0) return null;
     return (
       <>
         <h2 className="section-label">{label}</h2>
-        {roots.map(({ root, figure }) => (
+        {roots.map(({ root }) => (
           <ul className="account-list group" key={root.id}>
-            {renderNodes([root], 0, figure)}
+            {renderNodes([root], 0, figures)}
           </ul>
         ))}
       </>
@@ -107,13 +106,18 @@ export function AccountsScreen() {
   const balanceRoots = roots.filter((r) => r.figure.kind === "balance");
   const monthRoots = roots.filter((r) => r.figure.kind === "month");
   const monthFigure = roots.find((r) => r.figure.kind === "month")?.figure;
+  const balances = app.balancesByAccount(currentBook);
+  const monthBalances =
+    monthFigure && monthFigure.kind === "month"
+      ? app.balancesByAccount(currentBook, monthFigure.range)
+      : null;
 
   return (
     <main className="screen">
       <h1>{t("accounts.title")}</h1>
-      {renderSection(t("accounts.balanceSection"), balanceRoots)}
-      {monthFigure && monthFigure.kind === "month"
-        ? renderSection(monthFigureLabel(monthFigure), monthRoots)
+      {renderSection(t("accounts.balanceSection"), balanceRoots, balances)}
+      {monthFigure && monthFigure.kind === "month" && monthBalances
+        ? renderSection(monthFigureLabel(monthFigure), monthRoots, monthBalances)
         : null}
       <Link className="primary link-button" to="/accounts/new">
         {t("accounts.addAccount")}

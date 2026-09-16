@@ -82,8 +82,14 @@ export function AccountDetailScreen() {
     return formatAccountBalance(result.value, currentBook.homeCurrency);
   }
 
-  function writeSummary(next: SummaryState) {
-    setParams(toSummaryParams(next));
+  function writeSummary(next: SummaryState, { replace = false }: { replace?: boolean } = {}) {
+    const draft = new URLSearchParams(params);
+    draft.delete("period");
+    draft.delete("from");
+    draft.delete("to");
+    const summaryParams = toSummaryParams(next);
+    for (const [key, value] of summaryParams) draft.set(key, value);
+    setParams(draft, { replace });
   }
 
   function onPresetChange(value: string) {
@@ -95,7 +101,8 @@ export function AccountDetailScreen() {
     }
   }
 
-  const bounds = summaryBounds(summary);
+  const now = new Date();
+  const bounds = summaryBounds(summary, now);
   const turnover = bounds ? app.turnoverInRange(currentBook, currentAccount.id, bounds) : null;
 
   function summaryValue(field: TurnoverField): string {
@@ -196,7 +203,7 @@ export function AccountDetailScreen() {
                   type="date"
                   dir="ltr"
                   value={summary.from}
-                  onChange={(e) => writeSummary({ ...summary, from: e.target.value })}
+                  onChange={(e) => writeSummary({ ...summary, from: e.target.value }, { replace: true })}
                 />
               </label>
               <label>
@@ -205,13 +212,13 @@ export function AccountDetailScreen() {
                   type="date"
                   dir="ltr"
                   value={summary.to}
-                  onChange={(e) => writeSummary({ ...summary, to: e.target.value })}
+                  onChange={(e) => writeSummary({ ...summary, to: e.target.value }, { replace: true })}
                 />
               </label>
             </>
           ) : null}
         </div>
-        <h2 id="period-summary-heading">{summaryLabel(summary)}</h2>
+        <h2 id="period-summary-heading">{summaryLabel(summary, now)}</h2>
         {bounds === null ? (
           <p className="muted">{t("periodSummary.incomplete")}</p>
         ) : (
@@ -272,7 +279,7 @@ export function AccountDetailScreen() {
           ) : null}
           <Link
             className="secondary link-button"
-            to={`/journal?account=${currentAccount.id}&month=${summaryMonthParam(summary)}`}
+            to={`/journal?account=${currentAccount.id}&month=${summaryMonthParam(summary, now)}`}
           >
             {t("accountDetail.entries")}
           </Link>

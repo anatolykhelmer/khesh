@@ -47,10 +47,17 @@ export function isSummaryPreset(value: string): value is SummaryPreset {
   return (SUMMARY_PRESETS as readonly string[]).includes(value);
 }
 
-/** "" for absent or empty (mid-entry), the date when valid, null when malformed. */
-function customDate(raw: string | null): string | null {
-  if (raw === null || raw === "") return "";
-  return isCalendarDate(raw) ? raw : null;
+/**
+ * The raw string kept for a custom-range field: "" for absent or empty (mid-entry),
+ * otherwise whatever was typed — valid, partial, or malformed. This parser only decides
+ * what to keep; `summaryBounds` decides what a value is complete/valid enough to act on.
+ * Keeping the raw string (rather than discarding the whole state on anything short of a
+ * full calendar date) matters because a keyboard-typed `<input type="date">` fires
+ * intermediate values like "0002-12-03" on the way to "2026-12-03" — discarding those
+ * would reset the picker to the default preset on every keystroke.
+ */
+function customDate(raw: string | null): string {
+  return raw ?? "";
 }
 
 export function parseSummaryState(params: URLSearchParams): SummaryState {
@@ -59,7 +66,6 @@ export function parseSummaryState(params: URLSearchParams): SummaryState {
   if (preset !== "custom") return { preset };
   const from = customDate(params.get("from"));
   const to = customDate(params.get("to"));
-  if (from === null || to === null) return DEFAULT_SUMMARY;
   return { preset: "custom", from, to };
 }
 
@@ -112,11 +118,11 @@ export function summaryLabel(state: SummaryState, now = new Date()): string {
     case "last-year":
       return String(now.getFullYear() - 1);
     case "all":
-      return i18n.t("periodSummary.all");
+      return i18n.t(SUMMARY_PRESET_KEYS.all);
     case "custom":
       return summaryBounds(state, now)
         ? `${formatDate(state.from)} – ${formatDate(state.to)}`
-        : i18n.t("periodSummary.custom");
+        : i18n.t(SUMMARY_PRESET_KEYS.custom);
   }
 }
 

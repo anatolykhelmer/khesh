@@ -65,13 +65,21 @@ describe("parseSummaryState", () => {
     );
   });
 
-  it("falls back to this month when a custom date is malformed", () => {
-    for (const raw of [
-      "period=custom&from=2026-13-01&to=2026-07-20",
-      "period=custom&from=2026-03-12&to=nope",
-    ]) {
-      expect(parseSummaryState(new URLSearchParams(raw))).toEqual({ preset: "this-month" });
-    }
+  it("keeps a malformed custom date as-is instead of falling back", () => {
+    expect(parseSummaryState(new URLSearchParams("period=custom&from=2026-13-01&to=2026-07-20"))).toEqual(
+      { preset: "custom", from: "2026-13-01", to: "2026-07-20" },
+    );
+    expect(parseSummaryState(new URLSearchParams("period=custom&from=2026-03-12&to=nope"))).toEqual({
+      preset: "custom",
+      from: "2026-03-12",
+      to: "nope",
+    });
+  });
+
+  it("keeps a partially typed year instead of resetting the picker", () => {
+    const state = parseSummaryState(new URLSearchParams("period=custom&from=0002-12-03&to=2026-12-20"));
+    expect(state).toEqual({ preset: "custom", from: "0002-12-03", to: "2026-12-20" });
+    expect(summaryBounds(state)).toBeNull();
   });
 
   it("isSummaryPreset accepts exactly the preset list", () => {
@@ -145,6 +153,12 @@ describe("summaryLabel", () => {
     const label = summaryLabel(CUSTOM, MID_AUGUST);
     expect(label).toContain("3/12/2026");
     expect(label).toContain("7/20/2026");
+  });
+
+  it("uses the locale string for a complete but inverted custom range", () => {
+    expect(
+      summaryLabel({ preset: "custom", from: "2026-07-20", to: "2026-03-12" }, MID_AUGUST),
+    ).toBe(en.periodSummary.custom);
   });
 });
 

@@ -6,6 +6,7 @@ import {
   balance,
   balanceAsOf,
   balanceInRange,
+  balancesByAccount,
   budgetReport,
   periodBreakdown,
   periodTotals,
@@ -114,5 +115,10 @@ describe("each query reads the journal exactly once", () => {
   it("budgetReport", () => {
     const f = fixture();
     expect(passesOf(f.book, (b) => unwrap(budgetReport(b, "month", AUGUST)))).toBe(1);
+  });
+
+  it("balancesByAccount", () => {
+    const f = fixture();
+    expect(passesOf(f.book, (b) => unwrap(balancesByAccount(b, AUGUST)))).toBe(1);
   });
 });

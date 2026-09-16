@@ -20,7 +20,7 @@ function signedAmount(type: AccountType, debit: number, credit: number): number 
   return type === "asset" || type === "expense" ? raw : -raw;
 }
 
-type DateBounds = Pick<JournalFilter, "from" | "to">;
+export type DateBounds = Pick<JournalFilter, "from" | "to">;
 
 type Totals = { debit: number; credit: number };
 
@@ -167,6 +167,30 @@ export function balanceInRange(
   const account = findAccount(book, accountId);
   if (!account) return err("ACCOUNT_NOT_FOUND", "Account not found", { id: accountId });
   return ok(balanceFromTotals(book, account, journalTotalsByAccount(book, range)));
+}
+
+/**
+ * Every account's balance from one pass over the journal, in the shape `balance` returns
+ * for each: `{}` is a running balance, `{ to }` is `balanceAsOf`, `{ from, to }` is
+ * `balanceInRange`. Groups and empty leaves are present, so a lookup by a real id is
+ * never `undefined`. For a screen that shows the whole tree at once.
+ */
+export function balancesByAccount(
+  book: Book,
+  bounds: DateBounds = {},
+): Result<Map<string, AccountBalance>> {
+  if (bounds.from !== undefined && !isCalendarDate(bounds.from)) {
+    return err("ENTRY_DATE_INVALID", `Invalid date ${bounds.from}`, { date: bounds.from });
+  }
+  if (bounds.to !== undefined && !isCalendarDate(bounds.to)) {
+    return err("ENTRY_DATE_INVALID", `Invalid date ${bounds.to}`, { date: bounds.to });
+  }
+  const totals = journalTotalsByAccount(book, bounds);
+  const all = new Map<string, AccountBalance>();
+  for (const account of book.accounts) {
+    all.set(account.id, balanceFromTotals(book, account, totals));
+  }
+  return ok(all);
 }
 
 export type PeriodTotals = Record<CurrencyCode, { income: MinorUnits; expense: MinorUnits }>;

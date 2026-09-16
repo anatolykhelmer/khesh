@@ -159,7 +159,16 @@ describe("mergeBooks repair ladder", () => {
     const budgeted = unwrap(
       setBudget(book, { accountId: foodId, period: "month", currency: "ILS", limit: 100 }, T(1)),
     );
-    const b = unwrap(updateAccount(budgeted, { id: foodId, type: "income" }, T(2)));
+    // The retype is written directly rather than through `updateAccount`, which refuses
+    // it (ACCOUNT_HAS_BUDGETS) precisely so this state cannot be created locally. The
+    // state still reaches a merge — from a client built before that guard, or from an
+    // imported snapshot — and handling it is what this test is about.
+    const b: Book = {
+      ...budgeted,
+      accounts: budgeted.accounts.map((x) =>
+        x.id === foodId ? { ...x, type: "income" as const, updatedAt: T(2) } : x,
+      ),
+    };
     const a = unwrap(deleteAccount(book, foodId, T(3)));
     const merged = mergedBothOrders(a, b);
     expect(merged.accounts.find((x) => x.id === foodId)?.type).toBe("income");

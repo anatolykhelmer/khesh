@@ -1,6 +1,7 @@
 import {
   cloneBook,
   findAccount,
+  hasBudgets,
   hasChildren,
   hasPostings,
   recurrencesReferencing,
@@ -116,6 +117,16 @@ export function updateAccount(
     }
     if (hasChildren(book, account.id)) {
       return err("ACCOUNT_HAS_CHILDREN", "Cannot change type while account has children", {
+        id: account.id,
+      });
+    }
+    // A limit only makes sense on an expense account (ACCOUNT_TYPE_MISMATCH in
+    // validateBook, and rung 6 of the merge ladder drops such a limit outright).
+    // Retyping an account is not destructive on its face, so — by the same argument
+    // the placeholder guard below makes for recurrences — it must refuse rather than
+    // silently orphan the limit into a book that will not load.
+    if (type !== "expense" && hasBudgets(book, account.id)) {
+      return err("ACCOUNT_HAS_BUDGETS", "Cannot change type away from expense while a budget covers it", {
         id: account.id,
       });
     }

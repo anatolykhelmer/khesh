@@ -132,6 +132,18 @@ describe("summaryBounds", () => {
       summaryBounds({ preset: "custom", from: "2026-07-20", to: "2026-03-12" }, MID_AUGUST),
     ).toBeNull();
   });
+
+  it("is null while a year is still being typed, even once it is a valid date", () => {
+    // Chrome emits 0002 → 0020 → 0202 → 2026 for a typed year; the middle two pass
+    // isCalendarDate, so the gate has to be on plausibility, not validity.
+    for (const from of ["0202-12-03", "0199-12-03", "0999-12-31"]) {
+      expect(summaryBounds({ preset: "custom", from, to: "2026-12-20" }, MID_AUGUST)).toBeNull();
+      expect(summaryBounds({ preset: "custom", from: "2026-01-01", to: from }, MID_AUGUST)).toBeNull();
+    }
+    expect(
+      summaryBounds({ preset: "custom", from: "1000-01-01", to: "2026-12-20" }, MID_AUGUST),
+    ).toEqual({ from: "1000-01-01", to: "2026-12-20" });
+  });
 });
 
 describe("summaryLabel", () => {

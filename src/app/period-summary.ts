@@ -48,25 +48,17 @@ export function isSummaryPreset(value: string): value is SummaryPreset {
 }
 
 /**
- * The raw string kept for a custom-range field: "" for absent or empty (mid-entry),
- * otherwise whatever was typed — valid, partial, or malformed. This parser only decides
- * what to keep; `summaryBounds` decides what a value is complete/valid enough to act on.
- * Keeping the raw string (rather than discarding the whole state on anything short of a
- * full calendar date) matters because a keyboard-typed `<input type="date">` fires
- * intermediate values like "0002-12-03" on the way to "2026-12-03" — discarding those
- * would reset the picker to the default preset on every keystroke.
+ * A custom-range field is kept as the raw string the URL carries — "" when absent,
+ * otherwise whatever was typed, valid, partial or malformed. This parser only decides
+ * what to keep; `summaryBounds` decides what is complete enough to act on. Discarding
+ * anything short of a full calendar date would reset the picker on every keystroke: a
+ * keyboard-typed `<input type="date">` fires "0002-12-03" on the way to "2026-12-03".
  */
-function customDate(raw: string | null): string {
-  return raw ?? "";
-}
-
 export function parseSummaryState(params: URLSearchParams): SummaryState {
   const preset = params.get("period");
   if (preset === null || !isSummaryPreset(preset)) return DEFAULT_SUMMARY;
   if (preset !== "custom") return { preset };
-  const from = customDate(params.get("from"));
-  const to = customDate(params.get("to"));
-  return { preset: "custom", from, to };
+  return { preset: "custom", from: params.get("from") ?? "", to: params.get("to") ?? "" };
 }
 
 export function toSummaryParams(state: SummaryState): URLSearchParams {
@@ -100,9 +92,19 @@ export function summaryBounds(state: SummaryState, now = new Date()): DateBounds
     case "all":
       return {};
     case "custom":
-      if (!isCalendarDate(state.from) || !isCalendarDate(state.to)) return null;
+      if (!isSettledDate(state.from) || !isSettledDate(state.to)) return null;
       return state.from <= state.to ? { from: state.from, to: state.to } : null;
   }
+}
+
+/**
+ * A calendar date whose year has all four digits typed. Chrome emits 0002 → 0020 →
+ * 0202 → 2026 while a year is keyed in, and the middle two are valid calendar dates,
+ * so validity alone would run the query against year 202 on the penultimate keystroke.
+ * No ledger predates year 1000; a lower year is still being typed.
+ */
+function isSettledDate(value: string): boolean {
+  return isCalendarDate(value) && Number(value.slice(0, 4)) >= 1000;
 }
 
 /** "August 2026", "2026", "All time", "3/12/2026 – 7/20/2026". */

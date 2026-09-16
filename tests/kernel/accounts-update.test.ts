@@ -1,5 +1,6 @@
 import { createAccount, deleteAccount, updateAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
+import { setBudget } from "../../src/kernel/budgets";
 import { createRecurrence } from "../../src/kernel/recurrences";
 import { validateBook } from "../../src/kernel/validate";
 import { NOW, unwrap, unwrapErr } from "../helpers";
@@ -65,6 +66,29 @@ function bookWithRule(): {
     ),
   );
   return { book: withRule, cashId, rentId, ruleId: withRule.recurrences[0].id };
+}
+
+/** A book with one monthly limit on a childless, posting-free expense leaf. Used to
+ * confirm `updateAccount` refuses an edit that would leave the limit on a non-expense
+ * account — the invariant `validateBook` enforces on `book.budgets`. */
+function bookWithBudget(): { book: Book; foodId: string } {
+  const { book } = bookWithAssets();
+  const withExpense = unwrap(
+    createAccount(
+      book,
+      { parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false },
+      NOW,
+    ),
+  );
+  const foodId = withExpense.accounts[withExpense.accounts.length - 1].id;
+  const withBudget = unwrap(
+    setBudget(
+      withExpense,
+      { accountId: foodId, period: "month", currency: "ILS", limit: 100000 },
+      NOW,
+    ),
+  );
+  return { book: withBudget, foodId };
 }
 
 describe("updateAccount", () => {
@@ -145,6 +169,45 @@ describe("updateAccount", () => {
     expect(
       unwrapErr(updateAccount(book, { id: rentId, currency: "USD" }, NOW)).code,
     ).toBe("ACCOUNT_HAS_RECURRENCES");
+  });
+
+  it("rejects a type change away from expense while a budget covers the account", () => {
+    const { book, foodId } = bookWithBudget();
+    expect(
+      unwrapErr(updateAccount(book, { id: foodId, type: "income" }, NOW)).code,
+    ).toBe("ACCOUNT_HAS_BUDGETS");
+  });
+
+  it("allows retyping an expense leaf that no budget covers", () => {
+    const { book } = bookWithBudget();
+    const withSpare = unwrap(
+      createAccount(
+        book,
+        { parentId: null, name: "Fun", type: "expense", currency: "ILS", isPlaceholder: false },
+        NOW,
+      ),
+    );
+    const funId = withSpare.accounts[withSpare.accounts.length - 1].id;
+    const next = unwrap(updateAccount(withSpare, { id: funId, type: "income" }, NOW));
+    expect(next.accounts.find((a) => a.id === funId)?.type).toBe("income");
+    expect(unwrap(validateBook(next))).toBe(true);
+  });
+
+  // The guard refuses a move *away* from expense, never one towards it. A snapshot that
+  // reached us with a limit on a non-expense account is already unloadable, and retyping
+  // that account to expense is the edit that repairs it — refusing here would leave the
+  // user with a book no command can fix.
+  it("allows retyping into expense an account a budget already wrongly covers", () => {
+    const { book, foodId } = bookWithBudget();
+    const broken: Book = {
+      ...book,
+      accounts: book.accounts.map((a) => (a.id === foodId ? { ...a, type: "income" } : a)),
+    };
+    expect(validateBook(broken).ok).toBe(false);
+
+    const next = unwrap(updateAccount(broken, { id: foodId, type: "expense" }, NOW));
+    expect(next.budgets).toHaveLength(1);
+    expect(unwrap(validateBook(next))).toBe(true);
   });
 
   it("allows an edit that leaves every rule referencing the account untouched", () => {

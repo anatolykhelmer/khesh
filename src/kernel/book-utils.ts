@@ -23,6 +23,12 @@ export function hasPostings(book: Book, accountId: string): boolean {
   );
 }
 
+/** Whether any limit is filed against `accountId`, on the leaf itself or on it as a
+ * group. `validateBook` requires every one of them to sit on an expense account. */
+export function hasBudgets(book: Book, accountId: string): boolean {
+  return book.budgets.some((budget) => budget.accountId === accountId);
+}
+
 /** Every live (non-deleted) rule that posts from or to `accountId` — a paused rule
  * still counts, since resuming it later would break the same way. */
 export function recurrencesReferencing(book: Book, accountId: string): Recurrence[] {

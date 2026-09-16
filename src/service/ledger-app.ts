@@ -24,12 +24,14 @@ import {
   setBudget,
   setRecurrencePaused as kernelSetRecurrencePaused,
   skipOccurrence as kernelSkipOccurrence,
+  turnoverInRange,
   updateAccount,
   updateEntry as kernelUpdateEntry,
   updateRecurrence as kernelUpdateRecurrence,
   type Account,
   type AccountBalance,
   type AccountNode,
+  type AccountTurnover,
   type AccountType,
   type Book,
   type BudgetPeriod,
@@ -698,6 +700,14 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       bounds?: DateBounds,
     ): Result<Map<string, AccountBalance>> {
       return balancesByAccount(book, bounds);
+    },
+
+    turnoverInRange(
+      book: Book,
+      accountId: string,
+      bounds?: DateBounds,
+    ): Result<AccountTurnover> {
+      return turnoverInRange(book, accountId, bounds);
     },
 
     periodTotals(

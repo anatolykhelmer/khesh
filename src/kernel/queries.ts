@@ -20,27 +20,65 @@ function signedAmount(type: AccountType, debit: number, credit: number): number 
   return type === "asset" || type === "expense" ? raw : -raw;
 }
 
-function entryIncluded(date: string, asOf: string | undefined): boolean {
-  if (!asOf) return true;
-  return date <= asOf;
-}
+export type DateBounds = Pick<JournalFilter, "from" | "to">;
 
-function leafTotals(
-  book: Book,
-  accountId: string,
-  asOf?: string,
-): { debit: number; credit: number } {
-  let debit = 0;
-  let credit = 0;
+type Totals = { debit: number; credit: number };
+
+/**
+ * One pass over the journal: every account's debit and credit totals inside the bounds.
+ * Both bounds are optional and inclusive, so "up to a date" is `{ to }` and a running
+ * total is `{}`. An account with nothing in the window is absent from the map.
+ */
+function journalTotalsByAccount(book: Book, bounds: DateBounds): Map<string, Totals> {
+  const totals = new Map<string, Totals>();
   for (const entry of book.journal) {
-    if (!entryIncluded(entry.date, asOf)) continue;
+    if (bounds.from && entry.date < bounds.from) continue;
+    if (bounds.to && entry.date > bounds.to) continue;
     for (const posting of entry.postings) {
-      if (posting.accountId !== accountId) continue;
-      if (posting.side === "debit") debit += posting.amount;
-      else credit += posting.amount;
+      let bucket = totals.get(posting.accountId);
+      if (!bucket) {
+        bucket = { debit: 0, credit: 0 };
+        totals.set(posting.accountId, bucket);
+      }
+      if (posting.side === "debit") bucket.debit += posting.amount;
+      else bucket.credit += posting.amount;
     }
   }
-  return { debit, credit };
+  return totals;
+}
+
+function signedTotal(account: Account, totals: Map<string, Totals>): number {
+  const { debit, credit } = totals.get(account.id) ?? { debit: 0, credit: 0 };
+  return signedAmount(account.type, debit, credit);
+}
+
+/**
+ * A leaf yields one amount in its own currency; a group buckets its non-placeholder
+ * descendants by currency and omits currencies that net to zero. The window is whoever
+ * built `totals`: `balance` and `balanceAsOf` answer "up to a date", `balanceInRange`
+ * answers "inside a period", which is what income and expense rows show, and
+ * `balancesByAccount` answers whichever of those its bounds describe.
+ */
+function balanceFromTotals(
+  book: Book,
+  account: Account,
+  totals: Map<string, Totals>,
+): AccountBalance {
+  if (!account.isPlaceholder) {
+    return {
+      kind: "leaf",
+      currency: account.currency,
+      amount: signedTotal(account, totals),
+    };
+  }
+  const balances: Record<CurrencyCode, number> = {};
+  for (const child of descendants(book, account.id)) {
+    if (child.isPlaceholder) continue;
+    const signed = signedTotal(child, totals);
+    if (signed === 0) continue;
+    balances[child.currency] = (balances[child.currency] ?? 0) + signed;
+  }
+  return { kind: "placeholder", balances };
 }
 
 export function accountPath(book: Book, id: string): Result<string> {
@@ -67,7 +105,9 @@ export function chart(book: Book): Result<AccountNode[]> {
 }
 
 export function balance(book: Book, accountId: string): Result<AccountBalance> {
-  return balanceAsOfInternal(book, accountId, undefined);
+  const account = findAccount(book, accountId);
+  if (!account) return err("ACCOUNT_NOT_FOUND", "Account not found", { id: accountId });
+  return ok(balanceFromTotals(book, account, journalTotalsByAccount(book, {})));
 }
 
 export function balanceAsOf(
@@ -78,35 +118,9 @@ export function balanceAsOf(
   if (!isCalendarDate(asOf)) {
     return err("ENTRY_DATE_INVALID", `Invalid date ${asOf}`, { date: asOf });
   }
-  return balanceAsOfInternal(book, accountId, asOf);
-}
-
-function balanceAsOfInternal(
-  book: Book,
-  accountId: string,
-  asOf: string | undefined,
-): Result<AccountBalance> {
   const account = findAccount(book, accountId);
   if (!account) return err("ACCOUNT_NOT_FOUND", "Account not found", { id: accountId });
-
-  if (!account.isPlaceholder) {
-    const { debit, credit } = leafTotals(book, accountId, asOf);
-    return ok({
-      kind: "leaf",
-      currency: account.currency,
-      amount: signedAmount(account.type, debit, credit),
-    });
-  }
-
-  const balances: Record<CurrencyCode, number> = {};
-  for (const child of descendants(book, accountId)) {
-    if (child.isPlaceholder) continue;
-    const { debit, credit } = leafTotals(book, child.id, asOf);
-    const signed = signedAmount(child.type, debit, credit);
-    if (signed === 0) continue;
-    balances[child.currency] = (balances[child.currency] ?? 0) + signed;
-  }
-  return ok({ kind: "placeholder", balances });
+  return ok(balanceFromTotals(book, account, journalTotalsByAccount(book, { to: asOf })));
 }
 
 export function trialBalance(book: Book, asOf?: string): Result<TrialBalance> {
@@ -115,9 +129,10 @@ export function trialBalance(book: Book, asOf?: string): Result<TrialBalance> {
   }
 
   const byCurrency: TrialBalance["byCurrency"] = {};
+  const totals = journalTotalsByAccount(book, { to: asOf });
   for (const account of book.accounts) {
     if (account.isPlaceholder) continue;
-    const { debit, credit } = leafTotals(book, account.id, asOf);
+    const { debit, credit } = totals.get(account.id) ?? { debit: 0, credit: 0 };
     if (debit === 0 && credit === 0) continue;
     const bucket = byCurrency[account.currency] ?? {
       rows: [],
@@ -138,35 +153,7 @@ export function trialBalance(book: Book, asOf?: string): Result<TrialBalance> {
   return ok({ asOf: asOf ?? null, byCurrency });
 }
 
-function entryInRange(date: string, range: { from: string; to: string }): boolean {
-  return date >= range.from && date <= range.to;
-}
-
-function periodSigned(
-  book: Book,
-  account: Account,
-  range: { from: string; to: string },
-): number {
-  let debit = 0;
-  let credit = 0;
-  for (const entry of book.journal) {
-    if (!entryInRange(entry.date, range)) continue;
-    for (const posting of entry.postings) {
-      if (posting.accountId !== account.id) continue;
-      if (posting.side === "debit") debit += posting.amount;
-      else credit += posting.amount;
-    }
-  }
-  return signedAmount(account.type, debit, credit);
-}
-
-/**
- * Signed turnover of one account within an inclusive date range, in the same shape
- * `balance` returns. A leaf yields one amount in its own currency; a group buckets its
- * non-placeholder descendants by currency and omits currencies that net to zero.
- * Additive beside `balance`/`balanceAsOf`: those answer "up to a date", this answers
- * "inside a period", which is what income and expense rows show.
- */
+/** Signed turnover of one account within an inclusive date range, in the shape `balance` returns. */
 export function balanceInRange(
   book: Book,
   accountId: string,
@@ -178,26 +165,34 @@ export function balanceInRange(
   if (!isCalendarDate(range.to)) {
     return err("ENTRY_DATE_INVALID", `Invalid date ${range.to}`, { date: range.to });
   }
-
   const account = findAccount(book, accountId);
   if (!account) return err("ACCOUNT_NOT_FOUND", "Account not found", { id: accountId });
+  return ok(balanceFromTotals(book, account, journalTotalsByAccount(book, range)));
+}
 
-  if (!account.isPlaceholder) {
-    return ok({
-      kind: "leaf",
-      currency: account.currency,
-      amount: periodSigned(book, account, range),
-    });
+/**
+ * Every account's balance from one pass over the journal, in the shape `balance` returns
+ * for each: `{}` is a running balance, `{ to }` is `balanceAsOf`, `{ from, to }` is
+ * `balanceInRange`. Groups and empty leaves are present, so a lookup by a real id is
+ * never `undefined`. For a screen that shows the whole tree at once. `bounds` is only
+ * `from`/`to`; passed a wider `JournalFilter`, its `accountId` is not honoured.
+ */
+export function balancesByAccount(
+  book: Book,
+  bounds: DateBounds = {},
+): Result<Map<string, AccountBalance>> {
+  if (bounds.from !== undefined && !isCalendarDate(bounds.from)) {
+    return err("ENTRY_DATE_INVALID", `Invalid date ${bounds.from}`, { date: bounds.from });
   }
-
-  const balances: Record<CurrencyCode, number> = {};
-  for (const child of descendants(book, accountId)) {
-    if (child.isPlaceholder) continue;
-    const signed = periodSigned(book, child, range);
-    if (signed === 0) continue;
-    balances[child.currency] = (balances[child.currency] ?? 0) + signed;
+  if (bounds.to !== undefined && !isCalendarDate(bounds.to)) {
+    return err("ENTRY_DATE_INVALID", `Invalid date ${bounds.to}`, { date: bounds.to });
   }
-  return ok({ kind: "placeholder", balances });
+  const totals = journalTotalsByAccount(book, bounds);
+  const all = new Map<string, AccountBalance>();
+  for (const account of book.accounts) {
+    all.set(account.id, balanceFromTotals(book, account, totals));
+  }
+  return ok(all);
 }
 
 export type PeriodTotals = Record<CurrencyCode, { income: MinorUnits; expense: MinorUnits }>;
@@ -214,12 +209,13 @@ export function periodTotals(
   }
 
   const totals: PeriodTotals = { [book.homeCurrency]: { income: 0, expense: 0 } };
+  const byAccount = journalTotalsByAccount(book, range);
 
   for (const account of book.accounts) {
     if (account.isPlaceholder) continue;
     if (account.type !== "income" && account.type !== "expense") continue;
     const bucket = (totals[account.currency] ??= { income: 0, expense: 0 });
-    const signed = periodSigned(book, account, range);
+    const signed = signedTotal(account, byAccount);
     if (account.type === "income") bucket.income += signed;
     else bucket.expense += signed;
   }
@@ -288,10 +284,11 @@ export function periodBreakdown(
     ? descendants(book, accountId).filter((a) => !a.isPlaceholder && a.type === "expense")
     : [account];
 
+  const totals = journalTotalsByAccount(book, range);
   const leafAmount = new Map<string, number>();
   const byCurrency: Record<string, number> = {};
   for (const leaf of leaves) {
-    const signed = periodSigned(book, leaf, range);
+    const signed = signedTotal(leaf, totals);
     leafAmount.set(leaf.id, signed);
     if (signed !== 0) {
       byCurrency[leaf.currency] = (byCurrency[leaf.currency] ?? 0) + signed;
@@ -390,10 +387,11 @@ export function budgetReport(
     return err("ENTRY_DATE_INVALID", `Invalid date ${range.to}`, { date: range.to });
   }
 
+  const totals = journalTotalsByAccount(book, range);
   const leafAmount = new Map<string, number>();
   for (const account of book.accounts) {
     if (account.isPlaceholder || account.type !== "expense") continue;
-    leafAmount.set(account.id, periodSigned(book, account, range));
+    leafAmount.set(account.id, signedTotal(account, totals));
   }
 
   const inPeriod = book.budgets.filter((budget: Budget) => budget.period === period);

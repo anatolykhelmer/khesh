@@ -2,6 +2,7 @@ import {
   accountPath,
   balance,
   balanceInRange,
+  balancesByAccount,
   budgetReport,
   chart,
   createAccount,
@@ -34,6 +35,7 @@ import {
   type BudgetPeriod,
   type BudgetReport,
   type CurrencyCode,
+  type DateBounds,
   type FxSpec,
   type JournalEntry,
   type MinorUnits,
@@ -689,6 +691,13 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       range: { from: string; to: string },
     ): Result<AccountBalance> {
       return balanceInRange(book, accountId, range);
+    },
+
+    balancesByAccount(
+      book: Book,
+      bounds?: DateBounds,
+    ): Result<Map<string, AccountBalance>> {
+      return balancesByAccount(book, bounds);
     },
 
     periodTotals(

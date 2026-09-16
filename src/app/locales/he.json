@@ -346,6 +346,23 @@
     "openingBalance": "יתרת פתיחה",
     "deleteConfirm": "למחוק את {{name}}?"
   },
+  "periodSummary": {
+    "label": "תקופה",
+    "thisMonth": "החודש",
+    "lastMonth": "החודש שעבר",
+    "thisYear": "השנה",
+    "lastYear": "השנה שעברה",
+    "all": "כל הזמנים",
+    "custom": "טווח מותאם",
+    "from": "מתאריך",
+    "to": "עד תאריך",
+    "incomplete": "יש לבחור תאריך התחלה ותאריך סיום, ההתחלה קודם.",
+    "inflow": "נכנס",
+    "outflow": "יצא",
+    "change": "שינוי",
+    "received": "התקבל",
+    "spent": "הוצא"
+  },
   "accountForm": {
     "title": "חשבון חדש",
     "parentLabel": "הורה",

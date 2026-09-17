@@ -1,4 +1,4 @@
-import { cloneBook } from "./book-utils";
+import { cloneBook, replaceIfChanged } from "./book-utils";
 import { isCalendarDate } from "./dates";
 import { validatePostings, type PostingInput } from "./entry-validation";
 import { createId } from "./ids";
@@ -75,10 +75,9 @@ export function updateEntry(
   const validated = validatePostings(book, postings, existing.kind, fx);
   if (!validated.ok) return validated;
 
-  const next = cloneBook(book);
-  const index = next.journal.findIndex((entry) => entry.id === existing.id);
+  const index = book.journal.findIndex((entry) => entry.id === existing.id);
   const updated = {
-    ...next.journal[index],
+    ...existing,
     date,
     description,
     postings: postings.map((posting) => ({ ...posting })),
@@ -86,8 +85,7 @@ export function updateEntry(
   };
   if (fx) updated.fx = { ...fx };
   else delete updated.fx;
-  next.journal[index] = updated;
-  return ok(next);
+  return ok(replaceIfChanged(book, "journal", index, updated, now));
 }
 
 export function deleteEntry(book: Book, id: string, now: string): Result<Book> {

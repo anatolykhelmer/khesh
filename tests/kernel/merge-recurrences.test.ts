@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { deleteAccount } from "../../src/kernel/accounts";
 import { mergeBooks } from "../../src/kernel/merge";
 import { createBook } from "../../src/kernel/create-book";
-import { createRecurrence, deleteRecurrence, updateRecurrence } from "../../src/kernel/recurrences";
+import {
+  createRecurrence,
+  deleteRecurrence,
+  setRecurrencePaused,
+  updateRecurrence,
+} from "../../src/kernel/recurrences";
 import { validateBook } from "../../src/kernel/validate";
 import type { Book } from "../../src/kernel/types";
 import { unwrap, NOW, LATER } from "../helpers";
@@ -112,5 +117,19 @@ describe("merging recurrences", () => {
     const a = unwrap(createRecurrence(seeded(), { ...input, id: "r1" }, NOW));
     const b = unwrap(createRecurrence(seeded(), { ...input, id: "r2", description: "Gym" }, NOW));
     expect(unwrap(mergeBooks(a, b))).toEqual(unwrap(mergeBooks(b, a)));
+  });
+
+  it("a stale device's no-op re-pause does not outrank a real edit made in between", () => {
+    const base = unwrap(createRecurrence(seeded(), { ...input, id: "r1" }, NOW));
+    const paused = unwrap(setRecurrencePaused(base, "r1", true, "2026-06-15", NOW));
+    // Device A renames the paused rule at LATER.
+    const renamed = unwrap(
+      updateRecurrence(paused, { ...input, id: "r1", description: "Rent (paused)" }, LATER),
+    );
+    // Device B, still holding `paused`, taps pause again even later — a no-op.
+    const stale = unwrap(setRecurrencePaused(paused, "r1", true, "2026-06-20", "2026-09-02T12:00:00.000Z"));
+    expect(stale).toBe(paused);
+    expect(unwrap(mergeBooks(renamed, stale)).recurrences[0].description).toBe("Rent (paused)");
+    expect(unwrap(mergeBooks(stale, renamed)).recurrences[0].description).toBe("Rent (paused)");
   });
 });

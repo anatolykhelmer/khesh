@@ -227,9 +227,32 @@ describe("periodBreakdown", () => {
     expect(usd.children.map((c) => c.id)).toEqual([t.travel]);
   });
 
-  it("omits a child whose signed amount is not positive", () => {
+  it("lists a negative child after the positive ones, and the children sum to the total", () => {
+    let t = tree();
+    t.book = spend(t.book, "2026-08-10", t.rent, t.cash, 100000);
+    t.book = unwrap(
+      postEntry(t.book, {
+        date: "2026-08-12",
+        description: "refund",
+        postings: [
+          { accountId: t.cash, side: "debit", amount: 40000 },
+          { accountId: t.groceries, side: "credit", amount: 40000 },
+        ],
+      }, NOW),
+    );
+    const result = unwrap(periodBreakdown(t.book, RANGE, t.expenses));
+    expect(result.total).toBe(60000);
+    expect(result.children).toEqual([
+      { id: t.rent, name: "Rent", isGroup: false, amount: 100000 },
+      { id: t.food, name: "Food", isGroup: true, amount: -40000 },
+    ]);
+    expect(result.children.reduce((sum, child) => sum + child.amount, 0)).toBe(result.total);
+  });
+
+  it("omits a child that nets to exactly zero", () => {
     let t = tree();
     t.book = spend(t.book, "2026-08-10", t.rent, t.cash, 10000);
+    t.book = spend(t.book, "2026-08-11", t.groceries, t.cash, 500);
     t.book = unwrap(
       postEntry(t.book, {
         date: "2026-08-12",
@@ -241,7 +264,7 @@ describe("periodBreakdown", () => {
       }, NOW),
     );
     const result = unwrap(periodBreakdown(t.book, RANGE, t.expenses));
-    expect(result.total).toBe(9500);
+    expect(result.total).toBe(10000);
     expect(result.children.map((c) => c.id)).toEqual([t.rent]);
   });
 

@@ -5,6 +5,7 @@ import {
   hasChildren,
   hasPostings,
   recurrencesReferencing,
+  replaceIfChanged,
   siblingNameTaken,
   wouldCreateCycle,
 } from "./book-utils";
@@ -205,18 +206,16 @@ export function updateAccount(
     });
   }
 
-  const next = cloneBook(book);
-  const index = next.accounts.findIndex((item) => item.id === account.id);
-  next.accounts[index] = {
-    ...next.accounts[index],
-    name,
-    parentId,
-    isPlaceholder,
-    type,
-    currency,
-    updatedAt: now,
-  };
-  return ok(next);
+  const index = book.accounts.findIndex((item) => item.id === account.id);
+  return ok(
+    replaceIfChanged(
+      book,
+      "accounts",
+      index,
+      { ...account, name, parentId, isPlaceholder, type, currency },
+      now,
+    ),
+  );
 }
 
 export function deleteAccount(book: Book, id: string, now: string): Result<Book> {

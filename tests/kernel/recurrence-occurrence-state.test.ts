@@ -44,10 +44,12 @@ describe("skipOccurrence", () => {
     expect(book.recurrences[0].updatedAt).toBe(LATER);
   });
 
-  it("is idempotent", () => {
+  it("is idempotent: a repeat skip returns the same book with the same stamp", () => {
     const once = unwrap(skipOccurrence(withRule(), "r1", "2026-05-01", TODAY, LATER));
-    const twice = unwrap(skipOccurrence(once, "r1", "2026-05-01", TODAY, LATER));
+    const twice = unwrap(skipOccurrence(once, "r1", "2026-05-01", TODAY, "2026-09-02T12:00:00.000Z"));
+    expect(twice).toBe(once);
     expect(twice.recurrences[0].skipped).toEqual(["2026-05-01"]);
+    expect(twice.recurrences[0].updatedAt).toBe(LATER);
   });
 
   it("refuses an unknown rule", () => {

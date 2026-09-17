@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
-import { expenseRootId, parseStatsState, toStatsParams } from "../../src/app/stats-state";
+import {
+  expenseRootId,
+  parseStatsState,
+  statsView,
+  toStatsParams,
+} from "../../src/app/stats-state";
+import type { PeriodSlice } from "../../src/kernel/queries";
 import { NOW as ISO_NOW, unwrap } from "../helpers";
 
 const NOW = new Date(2026, 7, 12); // 12 August 2026
@@ -163,5 +169,78 @@ describe("toStatsParams", () => {
         currency: "USD",
       }).toString(),
     ).toBe("month=2026-03&account=abc&currency=USD");
+  });
+});
+
+function slice(id: string, amount: number): PeriodSlice {
+  return { id, name: id, isGroup: false, amount };
+}
+
+describe("statsView", () => {
+  it("draws the pie from the positives and still lists a refunded child", () => {
+    const children = [slice("food", 20000), slice("travel", 10000), slice("refund", -6400)];
+    const view = statsView({ isGroup: true, total: 23600, children });
+
+    expect(view.positive.map((s) => s.id)).toEqual(["food", "travel"]);
+    expect(view.showPie).toBe(true);
+    expect(view.showLegend).toBe(true);
+    expect(view.showTotal).toBe(true);
+  });
+
+  it("a leaf with a net refund prints its total with no pie, legend or empty message", () => {
+    const view = statsView({ isGroup: false, total: -6400, children: [] });
+
+    expect(view.showPie).toBe(false);
+    expect(view.showLegend).toBe(false);
+    expect(view.showTotal).toBe(true);
+  });
+
+  it("a group netting to zero prints the total over its legend with no pie", () => {
+    const children = [slice("food", 6400), slice("refund", -6400)];
+    const view = statsView({ isGroup: true, total: 0, children });
+
+    expect(view.showPie).toBe(false);
+    expect(view.showLegend).toBe(true);
+    expect(view.showTotal).toBe(true);
+  });
+
+  it("an empty month shows the empty message instead of a total", () => {
+    const view = statsView({ isGroup: true, total: 0, children: [] });
+
+    expect(view.showPie).toBe(false);
+    expect(view.showLegend).toBe(false);
+    expect(view.showTotal).toBe(false);
+  });
+
+  it("the happy path keeps the six colour classes and wraps after them", () => {
+    const children = Array.from({ length: 7 }, (_, i) => slice(`c${i}`, 1000 * (i + 1)));
+    const view = statsView({ isGroup: true, total: 28000, children });
+
+    expect(view.showPie).toBe(true);
+    expect(children.map((child) => view.swatchClass(child.id))).toEqual([
+      "swatch cat-0",
+      "swatch cat-1",
+      "swatch cat-2",
+      "swatch cat-3",
+      "swatch cat-4",
+      "swatch cat-5",
+      "swatch cat-0",
+    ]);
+  });
+
+  it("the swatch class of a negative child is a bare swatch", () => {
+    const children = [slice("food", 20000), slice("refund", -6400)];
+    const view = statsView({ isGroup: true, total: 13600, children });
+
+    expect(view.swatchClass("refund")).toBe("swatch");
+    expect(view.swatchClass("gone")).toBe("swatch");
+  });
+
+  it("swatch indices follow the positive slices, not the full children list", () => {
+    const children = [slice("refund", -6400), slice("food", 20000), slice("travel", 10000)];
+    const view = statsView({ isGroup: true, total: 23600, children });
+
+    expect(view.swatchClass("food")).toBe("swatch cat-0");
+    expect(view.swatchClass("travel")).toBe("swatch cat-1");
   });
 });

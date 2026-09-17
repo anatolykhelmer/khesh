@@ -1,4 +1,4 @@
-import { cloneBook, findAccount } from "./book-utils";
+import { cloneBook, findAccount, replaceIfChanged } from "./book-utils";
 import { isCalendarDate } from "./dates";
 import { createId } from "./ids";
 import { err, ok, type Result } from "./result";
@@ -130,9 +130,15 @@ export function updateRecurrence(
   const invalid = invalidInput(book, input);
   if (invalid) return invalid;
 
-  const next = cloneBook(book);
-  next.recurrences[index] = recordFrom(input, input.id, next.recurrences[index], now);
-  return ok(next);
+  return ok(
+    replaceIfChanged(
+      book,
+      "recurrences",
+      index,
+      recordFrom(input, input.id, book.recurrences[index], now),
+      now,
+    ),
+  );
 }
 
 export function deleteRecurrence(book: Book, id: string, now: string): Result<Book> {
@@ -154,6 +160,11 @@ function bounded(dates: readonly string[], today: string): string[] {
   return [...new Set(dates.filter((date) => date >= windowStart))].sort();
 }
 
+/**
+ * Apply `change` to one rule. A change that hands back an equal rule (ignoring the stamp)
+ * leaves the book untouched — same reference, no new `updatedAt` — so a repeat tap on a
+ * stale device cannot outrank a real edit under last-writer-wins.
+ */
 function withRule(
   book: Book,
   ruleId: string,
@@ -164,9 +175,7 @@ function withRule(
   if (index === -1) {
     return err("RECURRENCE_NOT_FOUND", "Recurrence not found", { id: ruleId });
   }
-  const next = cloneBook(book);
-  next.recurrences[index] = { ...change(next.recurrences[index]), updatedAt: now };
-  return ok(next);
+  return ok(replaceIfChanged(book, "recurrences", index, change(book.recurrences[index]), now));
 }
 
 /** Dismiss one occurrence for good. */

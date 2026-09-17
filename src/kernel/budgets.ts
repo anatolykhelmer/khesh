@@ -1,4 +1,4 @@
-import { cloneBook, findAccount } from "./book-utils";
+import { cloneBook, findAccount, replaceIfChanged } from "./book-utils";
 import { isCurrencyCode } from "./currency";
 import { err, ok, type Result } from "./result";
 import { addTombstone, budgetKeyOf, clearTombstone } from "./tombstones";
@@ -47,11 +47,28 @@ export function setBudget(
     limit: input.limit,
     updatedAt: now,
   };
+  const key = budgetKeyOf(input);
+  const index = book.budgets.findIndex((item) => sameKey(item, input));
+  if (index === -1) {
+    const next = cloneBook(book);
+    next.budgets.push(budget);
+    clearTombstone(next, "budget", key);
+    return ok(next);
+  }
+  const replaced = replaceIfChanged(book, "budgets", index, budget, now);
+  if (replaced !== book) {
+    clearTombstone(replaced, "budget", key);
+    return ok(replaced);
+  }
+  // Equal record. A tombstone with this key beside a live budget can only come out of a
+  // merge (the ladder consumes account tombstones alone); clearing it is a change. The
+  // record is re-stamped even though its content did not move, because the merge ladder
+  // claims a budget at `budget.updatedAt` (`merge.ts`): only a stamp newer than the remote
+  // tombstone's `deletedAt` keeps the next merge from resurrecting that deletion.
+  if (!book.tombstones.some((t) => t.kind === "budget" && t.key === key)) return ok(book);
   const next = cloneBook(book);
-  const index = next.budgets.findIndex((item) => sameKey(item, input));
-  if (index === -1) next.budgets.push(budget);
-  else next.budgets[index] = budget;
-  clearTombstone(next, "budget", budgetKeyOf(input));
+  next.budgets[index] = budget;
+  clearTombstone(next, "budget", key);
   return ok(next);
 }
 

@@ -1,4 +1,4 @@
-import { cloneBook, findAccount, siblingNameTaken } from "./book-utils";
+import { cloneBook, findAccount, replaceIfChanged, siblingNameTaken } from "./book-utils";
 import { isCalendarDate } from "./dates";
 import { validatePostings } from "./entry-validation";
 import { deleteEntry } from "./journal";
@@ -131,8 +131,10 @@ export function recordOpeningBalance(
   const entryId = `opening:${input.accountId}`;
 
   if (input.amount === 0) {
+    // Nothing to clear: hand back the same book, so the service knows there is nothing
+    // to persist either.
     if (!book.journal.some((entry) => entry.id === entryId)) {
-      return ok(cloneBook(book));
+      return ok(book);
     }
     return deleteEntry(book, entryId, now);
   }
@@ -163,7 +165,27 @@ export function recordOpeningBalance(
   };
   clearTombstone(next, "entry", entryId);
   const index = next.journal.findIndex((item) => item.id === entryId);
-  if (index === -1) next.journal.push(entry);
-  else next.journal[index] = entry;
+  if (index === -1) {
+    next.journal.push(entry);
+    return ok(next);
+  }
+
+  const written = replaceIfChanged(next, "journal", index, entry, now);
+  if (written !== next) return ok(written);
+  // The entry is the one already filed. `ensureObAccounts` and `clearTombstone` only ever
+  // push an account or drop a tombstone, so equal lengths on both lists mean they touched
+  // nothing either: re-saving an unchanged opening balance is a no-op, and handing back the
+  // very same book keeps the service from writing and keeps the old stamp from outranking a
+  // concurrent real edit.
+  if (
+    next.accounts.length === book.accounts.length &&
+    next.tombstones.length === book.tombstones.length
+  ) {
+    return ok(book);
+  }
+  // Something outside the journal did move: an OB account came back, or a tombstone for this
+  // entry was cleared. Stamp the entry too — as with a budget beside its own tombstone, the
+  // fresh stamp has to outrank the remote `deletedAt` or a merge would undo the restore.
+  next.journal[index] = entry;
   return ok(next);
 }

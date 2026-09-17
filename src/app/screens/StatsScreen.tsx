@@ -53,8 +53,15 @@ export function StatsScreen() {
   }
 
   const breakdown = result.value;
-  const arcs = pieArcs(breakdown.children, PIE);
-  const showPie = breakdown.isGroup && breakdown.children.length > 0 && breakdown.total > 0;
+  const positive = breakdown.children.filter((child) => child.amount > 0);
+  const arcs = pieArcs(positive, PIE);
+  const showPie = breakdown.isGroup && positive.length > 0 && breakdown.total > 0;
+  const showLegend = breakdown.children.length > 0;
+  const showTotal = showLegend || breakdown.total !== 0;
+  const swatchClass = (childId: string) => {
+    const slot = positive.findIndex((slice) => slice.id === childId);
+    return slot === -1 ? "swatch" : `swatch cat-${slot % 6}`;
+  };
 
   return (
     <main className="screen">
@@ -112,8 +119,8 @@ export function StatsScreen() {
           ))}
         </div>
       ) : null}
-      {showPie ? (
-        <>
+      {showTotal ? (
+        showPie ? (
           <div className="group pad">
             <p className="stats-total">
               <Ltr>{formatMinor(breakdown.total, breakdown.currency)}</Ltr>
@@ -129,35 +136,37 @@ export function StatsScreen() {
               ))}
             </svg>
           </div>
-          <ul className="stats-legend group">
-            {breakdown.children.map((child, index) => (
-              <li key={child.id}>
-                <button
-                  type="button"
-                  className="stats-row"
-                  aria-label={t("stats.rowLabel", {
-                    name: child.name,
-                    amount: formatMinor(child.amount, breakdown.currency),
-                  })}
-                  onClick={() => write({ ...state, accountId: child.id })}
-                >
-                  <span className={`swatch cat-${index % 6}`} />
-                  <span>{child.name}</span>
-                  <span className="muted">
-                    <Ltr>{formatMinor(child.amount, breakdown.currency)}</Ltr>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : breakdown.total > 0 ? (
-        <p className="stats-total">
-          <Ltr>{formatMinor(breakdown.total, breakdown.currency)}</Ltr>
-        </p>
+        ) : (
+          <p className="stats-total">
+            <Ltr>{formatMinor(breakdown.total, breakdown.currency)}</Ltr>
+          </p>
+        )
       ) : (
         <p className="muted">{t("stats.empty")}</p>
       )}
+      {showLegend ? (
+        <ul className="stats-legend group">
+          {breakdown.children.map((child) => (
+            <li key={child.id}>
+              <button
+                type="button"
+                className="stats-row"
+                aria-label={t("stats.rowLabel", {
+                  name: child.name,
+                  amount: formatMinor(child.amount, breakdown.currency),
+                })}
+                onClick={() => write({ ...state, accountId: child.id })}
+              >
+                <span className={swatchClass(child.id)} />
+                <span>{child.name}</span>
+                <span className="muted">
+                  <Ltr>{formatMinor(child.amount, breakdown.currency)}</Ltr>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </main>
   );
 }

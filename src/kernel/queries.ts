@@ -369,7 +369,9 @@ export function periodBreakdown(
     for (const child of book.accounts) {
       if (child.parentId !== account.id) continue;
       const amount = subtreeAmount(book, child, resolved, leafAmount);
-      if (amount <= 0) continue;
+      // A child that nets below zero (refunds exceeded spending) is still part of the
+      // total, so it is listed; only a child with no net activity is left out.
+      if (amount === 0) continue;
       children.push({
         id: child.id,
         name: child.name,

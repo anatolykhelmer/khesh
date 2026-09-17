@@ -7,7 +7,7 @@ import { Ltr } from "../components/Ltr";
 import { currencySymbol } from "../currencies";
 import { formatMinor, monthLabel } from "../format";
 import { useLedger } from "../ledger-context";
-import { expenseRootId, parseStatsState, toStatsParams } from "../stats-state";
+import { expenseRootId, parseStatsState, statsView, toStatsParams } from "../stats-state";
 
 const PIE = { cx: 100, cy: 100, r: 90 };
 
@@ -53,15 +53,8 @@ export function StatsScreen() {
   }
 
   const breakdown = result.value;
-  const positive = breakdown.children.filter((child) => child.amount > 0);
+  const { positive, showPie, showLegend, showTotal, swatchClass } = statsView(breakdown);
   const arcs = pieArcs(positive, PIE);
-  const showPie = breakdown.isGroup && positive.length > 0 && breakdown.total > 0;
-  const showLegend = breakdown.children.length > 0;
-  const showTotal = showLegend || breakdown.total !== 0;
-  const swatchClass = (childId: string) => {
-    const slot = positive.findIndex((slice) => slice.id === childId);
-    return slot === -1 ? "swatch" : `swatch cat-${slot % 6}`;
-  };
 
   return (
     <main className="screen">

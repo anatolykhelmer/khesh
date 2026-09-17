@@ -131,8 +131,10 @@ export function recordOpeningBalance(
   const entryId = `opening:${input.accountId}`;
 
   if (input.amount === 0) {
+    // Nothing to clear: hand back the same book, so the service knows there is nothing
+    // to persist either.
     if (!book.journal.some((entry) => entry.id === entryId)) {
-      return ok(cloneBook(book));
+      return ok(book);
     }
     return deleteEntry(book, entryId, now);
   }

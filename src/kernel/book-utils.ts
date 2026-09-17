@@ -1,7 +1,34 @@
+import { canonicalJson } from "./canonical-json";
 import type { Account, Book, Recurrence } from "./types";
 
 export function cloneBook(book: Book): Book {
   return structuredClone(book);
+}
+
+export type RecordList = "accounts" | "journal" | "budgets" | "recurrences";
+
+/**
+ * Put `candidate` in place of `book[list][index]` — unless it already is that record.
+ *
+ * "Already is" means equal under `canonicalJson` with `updatedAt` left out of both sides,
+ * so a command that rebuilt a record from unchanged inputs finds nothing to write. In that
+ * case the very same `book` comes back, which is the signal the service layer reads to
+ * skip its commit. Otherwise a clone carries the candidate stamped `now`; the candidate is
+ * deep-copied first so its nested arrays are never shared between the old and new book.
+ */
+export function replaceIfChanged<L extends RecordList>(
+  book: Book,
+  list: L,
+  index: number,
+  candidate: Book[L][number],
+  now: string,
+): Book {
+  const current = book[list][index] as Book[L][number];
+  const unstamped = (record: Book[L][number]) => canonicalJson({ ...record, updatedAt: undefined });
+  if (unstamped(candidate) === unstamped(current)) return book;
+  const next = cloneBook(book);
+  (next[list] as Book[L][number][])[index] = { ...structuredClone(candidate), updatedAt: now };
+  return next;
 }
 
 /**

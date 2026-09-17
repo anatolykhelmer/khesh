@@ -177,4 +177,28 @@ describe("record commands that change nothing", () => {
       unwrap(recordOpeningBalance(book, { accountId: cash, amount: 0, date: "2026-01-01" }, LATER)),
     ).toBe(book);
   });
+
+  it("recordOpeningBalance with the same amount and date returns the same book", () => {
+    const { book, cash } = household();
+    const opened = unwrap(
+      recordOpeningBalance(book, { accountId: cash, amount: 25000, date: "2026-01-01" }, NOW),
+    );
+    const again = unwrap(
+      recordOpeningBalance(opened, { accountId: cash, amount: 25000, date: "2026-01-01" }, LATER),
+    );
+    expect(again).toBe(opened);
+    expect(again.journal.find((e) => e.id === `opening:${cash}`)?.updatedAt).toBe(NOW);
+  });
+
+  it("recordOpeningBalance with a new amount is stamped", () => {
+    const { book, cash } = household();
+    const opened = unwrap(
+      recordOpeningBalance(book, { accountId: cash, amount: 25000, date: "2026-01-01" }, NOW),
+    );
+    const raised = unwrap(
+      recordOpeningBalance(opened, { accountId: cash, amount: 30000, date: "2026-01-01" }, LATER),
+    );
+    expect(raised).not.toBe(opened);
+    expect(raised.journal.find((e) => e.id === `opening:${cash}`)?.updatedAt).toBe(LATER);
+  });
 });

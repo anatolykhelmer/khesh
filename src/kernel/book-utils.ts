@@ -15,6 +15,11 @@ export type RecordList = "accounts" | "journal" | "budgets" | "recurrences";
  * case the very same `book` comes back, which is the signal the service layer reads to
  * skip its commit. Otherwise a clone carries the candidate stamped `now`; the candidate is
  * deep-copied first so its nested arrays are never shared between the old and new book.
+ *
+ * `index` must be a real index of `book[list]`: the caller has already found the record it
+ * means to replace. A miss (`findIndex` returning `-1`) is an insert, not a replace, and
+ * has to be handled before the call — passed in here it would compare against `undefined`,
+ * always take the changed branch, and assign the candidate to the property `"-1"`.
  */
 export function replaceIfChanged<L extends RecordList>(
   book: Book,

@@ -45,7 +45,7 @@ async function withRule() {
   );
   const savesBefore = saves();
   commits.length = 0;
-  return { app, book, rent, ruleId: book.recurrences[0].id, commits, savesSince: () => saves() - savesBefore };
+  return { app, book, bank, rent, ruleId: book.recurrences[0].id, commits, savesSince: () => saves() - savesBefore };
 }
 
 describe("a no-op command through LedgerApp", () => {
@@ -68,6 +68,20 @@ describe("a no-op command through LedgerApp", () => {
     expect(same).toBe(book);
     expect(savesSince()).toBe(0);
     expect(commits).toHaveLength(0);
+  });
+
+  it("setting the same opening balance twice saves once and fires one afterCommit", async () => {
+    const { app, book, bank, commits, savesSince } = await withRule();
+    const input = { accountId: bank.id, amount: 25000, date: "2026-01-01" };
+    const opened = unwrap(await app.setOpeningBalance(book, input));
+    expect(opened).not.toBe(book);
+    expect(savesSince()).toBe(1);
+    expect(commits).toHaveLength(1);
+
+    const again = unwrap(await app.setOpeningBalance(opened, input));
+    expect(again).toBe(opened);
+    expect(savesSince()).toBe(1);
+    expect(commits).toHaveLength(1);
   });
 
   it("a real edit still saves once and fires afterCommit once", async () => {

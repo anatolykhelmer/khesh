@@ -61,7 +61,10 @@ export function setBudget(
     return ok(replaced);
   }
   // Equal record. A tombstone with this key beside a live budget can only come out of a
-  // merge (the ladder consumes account tombstones alone); clearing it is a change.
+  // merge (the ladder consumes account tombstones alone); clearing it is a change. The
+  // record is re-stamped even though its content did not move, because the merge ladder
+  // claims a budget at `budget.updatedAt` (`merge.ts`): only a stamp newer than the remote
+  // tombstone's `deletedAt` keeps the next merge from resurrecting that deletion.
   if (!book.tombstones.some((t) => t.kind === "budget" && t.key === key)) return ok(book);
   const next = cloneBook(book);
   next.budgets[index] = budget;

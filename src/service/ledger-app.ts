@@ -266,6 +266,17 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
     });
   }
 
+  /**
+   * Persist the outcome of a kernel command on `book`. A command that changed nothing hands
+   * back the very same book, and that is not a write: no save, no `afterCommit`, no sync
+   * cycle. Errors pass straight through.
+   */
+  async function settle(book: Book, result: Result<Book>): Promise<Result<Book>> {
+    if (!result.ok) return result;
+    if (result.value === book) return ok(book);
+    return commit(result.value);
+  }
+
   return {
     async boot(): Promise<Result<Book | null>> {
       return repo.load();
@@ -437,8 +448,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         },
         nowIso(),
       );
-      if (!updated.ok) return updated;
-      return commit(updated.value);
+      return settle(book, updated);
     },
 
     async setOpeningBalance(
@@ -450,23 +460,19 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
           id: input.accountId,
         });
       }
-      const hadEntry = book.journal.some((e) => e.id === `opening:${input.accountId}`);
-      const recorded = recordOpeningBalance(
+      return settle(
         book,
-        {
-          accountId: input.accountId,
-          amount: input.amount,
-          date: input.date,
-          groupName: i18n.t("accounts.openingBalances"),
-        },
-        nowIso(),
+        recordOpeningBalance(
+          book,
+          {
+            accountId: input.accountId,
+            amount: input.amount,
+            date: input.date,
+            groupName: i18n.t("accounts.openingBalances"),
+          },
+          nowIso(),
+        ),
       );
-      if (!recorded.ok) return recorded;
-      // amount 0 with no prior entry is the kernel's own no-op (it clones the book
-      // unchanged) — skip the commit so clearing a balance that was never set doesn't
-      // still persist and fire afterCommit/sync for nothing.
-      if (input.amount === 0 && !hadEntry) return ok(book);
-      return commit(recorded.value);
     },
 
     openingBalanceOf(
@@ -494,8 +500,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         return err("ACCOUNT_IS_SYSTEM", "Root categories cannot be deleted", { id });
       }
       const deleted = deleteAccount(book, id, nowIso());
-      if (!deleted.ok) return deleted;
-      return commit(deleted.value);
+      return settle(book, deleted);
     },
 
     async addEntry(book: Book, input: EntryInput): Promise<Result<Book>> {
@@ -512,8 +517,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         },
         nowIso(),
       );
-      if (!posted.ok) return posted;
-      return commit(posted.value);
+      return settle(book, posted);
     },
 
     async updateEntry(book: Book, entryId: string, input: EntryInput): Promise<Result<Book>> {
@@ -536,20 +540,17 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         },
         nowIso(),
       );
-      if (!updated.ok) return updated;
-      return commit(updated.value);
+      return settle(book, updated);
     },
 
     async deleteEntry(book: Book, entryId: string): Promise<Result<Book>> {
       const deleted = kernelDeleteEntry(book, entryId, nowIso());
-      if (!deleted.ok) return deleted;
-      return commit(deleted.value);
+      return settle(book, deleted);
     },
 
     async addRecurrence(book: Book, input: RecurrenceInput): Promise<Result<Book>> {
       const created = createRecurrence(book, input, nowIso());
-      if (!created.ok) return created;
-      return commit(created.value);
+      return settle(book, created);
     },
 
     async updateRecurrence(
@@ -557,32 +558,27 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       input: RecurrenceInput & { id: string },
     ): Promise<Result<Book>> {
       const updated = kernelUpdateRecurrence(book, input, nowIso());
-      if (!updated.ok) return updated;
-      return commit(updated.value);
+      return settle(book, updated);
     },
 
     async removeRecurrence(book: Book, id: string): Promise<Result<Book>> {
       const removed = deleteRecurrence(book, id, nowIso());
-      if (!removed.ok) return removed;
-      return commit(removed.value);
+      return settle(book, removed);
     },
 
     async setRecurrencePaused(book: Book, id: string, paused: boolean): Promise<Result<Book>> {
       const next = kernelSetRecurrencePaused(book, id, paused, todayCalendarDate(), nowIso());
-      if (!next.ok) return next;
-      return commit(next.value);
+      return settle(book, next);
     },
 
     async skipOccurrence(book: Book, ruleId: string, date: string): Promise<Result<Book>> {
       const next = kernelSkipOccurrence(book, ruleId, date, todayCalendarDate(), nowIso());
-      if (!next.ok) return next;
-      return commit(next.value);
+      return settle(book, next);
     },
 
     async deferOccurrence(book: Book, ruleId: string, date: string): Promise<Result<Book>> {
       const next = kernelDeferOccurrence(book, ruleId, date, todayCalendarDate(), nowIso());
-      if (!next.ok) return next;
-      return commit(next.value);
+      return settle(book, next);
     },
 
     /**
@@ -638,8 +634,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         },
         nowIso(),
       );
-      if (!posted.ok) return posted;
-      return commit(posted.value);
+      return settle(book, posted);
     },
 
     dueRows(book: Book, today: string = todayCalendarDate()): DueRow[] {
@@ -736,8 +731,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       },
     ): Promise<Result<Book>> {
       const result = setBudget(book, input, nowIso());
-      if (!result.ok) return result;
-      return commit(result.value);
+      return settle(book, result);
     },
 
     async removeBudget(
@@ -745,8 +739,7 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       input: { accountId: string; period: BudgetPeriod; currency: CurrencyCode },
     ): Promise<Result<Book>> {
       const result = removeBudget(book, input, nowIso());
-      if (!result.ok) return result;
-      return commit(result.value);
+      return settle(book, result);
     },
 
     budgetReport(

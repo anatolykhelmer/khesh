@@ -108,6 +108,17 @@ export function validateBook(book: Book): Result<true> {
         details: { id: account.id },
       });
     }
+    // A top-level account is a category root, and a category holds no money. No command
+    // creates a top-level leaf, the edit form offers no top-level parent, and
+    // updateAccount refuses the move to the top that would let the merge ladder make one.
+    // A book that has one came from outside the app.
+    if (account.parentId === null && !account.isPlaceholder) {
+      violations.push({
+        code: "ACCOUNT_ROOT_NOT_PLACEHOLDER",
+        message: "A top-level account must be a placeholder",
+        details: { id: account.id },
+      });
+    }
     if (account.parentId !== null) {
       const parent = book.accounts.find((item) => isAccountRecord(item) && item.id === account.parentId);
       if (!parent) {

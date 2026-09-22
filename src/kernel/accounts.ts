@@ -35,6 +35,9 @@ export function createAccount(
       currency: input.currency,
     });
   }
+  if (input.parentId === null && !input.isPlaceholder) {
+    return err("ACCOUNT_ROOT_NOT_PLACEHOLDER", "A top-level account must be a placeholder");
+  }
   if (input.parentId !== null) {
     const parent = findAccount(book, input.parentId);
     if (!parent) {
@@ -175,6 +178,21 @@ export function updateAccount(
   // it must refuse rather than silently orphan the rule into an unloadable book.
   if (isPlaceholder && recurrencesReferencing(book, account.id).length > 0) {
     return err("ACCOUNT_HAS_RECURRENCES", "Cannot make placeholder while a recurring rule posts to it", {
+      id: account.id,
+    });
+  }
+
+  // Only createHousehold puts an account at the top level. Moving one there is what would
+  // let the merge ladder's rung 3 ("postings force it off") turn it into a top-level leaf
+  // when another device posted to the same account — two valid books merging into one
+  // validateBook refuses. The edit form never offered the move.
+  if (parentId === null && account.parentId !== null) {
+    return err("ACCOUNT_PARENT_INVALID", "An account cannot be moved to the top level", {
+      id: account.id,
+    });
+  }
+  if (parentId === null && !isPlaceholder) {
+    return err("ACCOUNT_ROOT_NOT_PLACEHOLDER", "A top-level account must be a placeholder", {
       id: account.id,
     });
   }

@@ -2,7 +2,6 @@ import { createMemoryRepository } from "../../src/adapters/memory-repository";
 import { createMemorySyncStore } from "../../src/adapters/memory-sync-store";
 import { decodeEnvelope, encodeEnvelope } from "../../src/adapters/sync-envelope";
 import { createAccount, updateAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { bookFingerprint } from "../../src/kernel/merge";
 import type { Book } from "../../src/kernel/types";
@@ -11,6 +10,7 @@ import type { LedgerRepository } from "../../src/ports/ledger-repository";
 import type { SyncStorePort } from "../../src/ports/sync-store";
 import { applyFirstConnect, inspectRemote } from "../../src/service/sync-connect";
 import { NOW, LATER, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 /** The serialising stand-in for navigator.locks, as in the sync engine's suite. */
 function serialLock() {
@@ -23,8 +23,8 @@ function serialLock() {
 }
 
 function makeBook(name: string, at: string): Book {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, at));
-  book = unwrap(createAccount(book, { parentId: null, name, type: "asset", currency: "ILS", isPlaceholder: false }, at));
+  let book = realBook("ILS", at);
+  book = unwrap(createAccount(book, { parentId: ROOT.asset, name, type: "asset", currency: "ILS", isPlaceholder: false }, at));
   return book;
 }
 
@@ -123,7 +123,7 @@ describe("applyFirstConnect", () => {
     const store = createMemorySyncStore(encodeEnvelope(remote));
     const book = unwrap(await applyFirstConnect("merge", { repo, store }));
     const names = book.accounts.map((a) => a.name).sort();
-    expect(names).toEqual(["Cash", "Wallet"]);
+    expect(names).toEqual(["Assets", "Cash", "Expenses", "Income", "Liabilities", "Wallet"]);
     expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(book));
     expect(bookFingerprint(unwrap(decodeEnvelope(store.getPayload()!)))).toBe(bookFingerprint(book));
   });
@@ -161,7 +161,7 @@ describe("applyFirstConnect", () => {
     const repo = createMemoryRepository(local);
     const inner = createMemorySyncStore(encodeEnvelope(remote));
     const midFlow = unwrap(
-      createAccount(local, { parentId: null, name: "Savings", type: "asset", currency: "ILS", isPlaceholder: false }, LATER),
+      createAccount(local, { parentId: ROOT.asset, name: "Savings", type: "asset", currency: "ILS", isPlaceholder: false }, LATER),
     );
     let committed = false;
     const store: SyncStorePort = {
@@ -179,7 +179,15 @@ describe("applyFirstConnect", () => {
 
     const book = unwrap(await applyFirstConnect("merge", { repo, store }));
 
-    expect(book.accounts.map((a) => a.name).sort()).toEqual(["Cash", "Savings", "Wallet"]);
+    expect(book.accounts.map((a) => a.name).sort()).toEqual([
+      "Assets",
+      "Cash",
+      "Expenses",
+      "Income",
+      "Liabilities",
+      "Savings",
+      "Wallet",
+    ]);
     expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(book));
     expect(bookFingerprint(unwrap(decodeEnvelope(inner.getPayload()!)))).toBe(bookFingerprint(book));
   });
@@ -192,10 +200,11 @@ describe("applyFirstConnect", () => {
    * which has no postings on it, moves Food to USD. The union would silently reread
    * that 100 as USD, so mergeBooks refuses. */
   function currencyConflict(): { local: Book; remote: Book } {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
-    book = unwrap(createAccount(book, { parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
-    book = unwrap(createAccount(book, { parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW));
-    const [cash, food] = book.accounts;
+    let book = realBook();
+    book = unwrap(createAccount(book, { parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
+    book = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW));
+    const cash = accountNamed(book, "Cash");
+    const food = accountNamed(book, "Food");
     const local = unwrap(
       postEntry(book, {
         date: "2026-01-10",
@@ -213,10 +222,11 @@ describe("applyFirstConnect", () => {
   /** A group that one device turned into a postable leaf and posted to, while the other
    * gave it a child: an account with both children and postings, which no rung repairs. */
   function childrenAndPostingsConflict(): { local: Book; remote: Book } {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
-    book = unwrap(createAccount(book, { parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
-    book = unwrap(createAccount(book, { parentId: null, name: "Groups", type: "expense", currency: "ILS", isPlaceholder: true }, NOW));
-    const [cash, group] = book.accounts;
+    let book = realBook();
+    book = unwrap(createAccount(book, { parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
+    book = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Groups", type: "expense", currency: "ILS", isPlaceholder: true }, NOW));
+    const cash = accountNamed(book, "Cash");
+    const group = accountNamed(book, "Groups");
     const flat = unwrap(updateAccount(book, { id: group.id, isPlaceholder: false }, LATER));
     const local = unwrap(
       postEntry(flat, {
@@ -289,7 +299,14 @@ describe("applyFirstConnect", () => {
 
       expect(results.every((r) => r.ok)).toBe(true);
       const uploaded = unwrap(decodeEnvelope(inner.getPayload()!));
-      expect(uploaded.accounts.map((a) => a.name).sort()).toEqual(["Cash", "Wallet"]);
+      expect(uploaded.accounts.map((a) => a.name).sort()).toEqual([
+        "Assets",
+        "Cash",
+        "Expenses",
+        "Income",
+        "Liabilities",
+        "Wallet",
+      ]);
       return max;
     }
 

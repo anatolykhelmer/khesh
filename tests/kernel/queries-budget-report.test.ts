@@ -1,10 +1,10 @@
 import { createAccount } from "../../src/kernel/accounts";
 import { setBudget } from "../../src/kernel/budgets";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { budgetReport } from "../../src/kernel/queries";
 import type { AccountType, Book } from "../../src/kernel/types";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { realBook, ROOT } from "../helpers/book";
 
 const MONTH = { from: "2026-08-01", to: "2026-08-31" };
 const YEAR = { from: "2026-01-01", to: "2026-12-31" };
@@ -25,21 +25,18 @@ function add(
 
 /** Expenses > Food > {Groceries ILS, Restaurants ILS, Trips USD}, plus Expenses > Rent ILS. */
 function fixture() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+  let book = realBook();
   const cash = add(book, {
-    parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false,
+    parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false,
   });
   book = cash.book;
   const usdCash = add(book, {
-    parentId: null, name: "USD Cash", type: "asset", currency: "USD", isPlaceholder: false,
+    parentId: ROOT.asset, name: "USD Cash", type: "asset", currency: "USD", isPlaceholder: false,
   });
   book = usdCash.book;
-  const expenses = add(book, {
-    parentId: null, name: "Expenses", type: "expense", currency: "ILS", isPlaceholder: true,
-  });
-  book = expenses.book;
+  const expenses = ROOT.expense;
   const food = add(book, {
-    parentId: expenses.id, name: "Food", type: "expense", currency: "ILS", isPlaceholder: true,
+    parentId: expenses, name: "Food", type: "expense", currency: "ILS", isPlaceholder: true,
   });
   book = food.book;
   const groceries = add(book, {
@@ -55,14 +52,14 @@ function fixture() {
   });
   book = trips.book;
   const rent = add(book, {
-    parentId: expenses.id, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false,
+    parentId: expenses, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false,
   });
   book = rent.book;
   return {
     book,
     cash: cash.id,
     usdCash: usdCash.id,
-    expenses: expenses.id,
+    expenses,
     food: food.id,
     groceries: groceries.id,
     restaurants: restaurants.id,

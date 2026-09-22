@@ -1,16 +1,16 @@
 import { createAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { periodBreakdown, periodTotals } from "../../src/kernel/queries";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 const RANGE = { from: "2026-08-01", to: "2026-08-31" };
 
 function tree() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+  let book = realBook();
   book = unwrap(
     createAccount(book, {
-      parentId: null,
+      parentId: ROOT.asset,
       name: "Cash",
       type: "asset",
       currency: "ILS",
@@ -19,7 +19,7 @@ function tree() {
   );
   book = unwrap(
     createAccount(book, {
-      parentId: null,
+      parentId: ROOT.asset,
       name: "USD Cash",
       type: "asset",
       currency: "USD",
@@ -28,26 +28,17 @@ function tree() {
   );
   book = unwrap(
     createAccount(book, {
-      parentId: null,
+      parentId: ROOT.income,
       name: "Salary",
       type: "income",
       currency: "ILS",
       isPlaceholder: false,
     }, NOW),
   );
-  book = unwrap(
-    createAccount(book, {
-      parentId: null,
-      name: "Expenses",
-      type: "expense",
-      currency: "ILS",
-      isPlaceholder: true,
-    }, NOW),
-  );
-  const cash = book.accounts[0].id;
-  const usdCash = book.accounts[1].id;
-  const salary = book.accounts[2].id;
-  const expenses = book.accounts[3].id;
+  const cash = accountNamed(book, "Cash").id;
+  const usdCash = accountNamed(book, "USD Cash").id;
+  const salary = accountNamed(book, "Salary").id;
+  const expenses = ROOT.expense;
   book = unwrap(
     createAccount(book, {
       parentId: expenses,
@@ -57,7 +48,7 @@ function tree() {
       isPlaceholder: true,
     }, NOW),
   );
-  const food = book.accounts[4].id;
+  const food = accountNamed(book, "Food").id;
   book = unwrap(
     createAccount(book, {
       parentId: food,
@@ -101,10 +92,10 @@ function tree() {
     salary,
     expenses,
     food,
-    groceries: book.accounts[5].id,
-    cafes: book.accounts[6].id,
-    rent: book.accounts[7].id,
-    travel: book.accounts[8].id,
+    groceries: accountNamed(book, "Groceries").id,
+    cafes: accountNamed(book, "Cafes").id,
+    rent: accountNamed(book, "Rent").id,
+    travel: accountNamed(book, "Travel").id,
   };
 }
 

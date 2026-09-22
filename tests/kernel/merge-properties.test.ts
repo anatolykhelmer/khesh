@@ -1,7 +1,6 @@
 import fc from "fast-check";
 import { createAccount, deleteAccount, updateAccount } from "../../src/kernel/accounts";
 import { removeBudget, setBudget } from "../../src/kernel/budgets";
-import { createBook } from "../../src/kernel/create-book";
 import { deleteEntry, postEntry } from "../../src/kernel/journal";
 import { mergeBooks } from "../../src/kernel/merge";
 import { createRecurrence, deleteRecurrence, updateRecurrence } from "../../src/kernel/recurrences";
@@ -10,6 +9,7 @@ import { budgetKeyOf } from "../../src/kernel/tombstones";
 import type { AccountType, Book, CurrencyCode } from "../../src/kernel/types";
 import { validateBook } from "../../src/kernel/validate";
 import { unwrap } from "../helpers";
+import { realBook, ROOT, type RootIds } from "../helpers/book";
 
 /**
  * Deterministic ids, so a printed counterexample can actually be replayed.
@@ -82,7 +82,8 @@ type Op = {
  *                reparent on both sides picking the reversed pair, hence x3.
  * - retype x2    the only route to a parent/child type mismatch (type-cascade rung)
  *                and to a budget whose account stopped being an expense (budget-drop
- *                rung). Legal only on a childless, postingless account.
+ *                rung). Legal only on a childless, postingless account: a root retypes in
+ *                place, anything else moves under the root of its new type.
  * - currency x3  the other cross-device reinterpretation: legal on a device with no
  *                postings on the account, while the other device posts to it. Merging
  *                would silently reread 100 ILS as 100 USD, so it must be refused.
@@ -193,9 +194,17 @@ function applyOp(book: Book, op: Op): Book {
         return updateAccount(book, { id: target.id, parentId: parent.id }, at);
       }
       case "retype": {
+        // A root has no parent type to match, so it retypes in place. Anything else changes
+        // type the only way a real book allows: by moving under the root of the new type.
+        // Equity has no category root, so that draw does nothing off a root.
         const target = pick(book.accounts, op.x);
         if (!target) return null;
-        return updateAccount(book, { id: target.id, type: op.type }, at);
+        if (target.parentId === null) return updateAccount(book, { id: target.id, type: op.type }, at);
+        const root = book.accounts.find(
+          (a) => a.parentId === null && a.isPlaceholder && a.type === op.type,
+        );
+        if (!root) return null;
+        return updateAccount(book, { id: target.id, type: op.type, parentId: root.id }, at);
       }
       case "currency": {
         const target = pick(book.accounts, op.x);
@@ -305,39 +314,36 @@ function applyOp(book: Book, op: Op): Book {
 }
 
 /**
- * The chart both devices already had when they last agreed.
+ * The chart both devices already had when they last agreed: the four category roots with
+ * accounts under them, as a real book has.
  *
- * `Daily` and `Trips` are two placeholders of the same type under the same parent:
- * a pair that each device may legally move under the other. `Misc` is a childless
- * root group and `Other` a childless root leaf — a root has no parent type to match,
- * so those two are the accounts a `retype` can actually land on.
+ * `Daily` and `Trips` are two placeholders of the same type under the same parent: a pair
+ * that each device may legally move under the other. `Liabilities` and `Income` start
+ * childless, and a root has no parent type to match, so those are the accounts a `retype`
+ * changes in place; every other `retype` moves its target under the root of the new type,
+ * which is the only way a real book changes an account's type. `Other` is a spare expense
+ * leaf for that move to land on.
  *
  * The one pre-existing rule (Cash -> Food) exists for the same reason the accounts do:
  * `editRule`/`deleteRule` need a shared id to collide on, and only a record both device
  * forks already held before diverging can supply one — `addRule` alone never can, since
  * every id it mints is fresh (see the `OP_TAGS` comment above).
+ *
+ * `ids` is for the second test's separately onboarded device: same names, its own root ids.
  */
-function seedBook(): Book {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, T(0)));
-  const add = (
-    parentId: string | null,
-    name: string,
-    type: AccountType,
-    isPlaceholder: boolean,
-  ) => {
+function seedBook(ids: RootIds = ROOT): Book {
+  let book = realBook("ILS", T(0), ids);
+  const add = (parentId: string, name: string, type: AccountType, isPlaceholder: boolean) => {
     book = unwrap(
       createAccount(book, { parentId, name, type, currency: "ILS", isPlaceholder }, T(0)),
     );
     return book.accounts[book.accounts.length - 1].id;
   };
-  const assetsId = add(null, "Assets", "asset", true);
-  const cashId = add(assetsId, "Cash", "asset", false);
-  const expensesId = add(null, "Expenses", "expense", true);
-  const foodId = add(expensesId, "Food", "expense", false);
-  add(expensesId, "Daily", "expense", true);
-  add(expensesId, "Trips", "expense", true);
-  add(null, "Misc", "expense", true);
-  add(null, "Other", "expense", false);
+  const cashId = add(ids.asset, "Cash", "asset", false);
+  const foodId = add(ids.expense, "Food", "expense", false);
+  add(ids.expense, "Daily", "expense", true);
+  add(ids.expense, "Trips", "expense", true);
+  add(ids.expense, "Other", "expense", false);
   book = unwrap(
     createRecurrence(
       book,
@@ -507,7 +513,9 @@ describe("mergeBooks properties", () => {
       fc.property(fc.array(arbOp, { maxLength: 8 }), (ops) => {
         ids.next = 1000;
         const a = fork(ops);
-        const b = seedBook(); // fresh device: different ids for the same seed names
+        // A separately onboarded device: the same names at its own ids, roots included —
+        // what two runs of createHousehold produce today.
+        const b = seedBook({ asset: "b:asset", liability: "b:liability", income: "b:income", expense: "b:expense" });
         const merged = mergeBooks(a, b);
         expect(merged.ok).toBe(true);
         if (merged.ok) expect(violations(merged.value)).toEqual([]);

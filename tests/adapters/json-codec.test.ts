@@ -1,16 +1,16 @@
 import { bookToJson, jsonToBook } from "../../src/adapters/json-codec";
 import { createAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { EPOCH } from "../../src/kernel/normalize";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 describe("json codec", () => {
   it("round-trips a book", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -19,7 +19,7 @@ describe("json codec", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.expense,
         name: "Food",
         type: "expense",
         currency: "ILS",
@@ -31,8 +31,8 @@ describe("json codec", () => {
         date: "2026-01-01",
         description: "X",
         postings: [
-          { accountId: book.accounts[1].id, side: "debit", amount: 2 },
-          { accountId: book.accounts[0].id, side: "credit", amount: 2 },
+          { accountId: accountNamed(book, "Food").id, side: "debit", amount: 2 },
+          { accountId: accountNamed(book, "Cash").id, side: "credit", amount: 2 },
         ],
       }, NOW),
     );
@@ -104,7 +104,8 @@ describe("json codec", () => {
       name: "Home",
       homeCurrency: "ILS",
       accounts: [
-        { id: "a1", parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false },
+        { id: "root:expense", parentId: null, name: "Expenses", type: "expense", currency: "ILS", isPlaceholder: true },
+        { id: "a1", parentId: "root:expense", name: "Food", type: "expense", currency: "ILS", isPlaceholder: false },
       ],
       journal: [],
       budgets: [{ accountId: "a1", period: "month", currency: "ILS", limit: 5 }],
@@ -112,10 +113,28 @@ describe("json codec", () => {
     const book = unwrap(jsonToBook(raw));
     expect(book.schemaVersion).toBe(3);
     expect(book.metaUpdatedAt).toBe(EPOCH);
-    expect(book.accounts[0].updatedAt).toBe(EPOCH);
+    expect(book.accounts.find((a) => a.id === "a1")?.updatedAt).toBe(EPOCH);
     expect(book.budgets[0].updatedAt).toBe(EPOCH);
     expect(book.tombstones).toEqual([]);
     expect(book.recurrences).toEqual([]);
+  });
+
+  it("refuses a v1 file whose accounts are flat, rather than repairing it", () => {
+    // Decided in BL-080: a book from before category roots existed is refused at every
+    // read boundary, not adopted into roots it may not have.
+    const raw = JSON.stringify({
+      schemaVersion: 1,
+      name: "Home",
+      homeCurrency: "ILS",
+      accounts: [
+        { id: "a1", parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false },
+      ],
+      journal: [],
+    });
+    const error = unwrapErr(jsonToBook(raw));
+    expect(error.code).toBe("BOOK_INVALID");
+    const codes = (error.details?.violations as { code: string }[]).map((v) => v.code);
+    expect(codes).toEqual(["ACCOUNT_ROOT_NOT_PLACEHOLDER"]);
   });
 
   it("rejects journal entry without postings", () => {
@@ -219,10 +238,10 @@ describe("json codec", () => {
   });
 
   it("round-trips budgets", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.expense,
         name: "Food",
         type: "expense",
         currency: "ILS",
@@ -233,7 +252,7 @@ describe("json codec", () => {
       ...book,
       budgets: [
         {
-          accountId: book.accounts[0].id,
+          accountId: accountNamed(book, "Food").id,
           period: "month",
           currency: "ILS",
           limit: 400000,

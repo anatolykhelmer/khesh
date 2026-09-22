@@ -1,11 +1,11 @@
 import { decodeEnvelope, encodeEnvelope, SYNC_FORMAT } from "../../src/adapters/sync-envelope";
 import { createAccount } from "../../src/kernel/accounts";
 import { setBudget } from "../../src/kernel/budgets";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { EPOCH } from "../../src/kernel/normalize";
 import type { Book } from "../../src/kernel/types";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT, rootAccounts } from "../helpers/book";
 
 /** Denotes the same instant as NOW, but sorts after it lexicographically — the exact
  * hazard the canonical-timestamp guard exists for, since mergeBooks compares these
@@ -16,10 +16,11 @@ const OFFSET_FORM = "2026-09-02T13:00:00.000+03:00";
  * so validateBook is guaranteed to pass and the guard under test is the only thing
  * that can reject a tampered copy. */
 function fullBook(): Book {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
-  book = unwrap(createAccount(book, { parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
-  book = unwrap(createAccount(book, { parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW));
-  const [cash, food] = book.accounts;
+  let book = realBook();
+  book = unwrap(createAccount(book, { parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
+  book = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW));
+  const cash = accountNamed(book, "Cash");
+  const food = accountNamed(book, "Food");
   book = unwrap(
     postEntry(book, {
       date: "2026-01-10",
@@ -40,13 +41,13 @@ const envelope = (book: unknown) =>
 
 describe("sync envelope", () => {
   it("round-trips a v3 book", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    const book = realBook();
     const decoded = unwrap(decodeEnvelope(encodeEnvelope(book)));
     expect(decoded).toEqual(book);
   });
 
   it("declares format 1 and encrypted false", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    const book = realBook();
     const parsed = JSON.parse(encodeEnvelope(book));
     expect(parsed).toMatchObject({ app: "khesh", format: SYNC_FORMAT, encrypted: false });
   });
@@ -77,7 +78,7 @@ describe("sync envelope", () => {
   });
 
   it("treats the future as SYNC_FORMAT_UNSUPPORTED, not corruption", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    const book = realBook();
     const future = { app: "khesh", format: 2, encrypted: false, book };
     expect(unwrapErr(decodeEnvelope(JSON.stringify(future))).code).toBe("SYNC_FORMAT_UNSUPPORTED");
     const encrypted = { app: "khesh", format: 1, encrypted: true, book: "cipher" };
@@ -190,7 +191,7 @@ describe("sync envelope", () => {
   // form `toISOString()` produces, since mergeBooks compares them lexicographically. ---
 
   it("rejects a metaUpdatedAt carrying a UTC offset instead of Z as SYNC_ENVELOPE_INVALID", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    const book = realBook();
     // Denotes 10:00 UTC (same instant as NOW) but sorts after it lexicographically.
     const offsetBook = { ...book, metaUpdatedAt: "2026-09-02T13:00:00.000+03:00" };
     const raw = JSON.stringify({ app: "khesh", format: 1, encrypted: false, book: offsetBook });
@@ -198,13 +199,14 @@ describe("sync envelope", () => {
   });
 
   it("rejects a record updatedAt missing milliseconds as SYNC_ENVELOPE_INVALID", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    const book = realBook();
     const withAccount = {
       ...book,
       accounts: [
+        ...book.accounts,
         {
           id: "a1",
-          parentId: null,
+          parentId: ROOT.asset,
           name: "Cash",
           type: "asset",
           currency: "ILS",
@@ -219,7 +221,7 @@ describe("sync envelope", () => {
   });
 
   it("rejects a tombstone deletedAt carrying a UTC offset as SYNC_ENVELOPE_INVALID", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    const book = realBook();
     const withTombstone = {
       ...book,
       tombstones: [
@@ -229,7 +231,7 @@ describe("sync envelope", () => {
           deletedAt: "2026-09-02T13:00:00.000+03:00",
           record: {
             id: "a1",
-            parentId: null,
+            parentId: ROOT.asset,
             name: "Old",
             type: "asset",
             currency: "ILS",
@@ -278,13 +280,16 @@ describe("sync envelope", () => {
         schemaVersion: 1,
         name: "Home",
         homeCurrency: "ILS",
-        accounts: [{ id: "a1", parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }],
+        accounts: [
+          ...rootAccounts(),
+          { id: "a1", parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false },
+        ],
         journal: [],
         budgets: [],
       },
     });
     const decoded = unwrap(decodeEnvelope(raw));
     expect(decoded.metaUpdatedAt).toBe(EPOCH);
-    expect(decoded.accounts[0].updatedAt).toBe(EPOCH);
+    expect(accountNamed(decoded, "Cash").updatedAt).toBe(EPOCH);
   });
 });

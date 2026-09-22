@@ -194,11 +194,15 @@ describe("updateAccount", () => {
     const { book, foodId } = bookWithBudget();
     const broken: Book = {
       ...book,
-      accounts: book.accounts.map((a) => (a.id === foodId ? { ...a, type: "income" } : a)),
+      accounts: book.accounts.map((a) =>
+        a.id === foodId ? { ...a, type: "income", parentId: ROOT.income } : a
+      ),
     };
     expect(validateBook(broken).ok).toBe(false);
 
-    const next = unwrap(updateAccount(broken, { id: foodId, type: "expense" }, NOW));
+    const next = unwrap(
+      updateAccount(broken, { id: foodId, type: "expense", parentId: ROOT.expense }, NOW),
+    );
     expect(next.budgets).toHaveLength(1);
     expect(unwrap(validateBook(next))).toBe(true);
   });

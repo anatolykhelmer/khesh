@@ -49,6 +49,7 @@ describe("createAccount at the top level", () => {
       createAccount(realBook(), { parentId: null, name: "Reserves", type: "asset", currency: "ILS", isPlaceholder: true }, NOW),
     );
     expect(validateBook(book).ok).toBe(true);
+    expect(accountNamed(book, "Reserves").parentId).toBeNull();
   });
 });
 

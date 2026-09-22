@@ -3,7 +3,7 @@ import { NOW, unwrap, unwrapErr } from "../helpers";
 import { accountNamed, realBook, rootAccounts, ROOT } from "../helpers/book";
 
 describe("createAccount", () => {
-  it("creates a root placeholder and a child leaf", () => {
+  it("creates a placeholder group and a child leaf", () => {
     let book = realBook();
     book = unwrap(
       createAccount(book, {

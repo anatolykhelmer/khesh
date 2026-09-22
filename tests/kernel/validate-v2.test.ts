@@ -73,7 +73,7 @@ describe("validateBook v2", () => {
 
   it("rejects an account, an entry and a budget that lost updatedAt", () => {
     const broken: any = structuredClone(bookWithEveryRecordKind());
-    delete broken.accounts[0].updatedAt;
+    delete (accountNamed(broken, "Cash") as any).updatedAt;
     delete broken.journal[0].updatedAt;
     delete broken.budgets[0].updatedAt;
     const missing = violations(validateBook(broken)).filter(
@@ -91,11 +91,12 @@ describe("validateBook v2", () => {
 
   it("rejects a live record with a tombstone for the same key", () => {
     const clone = structuredClone(bookWithAccount());
+    const cash = accountNamed(clone, "Cash");
     clone.tombstones.push({
       kind: "account",
-      key: clone.accounts[0].id,
+      key: cash.id,
       deletedAt: NOW,
-      record: clone.accounts[0],
+      record: cash,
     });
     const shadowing = violations(validateBook(clone)).filter(
       (v) => v.message === "Tombstone shadows a live record",
@@ -103,7 +104,7 @@ describe("validateBook v2", () => {
     expect(shadowing).toHaveLength(1);
     expect(shadowing[0]).toMatchObject({
       code: "BOOK_INVALID",
-      details: { kind: "account", key: clone.accounts[0].id },
+      details: { kind: "account", key: cash.id },
     });
   });
 

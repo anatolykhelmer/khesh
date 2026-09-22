@@ -231,9 +231,9 @@ function keepValid<T extends AnyRecord>(
   return kept;
 }
 
-/** What made a draft irreparable, for the refusal's `details`. `mergeBooks` refuses for
- * two structurally different reasons and the code alone does not say which. */
-type RepairFailure = "childrenAndPostings" | "missingTombstone";
+/** What made a draft irreparable, for the refusal's `details`. The ladder refuses for
+ * several structurally different reasons and the code alone does not say which. */
+type RepairFailure = "childrenAndPostings" | "rootWithPostings" | "missingTombstone";
 
 /** Deterministic repair of a merged draft. Mutates `draft`. Returns null when the draft
  * is repaired, or what made the conflict irreducible. */
@@ -321,6 +321,28 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
   }
 
   // 3. Placeholder consistency: children force it on; postings force it off; both is irreducible.
+  //
+  //    So is a top-level account with postings. Forcing it off placeholder would leave a
+  //    top-level leaf, which validateBook rejects (a top-level account is a category root),
+  //    and the other way out — hanging it under a parent — needs a parent the ladder does
+  //    not have: in the draft the account has none. Re-attaching it under the parent the
+  //    posting device had it under is BL-048's; until then the merge refuses, which reaches
+  //    the sync engine as a conflict the user resolves (SYNC_MERGE_CONFLICT) rather than as
+  //    a merged book that will not load.
+  //
+  //    Commands alone cannot set this up: updateAccount keeps every account at the level
+  //    it was created at, so without a merge in between an account is top-level on every
+  //    device that holds it or on none. Rung 2 is the exception. The member it detaches is
+  //    a group here — the child that still points at it keeps it one — and its top-level
+  //    copy is stamped one tick past both inputs' copies. A device that had not yet synced
+  //    that merge may, in its own book, have moved the child away, turned the member into a
+  //    leaf and posted to it — all older than the detach, so the next merge keeps the
+  //    detached copy, now childless and posted to.
+  //
+  //    Checked after children-and-postings, so an account that is both is still refused
+  //    for that. Accounts are visited in the draft's order, which does not depend on which
+  //    book came first, so when several would refuse, both argument orders name the same
+  //    one.
   const withChildren = new Set(
     draft.accounts.filter((a) => a.parentId !== null).map((a) => a.parentId as string),
   );
@@ -328,6 +350,7 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
     const hasChild = withChildren.has(account.id);
     const hasPosting = posted.has(account.id);
     if (hasChild && hasPosting) return "childrenAndPostings";
+    if (hasPosting && account.parentId === null) return "rootWithPostings";
     if (hasChild && !account.isPlaceholder) {
       account.isPlaceholder = true;
       repaired(account);
@@ -537,7 +560,7 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
   }
 
   sortBook(draft);
-  // `reason` names which of the two refusals this is. The code is the same for both, so
+  // `reason` names which of the refusals this is. The code is the same for all of them, so
   // without it a caller — or the symmetry property, which compares the whole error —
   // cannot tell an order-dependent choice *between* the reasons from agreement.
   const unrepaired = repair(draft, latestLiveAccounts([a, b]));

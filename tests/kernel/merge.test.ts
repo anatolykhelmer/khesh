@@ -342,6 +342,36 @@ describe("mergeBooks repair ladder", () => {
     runWith("high");
   });
 
+  it("refuses, rather than leaving a leaf at the top level, when a detached group was posted to on a device that had not synced", () => {
+    // Rung 2 cuts a cycle member loose at the top level, where the child it still has keeps
+    // it a group. A device that had not seen that merge still holds the member where it
+    // was, and there it can move the child away, turn the member into a leaf and spend
+    // through it — every step legal on that book. Its copy of the member predates the
+    // detach, so the next merge keeps the top-level one, now childless and posted to.
+    // Forcing it off placeholder would hand the sync engine a top-level leaf, a book
+    // validateBook refuses; there is no parent to give it back, so the merge refuses.
+    // Real-time order throughout: no device's clock runs ahead of another's.
+    const { book, cashId, groupId } = base();
+    const two = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+    const [low, high] = [groupId, accountNamed(two, "Other").id].sort();
+    // A moves `high` under `low` and syncs. B, which has not seen that, moves `low` under
+    // `high` later and syncs too: the union is a cycle, and rung 2 detaches `low` — no
+    // entry posts to either — one tick past B's move.
+    const a1 = unwrap(updateAccount(two, { id: high, parentId: low }, T(1)));
+    const b1 = unwrap(updateAccount(two, { id: low, parentId: high }, T(4)));
+    const detached = mergedBothOrders(a1, b1);
+    expect(detached.accounts.find((x) => x.id === low)?.parentId).toBe(null);
+    // A, meanwhile and not yet synced again: `high` back under Expenses, then `low` made a
+    // leaf and spent through. Both before B's move, so both older than the detach.
+    let a2 = unwrap(updateAccount(a1, { id: high, parentId: ROOT.expense }, T(2)));
+    a2 = unwrap(updateAccount(a2, { id: low, isPlaceholder: false }, T(3)));
+    a2 = spend(a2, cashId, low, 100, T(3));
+    expect(unwrapErr(mergeBooks(detached, a2)).code).toBe("SYNC_MERGE_CONFLICT");
+    expect(unwrapErr(mergeBooks(a2, detached)).code).toBe("SYNC_MERGE_CONFLICT");
+    expect(unwrapErr(mergeBooks(detached, a2)).details).toEqual({ reason: "rootWithPostings" });
+    expect(unwrapErr(mergeBooks(a2, detached)).details).toEqual({ reason: "rootWithPostings" });
+  });
+
   it("cascades the type onto accounts freed from a cycle", () => {
     const { book, groupId } = base();
     const two = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));

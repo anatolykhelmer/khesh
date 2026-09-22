@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { deleteAccount } from "../../src/kernel/accounts";
 import { mergeBooks } from "../../src/kernel/merge";
-import { createBook } from "../../src/kernel/create-book";
 import {
   createRecurrence,
   deleteRecurrence,
@@ -11,13 +10,14 @@ import {
 import { validateBook } from "../../src/kernel/validate";
 import type { Book } from "../../src/kernel/types";
 import { unwrap, NOW, LATER } from "../helpers";
+import { realBook, ROOT } from "../helpers/book";
 
 function seeded(): Book {
-  const book = unwrap(createBook({ name: "Household", homeCurrency: "ILS" }, NOW));
-  book.accounts = [
-    { id: "bank", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "rent", parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-  ];
+  const book = realBook("ILS", NOW);
+  book.accounts.push(
+    { id: "bank", parentId: ROOT.asset, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "rent", parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+  );
   return book;
 }
 

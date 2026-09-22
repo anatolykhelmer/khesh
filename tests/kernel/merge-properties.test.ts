@@ -78,8 +78,11 @@ type Op = {
  *                duplicate sibling names.
  * - reparent x3  the only route to a parent cycle. `wouldCreateCycle` only sees one
  *                device's book, so "A moves G1 under G2" and "B moves G2 under G1"
- *                are each legal alone and only collide in the union. Needs a
- *                reparent on both sides picking the reversed pair, hence x3.
+ *                are each legal alone and only collide in the union. A root never
+ *                moves (`ACCOUNT_PARENT_INVALID`) and never gains a child of another
+ *                type (`ACCOUNT_TYPE_MISMATCH`), so in a real book both the target and
+ *                the new parent are drawn from the non-root accounts of one type. Needs
+ *                a reparent on both sides picking the reversed pair, hence x3.
  * - retype x2    the only route to a parent/child type mismatch (type-cascade rung)
  *                and to a budget whose account stopped being an expense (budget-drop
  *                rung). Legal only on a childless, postingless account: a root retypes in
@@ -90,7 +93,10 @@ type Op = {
  *                x3 because it has to beat the "no postings yet" precondition.
  * - placeholder x2  the only route to the placeholder rung: a group on one device and
  *                a postable leaf on the other. When the group also gained a child and
- *                the leaf a posting, no repair exists and the merge must refuse.
+ *                the leaf a posting, no repair exists and the merge must refuse. A
+ *                root's placeholder flag never moves — it starts true and unsetting it
+ *                is refused (`ACCOUNT_ROOT_NOT_PLACEHOLDER`) — so the draw is among the
+ *                non-root accounts.
  * - deleteAcc x1 tombstones, and the restore-from-tombstone rung when the other side
  *                still references the account.
  * - post x2      postings: the placeholder-vs-postings conflict, and the other half
@@ -187,9 +193,13 @@ function applyOp(book: Book, op: Op): Book {
       }
       case "reparent": {
         // Groups are targets too, not just leaves: only a group can be a parent, so
-        // only a group-under-group move can close a cycle across two devices.
-        const target = pick(book.accounts, op.x);
-        const parent = pick(groups, op.y);
+        // only a group-under-group move can close a cycle across two devices. A root
+        // can be neither: it never moves and never takes a child of another type, so
+        // both draws stay among the non-root accounts of the target's own type.
+        const target = pick(book.accounts.filter((a) => a.parentId !== null), op.x);
+        const parent = target
+          ? pick(groups.filter((g) => g.type === target.type && g.id !== target.id), op.y)
+          : undefined;
         if (!target || !parent) return null;
         return updateAccount(book, { id: target.id, parentId: parent.id }, at);
       }
@@ -212,7 +222,9 @@ function applyOp(book: Book, op: Op): Book {
         return updateAccount(book, { id: target.id, currency: op.currency }, at);
       }
       case "placeholder": {
-        const target = pick(book.accounts, op.x);
+        // A root's flag never moves — it starts true and unsetting it is refused — so
+        // the draw is among the non-root accounts.
+        const target = pick(book.accounts.filter((a) => a.parentId !== null), op.x);
         if (!target) return null;
         return updateAccount(book, { id: target.id, isPlaceholder: op.y % 2 === 0 }, at);
       }

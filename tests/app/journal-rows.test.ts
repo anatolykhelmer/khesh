@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { createBook } from "../../src/kernel/create-book";
 import { journalRows } from "../../src/app/journal-rows";
 import type { Book, JournalEntry } from "../../src/kernel/types";
 import type { DueRow } from "../../src/service/ledger-app";
-import { unwrap, NOW } from "../helpers";
+import { NOW } from "../helpers";
+import { realBook, ROOT } from "../helpers/book";
 
 function seeded(): Book {
-  const book = unwrap(createBook({ name: "Household", homeCurrency: "ILS" }, NOW));
-  book.accounts = [
-    { id: "rent", parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "bank", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "gym", parentId: null, name: "Gym", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-  ];
+  const book = realBook();
+  book.accounts.push(
+    { id: "rent", parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "bank", parentId: ROOT.asset, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "gym", parentId: ROOT.expense, name: "Gym", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+  );
   return book;
 }
 

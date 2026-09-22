@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createBook } from "../../src/kernel/create-book";
 import { shouldTearDown, type TearDownSyncState } from "../../src/app/sync/teardown-rule";
-import { NOW, unwrap } from "../helpers";
+import { realBook } from "../helpers/book";
 
-const BOOK = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+const BOOK = realBook();
 
 const IDLE: TearDownSyncState = { connected: false, pendingInspection: null };
 const CONNECTED: TearDownSyncState = { connected: true, pendingInspection: null };

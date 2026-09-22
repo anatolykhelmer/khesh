@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { createBook } from "../../src/kernel/create-book";
 import { createRecurrence } from "../../src/kernel/recurrences";
 import { nextOccurrence, ruleRows } from "../../src/app/recurring-state";
 import type { Book } from "../../src/kernel/types";
 import { unwrap, NOW } from "../helpers";
+import { realBook, ROOT } from "../helpers/book";
 
 const TODAY = "2026-06-15";
 
 function withRule(overrides: Record<string, unknown> = {}): Book {
-  const book = unwrap(createBook({ name: "Household", homeCurrency: "ILS" }, NOW));
-  book.accounts = [
-    { id: "bank", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "rent", parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "food", parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-  ];
+  const book = realBook();
+  book.accounts.push(
+    { id: "bank", parentId: ROOT.asset, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "rent", parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "food", parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+  );
   return unwrap(
     createRecurrence(
       book,

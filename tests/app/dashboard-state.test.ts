@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createAccount } from "../../src/kernel/accounts";
 import { setBudget } from "../../src/kernel/budgets";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { budgetReport, periodTotals } from "../../src/kernel/queries";
 import type { BudgetReport } from "../../src/kernel/queries";
 import type { AccountType, Book } from "../../src/kernel/types";
 import { heroState } from "../../src/app/dashboard-state";
 import { NOW, unwrap } from "../helpers";
+import { realBook, ROOT } from "../helpers/book";
 
 const MONTH = { from: "2026-08-01", to: "2026-08-31" };
 
@@ -27,17 +27,14 @@ function add(
 
 /** Cash ILS, and Expenses > Food > Groceries, plus a Rent leaf no limit ever covers. */
 function fixture() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+  let book = realBook();
   const cash = add(book, {
-    parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false,
+    parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false,
   });
   book = cash.book;
-  const expenses = add(book, {
-    parentId: null, name: "Expenses", type: "expense", currency: "ILS", isPlaceholder: true,
-  });
-  book = expenses.book;
+  // Expenses is deleted (S3): `realBook()` already has it, at `ROOT.expense`.
   const food = add(book, {
-    parentId: expenses.id, name: "Food", type: "expense", currency: "ILS", isPlaceholder: true,
+    parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: true,
   });
   book = food.book;
   const groceries = add(book, {
@@ -45,13 +42,13 @@ function fixture() {
   });
   book = groceries.book;
   const rent = add(book, {
-    parentId: expenses.id, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false,
+    parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false,
   });
   book = rent.book;
   return {
     book,
     cash: cash.id,
-    expenses: expenses.id,
+    expenses: ROOT.expense,
     food: food.id,
     groceries: groceries.id,
     rent: rent.id,
@@ -264,7 +261,7 @@ describe("heroState", () => {
     const f = fixture();
     let book = f.book;
     const usdCash = add(book, {
-      parentId: null, name: "USD Cash", type: "asset", currency: "USD", isPlaceholder: false,
+      parentId: ROOT.asset, name: "USD Cash", type: "asset", currency: "USD", isPlaceholder: false,
     });
     book = usdCash.book;
     const trips = add(book, {

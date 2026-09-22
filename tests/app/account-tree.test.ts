@@ -3,39 +3,39 @@ import type { AccountNode } from "../../src/kernel";
 import { expandedForSelection, pathOf, visibleRows } from "../../src/app/account-tree";
 import { NOW } from "../helpers";
 
-function group(id: string, name: string, children: AccountNode[]): AccountNode {
-  return {
-    id,
-    parentId: null,
-    name,
-    type: "expense",
-    currency: "ILS",
-    isPlaceholder: true,
-    updatedAt: NOW,
-    children,
-  };
+function group(
+  id: string,
+  name: string,
+  type: AccountNode["type"],
+  parentId: string | null,
+  children: AccountNode[],
+): AccountNode {
+  return { id, parentId, name, type, currency: "ILS", isPlaceholder: true, updatedAt: NOW, children };
 }
 
-function leaf(id: string, name: string, currency = "ILS"): AccountNode {
-  return {
-    id,
-    parentId: null,
-    name,
-    type: "expense",
-    currency,
-    isPlaceholder: false,
-    updatedAt: NOW,
-    children: [],
-  };
+function leaf(
+  id: string,
+  name: string,
+  type: AccountNode["type"],
+  parentId: string,
+  currency = "ILS",
+): AccountNode {
+  return { id, parentId, name, type, currency, isPlaceholder: false, updatedAt: NOW, children: [] };
 }
 
-// Expenses > Food > {Groceries, Cafes}, Expenses > Rent, Assets > Cash
+// Expenses > Food > {Groceries, Cafes}, Expenses > Rent, Assets > Cash, and the two empty
+// roots every real book also has.
 const TREE: AccountNode[] = [
-  group("expenses", "Expenses", [
-    group("food", "Food", [leaf("groceries", "Groceries"), leaf("cafes", "Cafes")]),
-    leaf("rent", "Rent"),
+  group("expenses", "Expenses", "expense", null, [
+    group("food", "Food", "expense", "expenses", [
+      leaf("groceries", "Groceries", "expense", "food"),
+      leaf("cafes", "Cafes", "expense", "food"),
+    ]),
+    leaf("rent", "Rent", "expense", "expenses"),
   ]),
-  group("assets", "Assets", [leaf("cash", "Cash", "USD")]),
+  group("assets", "Assets", "asset", null, [leaf("cash", "Cash", "asset", "assets", "USD")]),
+  group("liabilities", "Liabilities", "liability", null, []),
+  group("income", "Income", "income", null, []),
 ];
 
 const browse = (expanded: string[] = [], groupsSelectable = true) =>
@@ -43,19 +43,26 @@ const browse = (expanded: string[] = [], groupsSelectable = true) =>
 
 describe("visibleRows, browsing", () => {
   it("shows only roots when nothing is expanded", () => {
-    expect(browse().map((row) => row.id)).toEqual(["expenses", "assets"]);
+    expect(browse().map((row) => row.id)).toEqual(["expenses", "assets", "liabilities", "income"]);
   });
 
   it("reveals the children of an expanded group but not its grandchildren", () => {
+    // Extra edit beyond the brief: `browseRows` is a flatMap over the top-level array
+    // (src/app/account-tree.ts), so every root is always emitted regardless of what is
+    // expanded — "liabilities" and "income" trail every browsing list in this file, not
+    // only the three the brief names as fully collapsed.
     expect(browse(["expenses"]).map((row) => row.id)).toEqual([
       "expenses",
       "food",
       "rent",
       "assets",
+      "liabilities",
+      "income",
     ]);
   });
 
   it("reveals grandchildren once the whole chain is expanded", () => {
+    // Same extra edit as above.
     expect(browse(["expenses", "food"]).map((row) => row.id)).toEqual([
       "expenses",
       "food",
@@ -63,12 +70,14 @@ describe("visibleRows, browsing", () => {
       "cafes",
       "rent",
       "assets",
+      "liabilities",
+      "income",
     ]);
   });
 
   it("hides children of a collapsed group even when the group itself is expanded deeper down", () => {
     // "food" is in the set but its parent is not, so nothing under Expenses shows.
-    expect(browse(["food"]).map((row) => row.id)).toEqual(["expenses", "assets"]);
+    expect(browse(["food"]).map((row) => row.id)).toEqual(["expenses", "assets", "liabilities", "income"]);
   });
 
   it("reports path, depth, children and expansion per row", () => {
@@ -113,7 +122,7 @@ describe("visibleRows, browsing", () => {
   });
 
   it("keeps a childless group unselectable when groups may not be chosen", () => {
-    const empty: AccountNode[] = [group("empty", "Empty", [])];
+    const empty: AccountNode[] = [group("empty", "Empty", "expense", null, [])];
     const [row] = visibleRows(empty, {
       query: "",
       expanded: new Set(),
@@ -157,7 +166,7 @@ describe("visibleRows, searching", () => {
   });
 
   it("treats a blank query as browsing", () => {
-    expect(search("   ").map((row) => row.id)).toEqual(["expenses", "assets"]);
+    expect(search("   ").map((row) => row.id)).toEqual(["expenses", "assets", "liabilities", "income"]);
   });
 
   it("reports every visible branch as expanded and ignores the expansion set", () => {
@@ -218,8 +227,10 @@ describe("pathOf", () => {
 
   it("distinguishes two same-named leaves living under different branches", () => {
     const tree: AccountNode[] = [
-      group("expenses", "Expenses", [group("food", "Food", [leaf("cash-a", "Cash")])]),
-      group("assets", "Assets", [leaf("cash-b", "Cash")]),
+      group("expenses", "Expenses", "expense", null, [
+        group("food", "Food", "expense", "expenses", [leaf("cash-a", "Cash", "expense", "food")]),
+      ]),
+      group("assets", "Assets", "asset", null, [leaf("cash-b", "Cash", "asset", "assets")]),
     ];
     expect(pathOf(tree, "cash-a")).toBe("Expenses:Food:Cash");
     expect(pathOf(tree, "cash-b")).toBe("Assets:Cash");

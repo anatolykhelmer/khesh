@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createAccount, updateAccount } from "../../src/kernel/accounts";
 import { removeBudget, setBudget } from "../../src/kernel/budgets";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry, updateEntry } from "../../src/kernel/journal";
 import { recordOpeningBalance } from "../../src/kernel/opening";
 import {
@@ -13,6 +12,7 @@ import {
 } from "../../src/kernel/recurrences";
 import type { Book } from "../../src/kernel/types";
 import { NOW, LATER, unwrap } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 const TODAY = "2026-06-15";
 
@@ -27,11 +27,11 @@ const ruleInput = {
 };
 
 function withRule(): Book {
-  const book = unwrap(createBook({ name: "Household", homeCurrency: "ILS" }, NOW));
-  book.accounts = [
-    { id: "bank", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "rent", parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-  ];
+  const book = realBook();
+  book.accounts.push(
+    { id: "bank", parentId: ROOT.asset, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "rent", parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+  );
   return unwrap(createRecurrence(book, { ...ruleInput, id: "r1" }, NOW));
 }
 
@@ -87,13 +87,12 @@ describe("recurrence commands that change nothing", () => {
 });
 
 function household() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
-  book = unwrap(createAccount(book, { parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
-  book = unwrap(createAccount(book, { parentId: null, name: "Expenses", type: "expense", currency: "ILS", isPlaceholder: true }, NOW));
-  const cash = book.accounts[0].id;
-  const expenses = book.accounts[1].id;
+  let book = realBook();
+  book = unwrap(createAccount(book, { parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
+  const cash = book.accounts[book.accounts.length - 1].id;
+  const expenses = ROOT.expense;
   book = unwrap(createAccount(book, { parentId: expenses, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW));
-  const food = book.accounts[2].id;
+  const food = book.accounts[book.accounts.length - 1].id;
   book = unwrap(
     postEntry(book, {
       date: "2026-08-10",
@@ -111,7 +110,7 @@ describe("record commands that change nothing", () => {
   it("updateAccount with the current name returns the same book", () => {
     const { book, food } = household();
     expect(unwrap(updateAccount(book, { id: food, name: "Food" }, LATER))).toBe(book);
-    expect(book.accounts[2].updatedAt).toBe(NOW);
+    expect(accountNamed(book, "Food").updatedAt).toBe(NOW);
   });
 
   it("updateAccount trims before comparing, so a padded current name is still a no-op", () => {
@@ -123,7 +122,7 @@ describe("record commands that change nothing", () => {
     const { book, food } = household();
     const renamed = unwrap(updateAccount(book, { id: food, name: "Groceries" }, LATER));
     expect(renamed).not.toBe(book);
-    expect(renamed.accounts[2].updatedAt).toBe(LATER);
+    expect(accountNamed(renamed, "Groceries").updatedAt).toBe(LATER);
   });
 
   it("updateEntry with equal postings in fresh objects returns the same book", () => {

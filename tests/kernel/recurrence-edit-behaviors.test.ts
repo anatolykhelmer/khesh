@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { dueOccurrences, recurrenceEntryId } from "../../src/kernel/occurrences";
 import { createRecurrence, updateRecurrence } from "../../src/kernel/recurrences";
 import type { Book } from "../../src/kernel/types";
 import { unwrap, NOW, LATER } from "../helpers";
+import { realBook, ROOT } from "../helpers/book";
 
 /**
  * Pins the two edit consequences the design spec (`docs/superpowers/specs/
@@ -14,11 +14,11 @@ import { unwrap, NOW, LATER } from "../helpers";
  */
 
 function seeded(): Book {
-  const book = unwrap(createBook({ name: "Household", homeCurrency: "ILS" }, NOW));
-  book.accounts = [
-    { id: "bank", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "rent", parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-  ];
+  const book = realBook();
+  book.accounts.push(
+    { id: "bank", parentId: ROOT.asset, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "rent", parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+  );
   return book;
 }
 

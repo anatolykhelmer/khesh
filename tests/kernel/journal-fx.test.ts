@@ -1,34 +1,14 @@
 import { createAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { NOW, unwrap, unwrapErr } from "../helpers";
 import type { Book } from "../../src/kernel/types";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 function ilsAndUsd(): { book: Book; cashIls: string; revolutUsd: string; foodIls: string } {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+  let book = realBook();
   book = unwrap(
     createAccount(book, {
-      parentId: null,
-      name: "Assets",
-      type: "asset",
-      currency: "ILS",
-      isPlaceholder: true,
-    }, NOW),
-  );
-  book = unwrap(
-    createAccount(book, {
-      parentId: null,
-      name: "Expenses",
-      type: "expense",
-      currency: "ILS",
-      isPlaceholder: true,
-    }, NOW),
-  );
-  const assets = book.accounts[0].id;
-  const expenses = book.accounts[1].id;
-  book = unwrap(
-    createAccount(book, {
-      parentId: assets,
+      parentId: ROOT.asset,
       name: "Cash ILS",
       type: "asset",
       currency: "ILS",
@@ -37,7 +17,7 @@ function ilsAndUsd(): { book: Book; cashIls: string; revolutUsd: string; foodIls
   );
   book = unwrap(
     createAccount(book, {
-      parentId: assets,
+      parentId: ROOT.asset,
       name: "Revolut",
       type: "asset",
       currency: "USD",
@@ -46,7 +26,7 @@ function ilsAndUsd(): { book: Book; cashIls: string; revolutUsd: string; foodIls
   );
   book = unwrap(
     createAccount(book, {
-      parentId: expenses,
+      parentId: ROOT.expense,
       name: "Food",
       type: "expense",
       currency: "ILS",
@@ -55,9 +35,9 @@ function ilsAndUsd(): { book: Book; cashIls: string; revolutUsd: string; foodIls
   );
   return {
     book,
-    cashIls: book.accounts[2].id,
-    revolutUsd: book.accounts[3].id,
-    foodIls: book.accounts[4].id,
+    cashIls: accountNamed(book, "Cash ILS").id,
+    revolutUsd: accountNamed(book, "Revolut").id,
+    foodIls: accountNamed(book, "Food").id,
   };
 }
 
@@ -161,14 +141,14 @@ describe("postEntry FX B1", () => {
     const { book, cashIls, revolutUsd, foodIls } = ilsAndUsd();
     let next = unwrap(
       createAccount(book, {
-        parentId: book.accounts[0].id,
+        parentId: ROOT.asset,
         name: "EUR cash",
         type: "asset",
         currency: "EUR",
         isPlaceholder: false,
       }, NOW),
     );
-    const eurId = next.accounts[5].id;
+    const eurId = accountNamed(next, "EUR cash").id;
     expect(
       unwrapErr(
         postEntry(next, {

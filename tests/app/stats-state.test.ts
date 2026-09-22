@@ -81,13 +81,16 @@ describe("expenseRootId", () => {
   });
 
   it("prefers the root named Expenses when several exist", () => {
-    // Deliberate (S8): a doubled book — a second top-level expense group beside the
-    // real `Expenses` root, the shape BL-048's merge ladder can produce.
+    // A doubled book: a second top-level expense group beside the real `Expenses` root
+    // (the shape BL-048's merge ladder can produce), named "Bills" so it sorts *before*
+    // "Expenses" — the alphabetical fallback below would pick this account over the real
+    // root if the named-root preference were ever dropped, so this only passes because
+    // that preference is still there.
     let book = realBook();
     book = unwrap(
       createAccount(book, {
         parentId: null,
-        name: "Other",
+        name: "Bills",
         type: "expense",
         currency: "ILS",
         isPlaceholder: true,
@@ -97,15 +100,15 @@ describe("expenseRootId", () => {
   });
 
   it("returns null when there is no expense root", () => {
-    // Deliberate (S8): a book with no accounts at all — there is no expense root to find.
+    // A book with no accounts at all: there is no expense root to find.
     const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, ISO_NOW));
     expect(expenseRootId(book)).toBeNull();
   });
 
   it("picks the first name when several roots exist and none is Expenses", () => {
-    // Deliberate (S8): a doubled book whose user renamed the real expense root, so
-    // neither top-level expense group is named "Expenses" — a further-mangled version
-    // of BL-048's doubled roots.
+    // A doubled book whose user renamed the real expense root, so neither top-level
+    // expense group is named "Expenses" — a further-mangled version of BL-048's doubled
+    // roots.
     let book = realBook();
     book = unwrap(updateAccount(book, { id: ROOT.expense, name: "Zoo" }, ISO_NOW));
     book = unwrap(

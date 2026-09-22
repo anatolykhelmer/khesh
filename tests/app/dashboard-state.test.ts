@@ -32,7 +32,7 @@ function fixture() {
     parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false,
   });
   book = cash.book;
-  // Expenses is deleted (S3): `realBook()` already has it, at `ROOT.expense`.
+  // No separate Expenses group: `realBook()` already has that root, at `ROOT.expense`.
   const food = add(book, {
     parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: true,
   });

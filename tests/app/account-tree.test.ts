@@ -47,10 +47,9 @@ describe("visibleRows, browsing", () => {
   });
 
   it("reveals the children of an expanded group but not its grandchildren", () => {
-    // Extra edit beyond the brief: `browseRows` is a flatMap over the top-level array
-    // (src/app/account-tree.ts), so every root is always emitted regardless of what is
-    // expanded — "liabilities" and "income" trail every browsing list in this file, not
-    // only the three the brief names as fully collapsed.
+    // browseRows lists every root whatever is expanded — it only recurses into a root's
+    // own children — so "liabilities" and "income" trail this list too, after Expenses'
+    // expanded children and the still-collapsed Assets.
     expect(browse(["expenses"]).map((row) => row.id)).toEqual([
       "expenses",
       "food",
@@ -62,7 +61,8 @@ describe("visibleRows, browsing", () => {
   });
 
   it("reveals grandchildren once the whole chain is expanded", () => {
-    // Same extra edit as above.
+    // Same reason as above: liabilities and income are top-level siblings, so they show
+    // regardless of what else is expanded.
     expect(browse(["expenses", "food"]).map((row) => row.id)).toEqual([
       "expenses",
       "food",

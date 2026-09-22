@@ -1,18 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { createBook } from "../../src/kernel/create-book";
 import { createRecurrence, deleteRecurrence, updateRecurrence } from "../../src/kernel/recurrences";
 import type { Book } from "../../src/kernel/types";
 import { unwrap, unwrapErr, NOW, LATER } from "../helpers";
+import { realBook, ROOT } from "../helpers/book";
 
 function bookWithAccounts(): Book {
-  const book = unwrap(createBook({ name: "Household", homeCurrency: "ILS" }, NOW));
-  book.accounts = [
-    { id: "bank", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "rent", parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "food", parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "usd", parentId: null, name: "Dollars", type: "asset", currency: "USD", isPlaceholder: false, updatedAt: NOW },
-    { id: "group", parentId: null, name: "Expenses", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
-  ];
+  const book = realBook();
+  book.accounts.push(
+    { id: "bank", parentId: ROOT.asset, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "rent", parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "food", parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "usd", parentId: ROOT.asset, name: "Dollars", type: "asset", currency: "USD", isPlaceholder: false, updatedAt: NOW },
+  );
   return book;
 }
 
@@ -71,7 +70,7 @@ describe("createRecurrence", () => {
   it("refuses a category as an account", () => {
     const result = createRecurrence(
       bookWithAccounts(),
-      { ...input, lines: [{ toAccountId: "group", amount: 100 }] },
+      { ...input, lines: [{ toAccountId: ROOT.expense, amount: 100 }] },
       NOW,
     );
     expect(unwrapErr(result).code).toBe("ACCOUNT_IS_PLACEHOLDER");

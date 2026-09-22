@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAccount } from "../../src/kernel/accounts";
+import { createAccount, updateAccount } from "../../src/kernel/accounts";
 import { createBook } from "../../src/kernel/create-book";
 import {
   expenseRootId,
@@ -9,40 +9,22 @@ import {
 } from "../../src/app/stats-state";
 import type { PeriodSlice } from "../../src/kernel/queries";
 import { NOW as ISO_NOW, unwrap } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 const NOW = new Date(2026, 7, 12); // 12 August 2026
 
 function bookWithRoots() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, ISO_NOW));
+  let book = realBook();
   book = unwrap(
     createAccount(book, {
-      parentId: null,
-      name: "Assets",
-      type: "asset",
-      currency: "ILS",
-      isPlaceholder: true,
-    }, ISO_NOW),
-  );
-  book = unwrap(
-    createAccount(book, {
-      parentId: null,
-      name: "Expenses",
-      type: "expense",
-      currency: "ILS",
-      isPlaceholder: true,
-    }, ISO_NOW),
-  );
-  const expenses = book.accounts[1].id;
-  book = unwrap(
-    createAccount(book, {
-      parentId: expenses,
+      parentId: ROOT.expense,
       name: "Food",
       type: "expense",
       currency: "ILS",
       isPlaceholder: false,
     }, ISO_NOW),
   );
-  return { book, expenses, food: book.accounts[2].id };
+  return { book, expenses: ROOT.expense, food: accountNamed(book, "Food").id };
 }
 
 describe("parseStatsState", () => {
@@ -82,7 +64,7 @@ describe("parseStatsState", () => {
 
   it("drops an unknown or non-expense account id", () => {
     const { book } = bookWithRoots();
-    const assets = book.accounts[0].id;
+    const assets = ROOT.asset;
     expect(
       parseStatsState(new URLSearchParams("account=gone"), book, NOW).accountId,
     ).toBeNull();
@@ -99,44 +81,37 @@ describe("expenseRootId", () => {
   });
 
   it("prefers the root named Expenses when several exist", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, ISO_NOW));
+    // A doubled book: a second top-level expense group beside the real `Expenses` root
+    // (the shape today's merge produces when two separately onboarded devices sync, and
+    // the one BL-048 is meant to repair), named "Bills" so it sorts *before*
+    // "Expenses" — the alphabetical fallback below would pick this account over the real
+    // root if the named-root preference were ever dropped, so this only passes because
+    // that preference is still there.
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
         parentId: null,
-        name: "Other",
+        name: "Bills",
         type: "expense",
         currency: "ILS",
         isPlaceholder: true,
       }, ISO_NOW),
     );
-    book = unwrap(
-      createAccount(book, {
-        parentId: null,
-        name: "Expenses",
-        type: "expense",
-        currency: "ILS",
-        isPlaceholder: true,
-      }, ISO_NOW),
-    );
-    expect(expenseRootId(book)).toBe(book.accounts[1].id);
+    expect(expenseRootId(book)).toBe(ROOT.expense);
   });
 
   it("returns null when there is no expense root", () => {
+    // A book with no accounts at all: there is no expense root to find.
     const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, ISO_NOW));
     expect(expenseRootId(book)).toBeNull();
   });
 
   it("picks the first name when several roots exist and none is Expenses", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, ISO_NOW));
-    book = unwrap(
-      createAccount(book, {
-        parentId: null,
-        name: "Zoo",
-        type: "expense",
-        currency: "ILS",
-        isPlaceholder: true,
-      }, ISO_NOW),
-    );
+    // A doubled book whose user renamed the real expense root, so neither top-level
+    // expense group is named "Expenses" — a further-mangled version of the doubled roots
+    // today's merge produces, which BL-048 is meant to repair.
+    let book = realBook();
+    book = unwrap(updateAccount(book, { id: ROOT.expense, name: "Zoo" }, ISO_NOW));
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -146,7 +121,7 @@ describe("expenseRootId", () => {
         isPlaceholder: true,
       }, ISO_NOW),
     );
-    expect(expenseRootId(book)).toBe(book.accounts[1].id);
+    expect(expenseRootId(book)).toBe(accountNamed(book, "Alpha").id);
   });
 });
 

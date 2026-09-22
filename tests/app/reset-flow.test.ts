@@ -2,10 +2,10 @@ import "fake-indexeddb/auto";
 import { describe, expect, it } from "vitest";
 import { createIndexedDbRepository } from "../../src/adapters/indexeddb-repository";
 import { createSyncMetaStore } from "../../src/adapters/sync-meta-store";
-import { createBook } from "../../src/kernel/create-book";
 import { err, ok } from "../../src/kernel/result";
 import { performReset, performStartOver, type ResetDeps } from "../../src/app/reset-flow";
-import { NOW, unwrap } from "../helpers";
+import { unwrap } from "../helpers";
+import { realBook } from "../helpers/book";
 
 /** Builds ResetDeps whose sync/resetAll/announce push into one shared `calls` array, so
  * tests can assert relative order — not merely that each step ran. */
@@ -234,7 +234,7 @@ describe("performStartOver", () => {
     // screen comes back with the book still in storage — the overwrite happens only when
     // onboarding's Continue finishes building its replacement.
     const repo = createIndexedDbRepository("khesh-start-over-safety");
-    const stored = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    const stored = realBook();
     unwrap(await repo.save(stored));
 
     const meta = createSyncMetaStore("khesh-start-over-safety-meta");

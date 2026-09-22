@@ -4,13 +4,14 @@ import { postEntry } from "../../src/kernel/journal";
 import { validateBook } from "../../src/kernel/validate";
 import type { Book } from "../../src/kernel/types";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 describe("validateBook", () => {
   it("accepts a valid book", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -19,7 +20,7 @@ describe("validateBook", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.expense,
         name: "Food",
         type: "expense",
         currency: "ILS",
@@ -31,8 +32,8 @@ describe("validateBook", () => {
         date: "2026-01-01",
         description: "X",
         postings: [
-          { accountId: book.accounts[1].id, side: "debit", amount: 1 },
-          { accountId: book.accounts[0].id, side: "credit", amount: 1 },
+          { accountId: accountNamed(book, "Food").id, side: "debit", amount: 1 },
+          { accountId: accountNamed(book, "Cash").id, side: "credit", amount: 1 },
         ],
       }, NOW),
     );
@@ -40,11 +41,14 @@ describe("validateBook", () => {
   });
 
   it("reports ACCOUNT_ID_DUPLICATE for duplicate account ids", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    // parentId: ROOT.asset (rather than top-level) so the only violation this book
+    // has is the duplicate id — a top-level "One"/"Two" would also trip
+    // ACCOUNT_ROOT_NOT_PLACEHOLDER, which isn't what this test is about.
+    const book = realBook();
     book.accounts.push(
       {
         id: "dup",
-        parentId: null,
+        parentId: ROOT.asset,
         name: "One",
         type: "asset",
         currency: "ILS",
@@ -53,7 +57,7 @@ describe("validateBook", () => {
       },
       {
         id: "dup",
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Two",
         type: "asset",
         currency: "ILS",
@@ -91,6 +95,10 @@ describe("validateBook", () => {
     expect(codes).toContain("ENTRY_ID_DUPLICATE");
   });
 
+  // Deliberate (S8): an invalid book by construction — duplicate id, a missing
+  // parent, an empty name and a lowercase currency all at once. The top-level
+  // "Dup" leaf now also trips ACCOUNT_ROOT_NOT_PLACEHOLDER, which only adds to
+  // the violation count this test checks (`length > 1`), so the book stays as-is.
   it("collects multiple violations", () => {
     const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
     book.accounts.push(
@@ -122,22 +130,11 @@ describe("validateBook", () => {
 
 describe("validateBook budgets", () => {
   function fixture() {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
 
     book = unwrap(
       createAccount(book, {
-        parentId: null,
-        name: "Expenses",
-        type: "expense",
-        currency: "ILS",
-        isPlaceholder: true,
-      }, NOW),
-    );
-    const expensesId = book.accounts[book.accounts.length - 1].id;
-
-    book = unwrap(
-      createAccount(book, {
-        parentId: expensesId,
+        parentId: ROOT.expense,
         name: "Food",
         type: "expense",
         currency: "ILS",
@@ -148,7 +145,7 @@ describe("validateBook budgets", () => {
 
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",

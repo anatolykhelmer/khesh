@@ -25,41 +25,42 @@ import { syncSignal } from "../../src/app/sync/sync-signal";
 import { performReset } from "../../src/app/reset-flow";
 import { errorMessage } from "../../src/service/error-messages";
 import { NOW, unwrap } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 /** A book with no user data: `holdsNoUserData` answers true, so `LocalState` is "empty". */
 function emptyBook(): Book {
   return unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
 }
 
-/** A book with one posted entry, so `LocalState` is "real" — the side of the matrix that
- * offers all three choices.
+/** A book with one entry in it — what "real" means to the first-connect plan.
  *
  * Deviates from the brief: `postEntry`'s real signature takes `postings: PostingInput[]`
  * (`{ accountId, side, amount }`, at least two postings across two distinct accounts),
  * not the brief's `lines: [{ accountId, amount, currency }]` — that shape does not exist
  * on the kernel. Modelled on `tests/adapters/sync-envelope.test.ts`'s `fullBook()`. */
-function realBook(): Book {
-  let book = emptyBook();
+function bookWithEntry(): Book {
+  let book = realBook();
   book = unwrap(createAccount(book,
-    { parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
+    { parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
   book = unwrap(createAccount(book,
-    { parentId: null, name: "Opening Balance", type: "equity", currency: "ILS", isPlaceholder: false }, NOW));
-  const [cash, opening] = book.accounts;
+    { parentId: ROOT.income, name: "Salary", type: "income", currency: "ILS", isPlaceholder: false }, NOW));
+  const cash = accountNamed(book, "Cash");
+  const salary = accountNamed(book, "Salary");
   book = unwrap(postEntry(book,
     {
       date: "2026-09-01",
       description: "seed",
       postings: [
         { accountId: cash.id, side: "debit", amount: 1000 },
-        { accountId: opening.id, side: "credit", amount: 1000 },
+        { accountId: salary.id, side: "credit", amount: 1000 },
       ],
     }, NOW));
   return book;
 }
 
-/** What a Drive file holding `realBook()` contains. */
+/** What a Drive file holding `bookWithEntry()` contains. */
 function remotePayload(): string {
-  return encodeEnvelope(realBook());
+  return encodeEnvelope(bookWithEntry());
 }
 
 function makeSession(overrides: Record<string, unknown> = {}) {
@@ -278,7 +279,7 @@ describe("sync session: connection identity", () => {
   it("puts the choices on screen when Drive holds a book and local holds one too", async () => {
     const { session, auth, drive } = makeSession();
     drive.files.set("file-remote", JSON.stringify({ schema: "khesh.book.v1" }));
-    session.setBook(realBook());
+    session.setBook(bookWithEntry());
     const connecting = session.connect();
     expect(session.getSnapshot().activity.connecting).toBe(true);
     expect(session.getSnapshot().activity.blocking).toBe(true);
@@ -403,16 +404,16 @@ describe("sync session: connection identity", () => {
     //
     // Second, the destination: "idle" is also `stage`'s value before anything runs, so
     // even the reordered version above still passed with the guards gutted — this
-    // `realBook()`-with-nothing-seeded-into-`repo` setup makes the apply fail with
+    // `bookWithEntry()`-with-nothing-seeded-into-`repo` setup makes the apply fail with
     // BOOK_INVALID on its own, which also never touches `stage`. Seeding the Drive with a
-    // file (`realBook()` on the local side keeps `firstConnectOptions` on the "choose"
+    // file (`bookWithEntry()` on the local side keeps `firstConnectOptions` on the "choose"
     // side of the matrix, same as the first test in this block) means an unsuperseded
     // connect would reach `stage = {kind: "choosing", ...}` — a value teardown's own
     // `afterTeardown` does not produce — so "idle" here can only mean the connect never
     // got that far.
     const { session, auth, drive } = makeSession();
     drive.files.set("file-remote", JSON.stringify({ schema: "khesh.book.v1" }));
-    session.setBook(realBook());
+    session.setBook(bookWithEntry());
     const connecting = session.connect();
     await session.disconnect();
     await auth.tokenGate.settle(ok("token-1"));
@@ -898,7 +899,7 @@ describe("sync session: the book moving underneath", () => {
     const { session, meta } = makeSession({
       metaStore: createGatedMetaStore({ connected: true, fileId: "file-1", accountEmail: "a@b.c" }),
     });
-    session.setBook(realBook());
+    session.setBook(bookWithEntry());
     await flush();
     expect(session.getSnapshot().connected).toBe(true);
     expect(session.getSnapshot().email).toBe("a@b.c");
@@ -925,7 +926,7 @@ describe("sync session: the book moving underneath", () => {
     const { session } = makeSession({
       metaStore: { load: () => loadPromise, save: async () => {} },
     });
-    session.setBook(realBook());   // starts the resume load, `resumed` latches
+    session.setBook(bookWithEntry());   // starts the resume load, `resumed` latches
     session.setBook(null);         // arrives before the load resolves; shouldTearDown is a no-op
     resolveLoad({
       ...EMPTY_SYNC_META,
@@ -959,12 +960,12 @@ describe("sync session: the book moving underneath", () => {
       metaStore: createGatedMetaStore({ connected: true, fileId: "file-1", accountEmail: "a@b.c" }),
     });
     session.beginErase();
-    session.setBook(realBook());
+    session.setBook(bookWithEntry());
     await flush();
     expect(session.getSnapshot().connected).toBe(false);
     expect(session.getSnapshot().state).toBeNull();      // armEngine never ran
     session.endErase();
-    session.setBook(realBook());                         // the next book to arrive asks again
+    session.setBook(bookWithEntry());                         // the next book to arrive asks again
     await flush();
     expect(session.getSnapshot().connected).toBe(true);
     expect(session.getSnapshot().email).toBe("a@b.c");
@@ -1025,7 +1026,7 @@ describe("sync session: the book moving underneath", () => {
     const disconnecting = session.disconnect();
     await flush();
     expect(meta.saveGate.pending).toBe(1);      // parked in the teardown's own meta write
-    session.setBook(realBook());
+    session.setBook(bookWithEntry());
     await flush();
     expect(session.getSnapshot().connected).toBe(false);
     await drainMetaSaves(meta);
@@ -1070,7 +1071,7 @@ describe("sync session: the book moving underneath", () => {
     // Boot. No `flush()` on purpose: the load is in flight, so the snapshot `performReset`
     // is about to photograph reads `connected: false` with no inspection — the whole
     // premise. Flushing here instead reaches the case that was never broken.
-    session.setBook(realBook());
+    session.setBook(bookWithEntry());
     expect(session.getSnapshot().connected).toBe(false);
 
     await performReset({
@@ -1097,15 +1098,15 @@ describe("sync session: the book moving underneath", () => {
   });
 
   it("drops a plan the book moved out from under, and says so", async () => {
-    // Deviates from the brief: `session.setBook(realBook())`, not a second `emptyBook()`.
+    // Deviates from the brief: `session.setBook(bookWithEntry())`, not a second `emptyBook()`.
     // `choosingSession()` plans from `local = "empty"` (see its own doc), so a second,
     // content-equal `emptyBook()` is still `localState() === "empty"` — the same string
     // `plannedFor` already holds, and `afterLocalStateChange` compares that string, not
     // book identity. The brief's own inline comment ("real → empty") describes the
     // opposite starting local state from what `choosingSession()` actually seeds; moving
-    // to `realBook()` here is what actually changes `localState()` and exercises the drop.
+    // to `bookWithEntry()` here is what actually changes `localState()` and exercises the drop.
     const { session } = await choosingSession();
-    session.setBook(realBook());                  // "empty" → "real": the plan is stale
+    session.setBook(bookWithEntry());                  // "empty" → "real": the plan is stale
     expect(session.getSnapshot().stage.kind).toBe("dropped");
     expect(session.getSnapshot().lastError).toBeNull();
   });
@@ -1422,7 +1423,7 @@ describe("sync session: the rest of the surface", () => {
                    async save() { throw new Error("boom"); } },
       fetchAccountEmail: async () => { throw new Error("boom"); },
     });
-    session.setBook(realBook());
+    session.setBook(bookWithEntry());
     await expect(session.connect()).resolves.toBeUndefined();
     await expect(session.reconnect()).resolves.toBeUndefined();
     await expect(session.applyChoice("merge")).resolves.toBeUndefined();
@@ -1440,7 +1441,7 @@ describe("sync session: the rest of the surface", () => {
  * if the catches around *those* calls were never written. This suite makes each port
  * fail on its own, with the rest of the ports working normally, so every method's own
  * catch has to earn its pass individually. `emptyBook()` + a seeded `repo`, not
- * `realBook()` with nothing seeded: that is what lets `applyFirstConnect` actually
+ * `bookWithEntry()` with nothing seeded: that is what lets `applyFirstConnect` actually
  * succeed and the flow reach `finalize` (and, through a second `reconnect()`, `teardown`)
  * instead of dying early on `BOOK_INVALID` regardless of which port is broken.
  */
@@ -1716,15 +1717,15 @@ describe("sync session: window and signal wiring", () => {
     // edit the user made stopped reaching Drive until the tab was reloaded.
     const { session, engines } = await connectedWithRecordingEngines();
     const detach = session.attach();
-    syncSignal.emit(realBook());
+    syncSignal.emit(bookWithEntry());
     expect(engines[0].calls).toEqual(["notifyLocalChange"]);
 
     detach();
-    syncSignal.emit(realBook());
+    syncSignal.emit(bookWithEntry());
     expect(engines[0].calls).toEqual(["notifyLocalChange"]);      // nothing more
 
     const detachAgain = session.attach();
-    syncSignal.emit(realBook());
+    syncSignal.emit(bookWithEntry());
     expect(engines[0].calls).toEqual(["notifyLocalChange", "notifyLocalChange"]);
     detachAgain();
   });
@@ -2065,7 +2066,7 @@ describe("joinShared", () => {
     // armed has to be able to run a whole cycle here, or the Drive assertion below could
     // never fail and would be pinning the gated token instead of the guard.
     boot.auth.tokenGate.automatic(ok("token-boot"));
-    const book = realBook();
+    const book = bookWithEntry();
     await boot.repo.save(book);
     boot.session.setBook(book);
     await flush();

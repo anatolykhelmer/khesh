@@ -1,22 +1,22 @@
 import { createAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { updateEntry } from "../../src/kernel/journal";
 import { recordOpeningBalance } from "../../src/kernel/opening";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 describe("recordOpeningBalance", () => {
   it("creates system OB accounts and an opening entry", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
       }, NOW),
     );
-    const cashId = book.accounts[0].id;
+    const cashId = accountNamed(book, "Cash").id;
     book = unwrap(recordOpeningBalance(book, { accountId: cashId, amount: 10000, date: "2026-01-01" }, NOW));
 
     expect(book.accounts.some((a) => a.id === "sys:ob" && a.isPlaceholder)).toBe(true);
@@ -31,10 +31,10 @@ describe("recordOpeningBalance", () => {
   });
 
   it("uses credit on a liability target", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.liability,
         name: "Card",
         type: "liability",
         currency: "ILS",
@@ -43,7 +43,7 @@ describe("recordOpeningBalance", () => {
     );
     book = unwrap(
       recordOpeningBalance(book, {
-        accountId: book.accounts[0].id,
+        accountId: accountNamed(book, "Card").id,
         amount: 5000,
         date: "2026-01-01",
       }, NOW),
@@ -52,17 +52,17 @@ describe("recordOpeningBalance", () => {
   });
 
   it("upserts by opening:{accountId}", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
       }, NOW),
     );
-    const cashId = book.accounts[0].id;
+    const cashId = accountNamed(book, "Cash").id;
     book = unwrap(recordOpeningBalance(book, { accountId: cashId, amount: 100, date: "2026-01-01" }, NOW));
     book = unwrap(recordOpeningBalance(book, { accountId: cashId, amount: 200, date: "2026-01-02" }, NOW));
     expect(book.journal).toHaveLength(1);
@@ -71,27 +71,27 @@ describe("recordOpeningBalance", () => {
   });
 
   it("amount 0 removes the opening entry", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
       }, NOW),
     );
-    const cashId = book.accounts[0].id;
+    const cashId = accountNamed(book, "Cash").id;
     book = unwrap(recordOpeningBalance(book, { accountId: cashId, amount: 100, date: "2026-01-01" }, NOW));
     book = unwrap(recordOpeningBalance(book, { accountId: cashId, amount: 0, date: "2026-01-01" }, NOW));
     expect(book.journal).toHaveLength(0);
   });
 
   it("rejects system OB target", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -100,7 +100,7 @@ describe("recordOpeningBalance", () => {
     );
     book = unwrap(
       recordOpeningBalance(book, {
-        accountId: book.accounts[0].id,
+        accountId: accountNamed(book, "Cash").id,
         amount: 100,
         date: "2026-01-01",
       }, NOW),
@@ -117,7 +117,9 @@ describe("recordOpeningBalance", () => {
   });
 
   it("fails when a root account is already named Opening Balances", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
+    // deliberate (S8): a hand-made top-level placeholder collides with sys:ob's own group
+    // name; still valid under ACCOUNT_ROOT_NOT_PLACEHOLDER because it is a placeholder.
     book = unwrap(
       createAccount(book, {
         parentId: null,
@@ -129,7 +131,7 @@ describe("recordOpeningBalance", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -148,7 +150,7 @@ describe("recordOpeningBalance", () => {
   });
 
   it("fails when sys:ob already has a non-system child named for the currency", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book.accounts.push({
       id: "sys:ob",
       parentId: null,
@@ -169,7 +171,7 @@ describe("recordOpeningBalance", () => {
     });
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -188,10 +190,10 @@ describe("recordOpeningBalance", () => {
   });
 
   it("keeps kind opening on updateEntry and rejects FX opening", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -200,15 +202,15 @@ describe("recordOpeningBalance", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "USD",
         type: "asset",
         currency: "USD",
         isPlaceholder: false,
       }, NOW),
     );
-    const cashId = book.accounts[0].id;
-    const usdId = book.accounts[1].id;
+    const cashId = accountNamed(book, "Cash").id;
+    const usdId = accountNamed(book, "USD").id;
     book = unwrap(recordOpeningBalance(book, { accountId: cashId, amount: 100, date: "2026-01-01" }, NOW));
     expect(
       unwrapErr(

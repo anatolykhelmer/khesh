@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { createBook } from "../../src/kernel/create-book";
 import { dueOccurrences } from "../../src/kernel/occurrences";
 import {
   createRecurrence,
@@ -10,15 +9,16 @@ import {
 import { validateBook } from "../../src/kernel/validate";
 import type { Book } from "../../src/kernel/types";
 import { unwrap, unwrapErr, NOW, LATER } from "../helpers";
+import { realBook, ROOT } from "../helpers/book";
 
 const TODAY = "2026-06-15";
 
 function withRule(): Book {
-  const book = unwrap(createBook({ name: "Household", homeCurrency: "ILS" }, NOW));
-  book.accounts = [
-    { id: "bank", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "rent", parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-  ];
+  const book = realBook();
+  book.accounts.push(
+    { id: "bank", parentId: ROOT.asset, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "rent", parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+  );
   return unwrap(
     createRecurrence(
       book,
@@ -131,11 +131,11 @@ describe("setRecurrencePaused", () => {
 
   it("re-pausing keeps the original pause start, so all occurrences during the true pause are closed", () => {
     // Create a weekly rule: 2026-04-01 (Wed) + weekly = 04-01, 04-08, 04-15, 04-22, ...
-    const book = unwrap(createBook({ name: "Household", homeCurrency: "ILS" }, NOW));
-    book.accounts = [
-      { id: "bank", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-      { id: "bill", parentId: null, name: "Bill", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    ];
+    const book = realBook();
+    book.accounts.push(
+      { id: "bank", parentId: ROOT.asset, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+      { id: "bill", parentId: ROOT.expense, name: "Bill", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    );
     const withWeekly = unwrap(
       createRecurrence(
         book,

@@ -4,6 +4,7 @@ import { normalizeBook } from "../../src/kernel/normalize";
 import { validateBook } from "../../src/kernel/validate";
 import type { Book, Recurrence } from "../../src/kernel/types";
 import { unwrap, unwrapErr, NOW } from "../helpers";
+import { realBook, ROOT } from "../helpers/book";
 
 function emptyBook(): Book {
   return unwrap(createBook({ name: "Household", homeCurrency: "ILS" }, NOW));
@@ -30,11 +31,11 @@ function ruleOn(accountId: string, toAccountId: string): Recurrence {
  * so every schedule/placeholder/duplicate case below only ever breaks the one thing
  * it patches in. */
 function bookWithTwoAccounts(): Book {
-  const book = emptyBook();
-  book.accounts = [
-    { id: "a", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-    { id: "b", parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-  ];
+  const book = realBook();
+  book.accounts.push(
+    { id: "a", parentId: ROOT.asset, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+    { id: "b", parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+  );
   return book;
 }
 
@@ -91,7 +92,7 @@ describe("schema v3", () => {
 
   it("rejects a rule whose accounts do not share one currency", () => {
     const book = bookWithTwoAccounts();
-    book.accounts[1] = { ...book.accounts[1], currency: "USD" };
+    book.accounts = book.accounts.map((a) => (a.id === "b" ? { ...a, currency: "USD" } : a));
     book.recurrences = [ruleOn("a", "b")];
     expect(codes(validateBook(book))).toContain("RECURRENCE_CURRENCY_MISMATCH");
   });
@@ -104,7 +105,7 @@ describe("schema v3", () => {
 
   it("rejects a rule that posts to a placeholder account", () => {
     const book = bookWithTwoAccounts();
-    book.accounts[1] = { ...book.accounts[1], isPlaceholder: true };
+    book.accounts = book.accounts.map((a) => (a.id === "b" ? { ...a, isPlaceholder: true } : a));
     book.recurrences = [ruleOn("a", "b")];
     expect(codes(validateBook(book))).toContain("ACCOUNT_IS_PLACEHOLDER");
   });

@@ -1,8 +1,8 @@
 import { createAccount, deleteAccount } from "../../src/kernel/accounts";
 import { removeBudget, setBudget } from "../../src/kernel/budgets";
-import { createBook } from "../../src/kernel/create-book";
 import type { AccountType, Book } from "../../src/kernel/types";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { realBook, ROOT } from "../helpers/book";
 
 function add(
   book: Book,
@@ -19,17 +19,9 @@ function add(
 }
 
 function fixture() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
-  const expenses = add(book, {
-    parentId: null,
-    name: "Expenses",
-    type: "expense",
-    currency: "ILS",
-    isPlaceholder: true,
-  });
-  book = expenses.book;
+  let book: Book = realBook();
   const food = add(book, {
-    parentId: expenses.id,
+    parentId: ROOT.expense,
     name: "Food",
     type: "expense",
     currency: "ILS",
@@ -37,14 +29,14 @@ function fixture() {
   });
   book = food.book;
   const cash = add(book, {
-    parentId: null,
+    parentId: ROOT.asset,
     name: "Cash",
     type: "asset",
     currency: "ILS",
     isPlaceholder: false,
   });
   book = cash.book;
-  return { book, expenses: expenses.id, food: food.id, cash: cash.id };
+  return { book, expenses: ROOT.expense, food: food.id, cash: cash.id };
 }
 
 describe("setBudget", () => {

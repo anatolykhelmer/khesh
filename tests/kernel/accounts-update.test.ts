@@ -1,23 +1,14 @@
 import { createAccount, deleteAccount, updateAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { setBudget } from "../../src/kernel/budgets";
 import { createRecurrence } from "../../src/kernel/recurrences";
 import { validateBook } from "../../src/kernel/validate";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 import type { Book } from "../../src/kernel/types";
 
 function bookWithAssets(): { book: Book; assetsId: string; cashId: string } {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
-  book = unwrap(
-    createAccount(book, {
-      parentId: null,
-      name: "Assets",
-      type: "asset",
-      currency: "ILS",
-      isPlaceholder: true,
-    }, NOW),
-  );
-  const assetsId = book.accounts[0].id;
+  let book = realBook();
+  const assetsId = ROOT.asset;
   book = unwrap(
     createAccount(book, {
       parentId: assetsId,
@@ -27,7 +18,7 @@ function bookWithAssets(): { book: Book; assetsId: string; cashId: string } {
       isPlaceholder: false,
     }, NOW),
   );
-  const cashId = book.accounts[1].id;
+  const cashId = accountNamed(book, "Cash").id;
   return { book, assetsId, cashId };
 }
 
@@ -45,7 +36,7 @@ function bookWithRule(): {
   const withExpense = unwrap(
     createAccount(
       book,
-      { parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false },
+      { parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false },
       NOW,
     ),
   );
@@ -76,7 +67,7 @@ function bookWithBudget(): { book: Book; foodId: string } {
   const withExpense = unwrap(
     createAccount(
       book,
-      { parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false },
+      { parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false },
       NOW,
     ),
   );
@@ -123,9 +114,9 @@ describe("updateAccount", () => {
   });
 
   it("rejects cycle", () => {
-    const { book, assetsId } = bookWithAssets();
+    const { book, assetsId, cashId } = bookWithAssets();
     expect(
-      unwrapErr(updateAccount(book, { id: assetsId, parentId: book.accounts[1].id }, NOW)).code,
+      unwrapErr(updateAccount(book, { id: assetsId, parentId: cashId }, NOW)).code,
     ).toBe("ACCOUNT_CYCLE");
   });
 
@@ -183,12 +174,14 @@ describe("updateAccount", () => {
     const withSpare = unwrap(
       createAccount(
         book,
-        { parentId: null, name: "Fun", type: "expense", currency: "ILS", isPlaceholder: false },
+        { parentId: ROOT.expense, name: "Fun", type: "expense", currency: "ILS", isPlaceholder: false },
         NOW,
       ),
     );
     const funId = withSpare.accounts[withSpare.accounts.length - 1].id;
-    const next = unwrap(updateAccount(withSpare, { id: funId, type: "income" }, NOW));
+    const next = unwrap(
+      updateAccount(withSpare, { id: funId, type: "income", parentId: ROOT.income }, NOW),
+    );
     expect(next.accounts.find((a) => a.id === funId)?.type).toBe("income");
     expect(unwrap(validateBook(next))).toBe(true);
   });
@@ -201,11 +194,15 @@ describe("updateAccount", () => {
     const { book, foodId } = bookWithBudget();
     const broken: Book = {
       ...book,
-      accounts: book.accounts.map((a) => (a.id === foodId ? { ...a, type: "income" } : a)),
+      accounts: book.accounts.map((a) =>
+        a.id === foodId ? { ...a, type: "income", parentId: ROOT.income } : a
+      ),
     };
     expect(validateBook(broken).ok).toBe(false);
 
-    const next = unwrap(updateAccount(broken, { id: foodId, type: "expense" }, NOW));
+    const next = unwrap(
+      updateAccount(broken, { id: foodId, type: "expense", parentId: ROOT.expense }, NOW),
+    );
     expect(next.budgets).toHaveLength(1);
     expect(unwrap(validateBook(next))).toBe(true);
   });
@@ -240,7 +237,7 @@ describe("deleteAccount", () => {
     const withExpense = unwrap(
       createAccount(
         book,
-        { parentId: null, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false },
+        { parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false },
         NOW,
       ),
     );

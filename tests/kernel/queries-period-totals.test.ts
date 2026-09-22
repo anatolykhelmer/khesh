@@ -1,15 +1,15 @@
 import { createAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { periodTotals } from "../../src/kernel/queries";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 describe("periodTotals", () => {
   function bookWithAccounts() {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -18,7 +18,7 @@ describe("periodTotals", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.income,
         name: "Salary",
         type: "income",
         currency: "ILS",
@@ -27,7 +27,7 @@ describe("periodTotals", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.expense,
         name: "Food",
         type: "expense",
         currency: "ILS",
@@ -36,9 +36,9 @@ describe("periodTotals", () => {
     );
     return {
       book,
-      cash: book.accounts[0].id,
-      salary: book.accounts[1].id,
-      food: book.accounts[2].id,
+      cash: accountNamed(book, "Cash").id,
+      salary: accountNamed(book, "Salary").id,
+      food: accountNamed(book, "Food").id,
     };
   }
 
@@ -95,10 +95,10 @@ describe("periodTotals", () => {
   });
 
   it("reports foreign-currency accounts under their own currency key", () => {
-    let { book, food } = bookWithAccounts();
+    let { book, cash, food } = bookWithAccounts();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "USD Cash",
         type: "asset",
         currency: "USD",
@@ -107,7 +107,7 @@ describe("periodTotals", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.expense,
         name: "USD Rent",
         type: "expense",
         currency: "USD",
@@ -132,7 +132,7 @@ describe("periodTotals", () => {
         description: "ILS groceries",
         postings: [
           { accountId: food, side: "debit", amount: 3000 },
-          { accountId: book.accounts[0].id, side: "credit", amount: 3000 },
+          { accountId: cash, side: "credit", amount: 3000 },
         ],
       }, NOW),
     );

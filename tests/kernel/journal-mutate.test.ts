@@ -1,13 +1,13 @@
 import { createAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { deleteEntry, postEntry, updateEntry } from "../../src/kernel/journal";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 function posted() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+  let book = realBook();
   book = unwrap(
     createAccount(book, {
-      parentId: null,
+      parentId: ROOT.asset,
       name: "Cash",
       type: "asset",
       currency: "ILS",
@@ -16,15 +16,15 @@ function posted() {
   );
   book = unwrap(
     createAccount(book, {
-      parentId: null,
+      parentId: ROOT.expense,
       name: "Food",
       type: "expense",
       currency: "ILS",
       isPlaceholder: false,
     }, NOW),
   );
-  const cashId = book.accounts[0].id;
-  const foodId = book.accounts[1].id;
+  const cashId = accountNamed(book, "Cash").id;
+  const foodId = accountNamed(book, "Food").id;
   book = unwrap(
     postEntry(book, {
       date: "2026-01-10",
@@ -87,10 +87,10 @@ describe("updateEntry / deleteEntry", () => {
   });
 
   it("clears fx when fx is null", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -99,7 +99,7 @@ describe("updateEntry / deleteEntry", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "USD",
         type: "asset",
         currency: "USD",
@@ -111,8 +111,8 @@ describe("updateEntry / deleteEntry", () => {
         date: "2026-01-10",
         description: "FX",
         postings: [
-          { accountId: book.accounts[1].id, side: "debit", amount: 100 },
-          { accountId: book.accounts[0].id, side: "credit", amount: 370 },
+          { accountId: accountNamed(book, "USD").id, side: "debit", amount: 100 },
+          { accountId: accountNamed(book, "Cash").id, side: "credit", amount: 370 },
         ],
         fx: {
           baseCurrency: "USD",

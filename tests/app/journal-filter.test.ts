@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { createBook } from "../../src/kernel/create-book";
 import { createAccount } from "../../src/kernel/accounts";
 import {
   isDefaultFilter,
@@ -7,21 +6,22 @@ import {
   toListJournalFilter,
 } from "../../src/app/journal-filter";
 import { NOW as ISO_NOW, unwrap } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 const NOW = new Date(2026, 7, 12); // 12 August 2026
 
 function bookWithAccount() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, ISO_NOW));
+  let book = realBook();
   book = unwrap(
     createAccount(book, {
-      parentId: null,
+      parentId: ROOT.asset,
       name: "Cash",
       type: "asset",
       currency: "ILS",
       isPlaceholder: false,
     }, ISO_NOW),
   );
-  return { book, cashId: book.accounts[0].id };
+  return { book, cashId: accountNamed(book, "Cash").id };
 }
 
 describe("parseJournalFilter", () => {

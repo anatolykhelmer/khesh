@@ -3,7 +3,6 @@ import { createMemoryRepository } from "../../src/adapters/memory-repository";
 import { createMemorySyncStore } from "../../src/adapters/memory-sync-store";
 import { decodeEnvelope, encodeEnvelope } from "../../src/adapters/sync-envelope";
 import { createAccount, updateAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { bookFingerprint } from "../../src/kernel/merge";
 import { err, type Result } from "../../src/kernel/result";
@@ -13,6 +12,7 @@ import type { SyncStorePort } from "../../src/ports/sync-store";
 import { createLedgerApp } from "../../src/service/ledger-app";
 import { createSyncEngine, type SyncState } from "../../src/service/sync-engine";
 import { NOW, unwrap } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 const T = (n: number) => `2026-09-02T10:${String(n).padStart(2, "0")}:00.000Z`;
 
@@ -26,10 +26,10 @@ function serialLock() {
 }
 
 function makeBook(): { book: Book; cashId: string; foodId: string } {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
-  book = unwrap(createAccount(book, { parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
-  book = unwrap(createAccount(book, { parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW));
-  return { book, cashId: book.accounts[0].id, foodId: book.accounts[1].id };
+  let book = realBook();
+  book = unwrap(createAccount(book, { parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW));
+  book = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW));
+  return { book, cashId: accountNamed(book, "Cash").id, foodId: accountNamed(book, "Food").id };
 }
 
 function spend(book: Book, cashId: string, foodId: string, amount: number, at: string): Book {

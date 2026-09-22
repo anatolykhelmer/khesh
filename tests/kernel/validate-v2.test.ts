@@ -4,6 +4,7 @@ import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { validateBook } from "../../src/kernel/validate";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 function violations(result: ReturnType<typeof validateBook>) {
   const error = unwrapErr(result);
@@ -23,9 +24,9 @@ function messages(result: ReturnType<typeof validateBook>) {
 }
 
 function bookWithAccount() {
-  const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+  const book = realBook();
   return unwrap(
-    createAccount(book, { parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW),
+    createAccount(book, { parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW),
   );
 }
 
@@ -33,9 +34,10 @@ function bookWithAccount() {
 function bookWithEveryRecordKind() {
   let book = bookWithAccount();
   book = unwrap(
-    createAccount(book, { parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW),
+    createAccount(book, { parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW),
   );
-  const [cash, food] = book.accounts;
+  const cash = accountNamed(book, "Cash");
+  const food = accountNamed(book, "Food");
   book = unwrap(
     postEntry(book, {
       date: "2026-01-10",
@@ -71,7 +73,7 @@ describe("validateBook v2", () => {
 
   it("rejects an account, an entry and a budget that lost updatedAt", () => {
     const broken: any = structuredClone(bookWithEveryRecordKind());
-    delete broken.accounts[0].updatedAt;
+    delete (accountNamed(broken, "Cash") as any).updatedAt;
     delete broken.journal[0].updatedAt;
     delete broken.budgets[0].updatedAt;
     const missing = violations(validateBook(broken)).filter(
@@ -89,11 +91,12 @@ describe("validateBook v2", () => {
 
   it("rejects a live record with a tombstone for the same key", () => {
     const clone = structuredClone(bookWithAccount());
+    const cash = accountNamed(clone, "Cash");
     clone.tombstones.push({
       kind: "account",
-      key: clone.accounts[0].id,
+      key: cash.id,
       deletedAt: NOW,
-      record: clone.accounts[0],
+      record: cash,
     });
     const shadowing = violations(validateBook(clone)).filter(
       (v) => v.message === "Tombstone shadows a live record",
@@ -101,7 +104,7 @@ describe("validateBook v2", () => {
     expect(shadowing).toHaveLength(1);
     expect(shadowing[0]).toMatchObject({
       code: "BOOK_INVALID",
-      details: { kind: "account", key: clone.accounts[0].id },
+      details: { kind: "account", key: cash.id },
     });
   });
 
@@ -149,17 +152,10 @@ describe("validateBook v2", () => {
   // findAccount is reached from the accounts loop via wouldCreateCycle, which walks
   // parent links; a malformed element must not throw during that walk either.
   it("reports a null account element in a book whose accounts have parents", () => {
-    const parent = unwrap(
-      createAccount(
-        unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW)),
-        { parentId: null, name: "Expenses", type: "expense", currency: "ILS", isPlaceholder: true },
-        NOW,
-      ),
-    );
     const withChild = unwrap(
       createAccount(
-        parent,
-        { parentId: parent.accounts[0].id, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false },
+        realBook(),
+        { parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false },
         NOW,
       ),
     );

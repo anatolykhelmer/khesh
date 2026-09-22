@@ -108,6 +108,19 @@ export function validateBook(book: Book): Result<true> {
         details: { id: account.id },
       });
     }
+    // A top-level account is a category root, and a category holds no money. No command
+    // creates a top-level leaf or moves an account between the top level and a parent
+    // (updateAccount keeps each at the level it was created at). Nor does the merge ladder
+    // make one: rung 3 turns a posted-to group into a leaf, but for a top-level account it
+    // refuses the merge instead (`rootWithPostings`). A book that has one came from
+    // outside the app.
+    if (account.parentId === null && !account.isPlaceholder) {
+      violations.push({
+        code: "ACCOUNT_ROOT_NOT_PLACEHOLDER",
+        message: "A top-level account must be a placeholder",
+        details: { id: account.id },
+      });
+    }
     if (account.parentId !== null) {
       const parent = book.accounts.find((item) => isAccountRecord(item) && item.id === account.parentId);
       if (!parent) {

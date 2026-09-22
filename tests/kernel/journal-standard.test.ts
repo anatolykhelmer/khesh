@@ -1,34 +1,14 @@
 import { createAccount, deleteAccount, updateAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { NOW, unwrap, unwrapErr } from "../helpers";
 import type { Book } from "../../src/kernel/types";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 function twoLeaves(): { book: Book; cashId: string; foodId: string } {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+  let book = realBook();
   book = unwrap(
     createAccount(book, {
-      parentId: null,
-      name: "Assets",
-      type: "asset",
-      currency: "ILS",
-      isPlaceholder: true,
-    }, NOW),
-  );
-  book = unwrap(
-    createAccount(book, {
-      parentId: null,
-      name: "Expenses",
-      type: "expense",
-      currency: "ILS",
-      isPlaceholder: true,
-    }, NOW),
-  );
-  const assetsId = book.accounts[0].id;
-  const expensesId = book.accounts[1].id;
-  book = unwrap(
-    createAccount(book, {
-      parentId: assetsId,
+      parentId: ROOT.asset,
       name: "Cash",
       type: "asset",
       currency: "ILS",
@@ -37,7 +17,7 @@ function twoLeaves(): { book: Book; cashId: string; foodId: string } {
   );
   book = unwrap(
     createAccount(book, {
-      parentId: expensesId,
+      parentId: ROOT.expense,
       name: "Food",
       type: "expense",
       currency: "ILS",
@@ -46,8 +26,8 @@ function twoLeaves(): { book: Book; cashId: string; foodId: string } {
   );
   return {
     book,
-    cashId: book.accounts[2].id,
-    foodId: book.accounts[3].id,
+    cashId: accountNamed(book, "Cash").id,
+    foodId: accountNamed(book, "Food").id,
   };
 }
 
@@ -74,14 +54,14 @@ describe("postEntry same-currency", () => {
     const { book, cashId, foodId } = twoLeaves();
     let next = unwrap(
       createAccount(book, {
-        parentId: book.accounts[1].id,
+        parentId: ROOT.expense,
         name: "Fees",
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
       }, NOW),
     );
-    const feesId = next.accounts[4].id;
+    const feesId = accountNamed(next, "Fees").id;
     next = unwrap(
       postEntry(next, {
         date: "2026-01-15",
@@ -152,7 +132,7 @@ describe("postEntry same-currency", () => {
           date: "2026-01-15",
           description: "Bad",
           postings: [
-            { accountId: book.accounts[0].id, side: "debit", amount: 100 },
+            { accountId: ROOT.asset, side: "debit", amount: 100 },
             { accountId: cashId, side: "credit", amount: 100 },
           ],
         }, NOW),

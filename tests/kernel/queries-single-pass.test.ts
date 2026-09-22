@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { createAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import {
   balance,
@@ -15,6 +14,7 @@ import {
 } from "../../src/kernel/queries";
 import type { AccountType, Book } from "../../src/kernel/types";
 import { NOW, unwrap } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 const AUGUST = { from: "2026-08-01", to: "2026-08-31" };
 
@@ -50,17 +50,16 @@ function post(book: Book, from: string, to: string, date: string, amount: number
 /** One asset leaf, one income leaf, one expense group with two leaves — so every
  * query below has more than one account to loop over. */
 function fixture() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
-  book = add(book, "Cash", "asset", null, false);
-  book = add(book, "Salary", "income", null, false);
-  book = add(book, "Expenses", "expense", null, true);
-  const cash = book.accounts[0].id;
-  const salary = book.accounts[1].id;
-  const expenses = book.accounts[2].id;
+  let book = realBook();
+  book = add(book, "Cash", "asset", ROOT.asset, false);
+  book = add(book, "Salary", "income", ROOT.income, false);
+  const cash = accountNamed(book, "Cash").id;
+  const salary = accountNamed(book, "Salary").id;
+  const expenses = ROOT.expense;
   book = add(book, "Food", "expense", expenses, false);
   book = add(book, "Travel", "expense", expenses, false);
-  const food = book.accounts[3].id;
-  const travel = book.accounts[4].id;
+  const food = accountNamed(book, "Food").id;
+  const travel = accountNamed(book, "Travel").id;
   book = post(book, salary, cash, "2026-08-01", 500000);
   book = post(book, cash, food, "2026-08-10", 3000);
   book = post(book, cash, travel, "2026-08-12", 9000);

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createBook } from "../../src/kernel/create-book";
 import { deriveStatus } from "../../src/app/ledger-status";
-import { NOW, unwrap } from "../helpers";
+import { realBook } from "../helpers/book";
 
-const BOOK = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+const BOOK = realBook();
 
 describe("deriveStatus", () => {
   it("is loading while the first boot is in flight, whatever else is set", () => {

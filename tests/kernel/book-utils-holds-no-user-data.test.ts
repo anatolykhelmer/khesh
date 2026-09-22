@@ -7,22 +7,13 @@ import { postEntry } from "../../src/kernel/journal";
 import { createRecurrence } from "../../src/kernel/recurrences";
 import type { Book } from "../../src/kernel/types";
 import { NOW, unwrap } from "../helpers";
+import { realBook } from "../helpers/book";
 
 /** The four top-level placeholder groups `createHousehold` seeds, without going through
- * the service layer (which would drag i18n in for the names). */
+ * the service layer (which would drag i18n in for the names). `realBook()` already
+ * builds exactly this shape. */
 function seeded(): Book {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
-  for (const [name, type] of [
-    ["Assets", "asset"],
-    ["Liabilities", "liability"],
-    ["Income", "income"],
-    ["Expenses", "expense"],
-  ] as const) {
-    book = unwrap(
-      createAccount(book, { parentId: null, name, type, currency: "ILS", isPlaceholder: true }, NOW),
-    );
-  }
-  return book;
+  return realBook();
 }
 
 function rootId(book: Book, name: string): string {
@@ -56,6 +47,8 @@ describe("holdsNoUserData", () => {
     expect(holdsNoUserData(seeded())).toBe(true);
   });
 
+  // Deliberate (S8): a book with no accounts at all, not even the four roots —
+  // holdsNoUserData must still say yes to a book that never got past createBook.
   it("is true for a book with no accounts at all", () => {
     expect(holdsNoUserData(unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW)))).toBe(true);
   });
@@ -65,14 +58,20 @@ describe("holdsNoUserData", () => {
     expect(holdsNoUserData(book)).toBe(false);
   });
 
+  // Deliberate (S8): createAccount refuses a non-placeholder top-level account now,
+  // so this book is built by literal — holdsNoUserData stays defensive about a shape
+  // the kernel itself can no longer produce.
   it("is false for a top-level account that is not a placeholder", () => {
-    const book = unwrap(
-      createAccount(
-        unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW)),
-        { parentId: null, name: "Wallet", type: "asset", currency: "ILS", isPlaceholder: false },
-        NOW,
-      ),
-    );
+    const book = realBook();
+    book.accounts.push({
+      id: "wallet",
+      parentId: null,
+      name: "Wallet",
+      type: "asset",
+      currency: "ILS",
+      isPlaceholder: false,
+      updatedAt: NOW,
+    });
     expect(holdsNoUserData(book)).toBe(false);
   });
 

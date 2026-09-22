@@ -1,48 +1,45 @@
 import { createAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { NOW, unwrap, unwrapErr } from "../helpers";
-
-function emptyBook() {
-  return unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
-}
+import { accountNamed, realBook, rootAccounts, ROOT } from "../helpers/book";
 
 describe("createAccount", () => {
-  it("creates a root placeholder and a child leaf", () => {
-    let book = emptyBook();
+  it("creates a placeholder group and a child leaf", () => {
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
-        name: " Assets ",
+        parentId: ROOT.asset,
+        name: " Bank ",
         type: "asset",
         currency: "ILS",
         isPlaceholder: true,
       }, NOW),
     );
-    const assets = book.accounts[0];
-    expect(assets.name).toBe("Assets");
-    expect(assets.parentId).toBeNull();
-    expect(assets.isPlaceholder).toBe(true);
-    expect(assets.id.length).toBeGreaterThan(0);
+    const bank = accountNamed(book, "Bank");
+    expect(bank.name).toBe("Bank");
+    expect(bank.parentId).toBe(ROOT.asset);
+    expect(bank.isPlaceholder).toBe(true);
+    expect(bank.id.length).toBeGreaterThan(0);
 
     book = unwrap(
       createAccount(book, {
-        parentId: assets.id,
+        parentId: bank.id,
         name: "Cash",
         type: "asset",
         currency: "USD",
         isPlaceholder: false,
       }, NOW),
     );
-    expect(book.accounts[1].currency).toBe("USD");
-    expect(book.accounts[1].parentId).toBe(assets.id);
+    const cash = accountNamed(book, "Cash");
+    expect(cash.currency).toBe("USD");
+    expect(cash.parentId).toBe(bank.id);
   });
 
   it("rejects empty name", () => {
-    const book = emptyBook();
+    const book = realBook();
     expect(
       unwrapErr(
         createAccount(book, {
-          parentId: null,
+          parentId: ROOT.asset,
           name: " ",
           type: "asset",
           currency: "ILS",
@@ -53,10 +50,10 @@ describe("createAccount", () => {
   });
 
   it("rejects duplicate sibling names", () => {
-    let book = emptyBook();
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -66,7 +63,7 @@ describe("createAccount", () => {
     expect(
       unwrapErr(
         createAccount(book, {
-          parentId: null,
+          parentId: ROOT.asset,
           name: "Cash",
           type: "asset",
           currency: "ILS",
@@ -77,7 +74,7 @@ describe("createAccount", () => {
   });
 
   it("rejects missing parent", () => {
-    const book = emptyBook();
+    const book = realBook();
     expect(
       unwrapErr(
         createAccount(book, {
@@ -92,20 +89,21 @@ describe("createAccount", () => {
   });
 
   it("rejects child under non-placeholder", () => {
-    let book = emptyBook();
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
       }, NOW),
     );
+    const cash = accountNamed(book, "Cash");
     expect(
       unwrapErr(
         createAccount(book, {
-          parentId: book.accounts[0].id,
+          parentId: cash.id,
           name: "Wallet",
           type: "asset",
           currency: "ILS",
@@ -116,20 +114,11 @@ describe("createAccount", () => {
   });
 
   it("rejects child type mismatch", () => {
-    let book = emptyBook();
-    book = unwrap(
-      createAccount(book, {
-        parentId: null,
-        name: "Assets",
-        type: "asset",
-        currency: "ILS",
-        isPlaceholder: true,
-      }, NOW),
-    );
+    const book = realBook();
     expect(
       unwrapErr(
         createAccount(book, {
-          parentId: book.accounts[0].id,
+          parentId: ROOT.asset,
           name: "Salary",
           type: "income",
           currency: "ILS",
@@ -140,11 +129,11 @@ describe("createAccount", () => {
   });
 
   it("rejects invalid currency", () => {
-    const book = emptyBook();
+    const book = realBook();
     expect(
       unwrapErr(
         createAccount(book, {
-          parentId: null,
+          parentId: ROOT.asset,
           name: "Cash",
           type: "asset",
           currency: "usd",
@@ -155,16 +144,16 @@ describe("createAccount", () => {
   });
 
   it("does not mutate the original book", () => {
-    const book = emptyBook();
+    const book = realBook();
     unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
       }, NOW),
     );
-    expect(book.accounts).toEqual([]);
+    expect(book.accounts).toEqual(rootAccounts());
   });
 });

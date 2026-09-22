@@ -1,15 +1,15 @@
 import { createAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { journal, trialBalance } from "../../src/kernel/queries";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 describe("trialBalance and journal", () => {
   it("same-currency trial balance totals match", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -18,20 +18,22 @@ describe("trialBalance and journal", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.expense,
         name: "Food",
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
       }, NOW),
     );
+    const cash = accountNamed(book, "Cash").id;
+    const food = accountNamed(book, "Food").id;
     book = unwrap(
       postEntry(book, {
         date: "2026-04-01",
         description: "Food",
         postings: [
-          { accountId: book.accounts[1].id, side: "debit", amount: 3000 },
-          { accountId: book.accounts[0].id, side: "credit", amount: 3000 },
+          { accountId: food, side: "debit", amount: 3000 },
+          { accountId: cash, side: "credit", amount: 3000 },
         ],
       }, NOW),
     );
@@ -43,10 +45,10 @@ describe("trialBalance and journal", () => {
   });
 
   it("FX trial balance totals may differ", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -55,20 +57,22 @@ describe("trialBalance and journal", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "USD",
         type: "asset",
         currency: "USD",
         isPlaceholder: false,
       }, NOW),
     );
+    const cash = accountNamed(book, "Cash").id;
+    const usd = accountNamed(book, "USD").id;
     book = unwrap(
       postEntry(book, {
         date: "2026-04-01",
         description: "FX",
         postings: [
-          { accountId: book.accounts[1].id, side: "debit", amount: 10000 },
-          { accountId: book.accounts[0].id, side: "credit", amount: 37000 },
+          { accountId: usd, side: "debit", amount: 10000 },
+          { accountId: cash, side: "credit", amount: 37000 },
         ],
       }, NOW),
     );
@@ -78,10 +82,10 @@ describe("trialBalance and journal", () => {
   });
 
   it("filters journal by date and account", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
@@ -90,7 +94,7 @@ describe("trialBalance and journal", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.expense,
         name: "Food",
         type: "expense",
         currency: "ILS",
@@ -99,16 +103,16 @@ describe("trialBalance and journal", () => {
     );
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.expense,
         name: "Rent",
         type: "expense",
         currency: "ILS",
         isPlaceholder: false,
       }, NOW),
     );
-    const cash = book.accounts[0].id;
-    const food = book.accounts[1].id;
-    const rent = book.accounts[2].id;
+    const cash = accountNamed(book, "Cash").id;
+    const food = accountNamed(book, "Food").id;
+    const rent = accountNamed(book, "Rent").id;
     book = unwrap(
       postEntry(book, {
         date: "2026-01-01",
@@ -137,32 +141,23 @@ describe("trialBalance and journal", () => {
   });
 
   it("rejects invalid journal filter dates", () => {
-    const book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    const book = realBook();
     expect(unwrapErr(journal(book, { from: "nope" })).code).toBe("ENTRY_DATE_INVALID");
   });
 
   it("filtering by a group covers its whole subtree", () => {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = unwrap(
       createAccount(book, {
-        parentId: null,
+        parentId: ROOT.asset,
         name: "Cash",
         type: "asset",
         currency: "ILS",
         isPlaceholder: false,
       }, NOW),
     );
-    book = unwrap(
-      createAccount(book, {
-        parentId: null,
-        name: "Expenses",
-        type: "expense",
-        currency: "ILS",
-        isPlaceholder: true,
-      }, NOW),
-    );
-    const cash = book.accounts[0].id;
-    const expenses = book.accounts[1].id;
+    const cash = accountNamed(book, "Cash").id;
+    const expenses = ROOT.expense;
     book = unwrap(
       createAccount(book, {
         parentId: expenses,
@@ -172,7 +167,7 @@ describe("trialBalance and journal", () => {
         isPlaceholder: true,
       }, NOW),
     );
-    const home = book.accounts[2].id;
+    const home = accountNamed(book, "Home").id;
     book = unwrap(
       createAccount(book, {
         parentId: home,
@@ -182,17 +177,8 @@ describe("trialBalance and journal", () => {
         isPlaceholder: false,
       }, NOW),
     );
-    const rent = book.accounts[3].id;
-    book = unwrap(
-      createAccount(book, {
-        parentId: null,
-        name: "Income",
-        type: "income",
-        currency: "ILS",
-        isPlaceholder: true,
-      }, NOW),
-    );
-    const income = book.accounts[4].id;
+    const rent = accountNamed(book, "Rent").id;
+    const income = ROOT.income;
     book = unwrap(
       postEntry(book, {
         date: "2026-01-01",

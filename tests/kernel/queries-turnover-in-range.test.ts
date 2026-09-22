@@ -1,28 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { createAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { balanceInRange, turnoverInRange } from "../../src/kernel/queries";
-import type { AccountType, Book, CurrencyCode } from "../../src/kernel/types";
+import type { Book, CurrencyCode } from "../../src/kernel/types";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT, type RootType } from "../helpers/book";
 
 const AUGUST = { from: "2026-08-01", to: "2026-08-31" };
 
 function leaf(
   book: Book,
   name: string,
-  type: AccountType,
+  type: RootType,
   currency: CurrencyCode = "ILS",
-  parentId: string | null = null,
+  parentId: string = ROOT[type],
 ): Book {
   return unwrap(
     createAccount(book, { parentId, name, type, currency, isPlaceholder: false }, NOW),
   );
 }
 
-function group(book: Book, name: string, type: AccountType): Book {
+function group(book: Book, name: string, type: RootType): Book {
   return unwrap(
-    createAccount(book, { parentId: null, name, type, currency: "ILS", isPlaceholder: true }, NOW),
+    createAccount(book, { parentId: ROOT[type], name, type, currency: "ILS", isPlaceholder: true }, NOW),
   );
 }
 
@@ -41,15 +41,15 @@ function move(book: Book, from: string, to: string, date: string, amount: number
 }
 
 function bookWithCashSalaryFood() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+  let book = realBook();
   book = leaf(book, "Cash", "asset");
   book = leaf(book, "Salary", "income");
   book = leaf(book, "Food", "expense");
   return {
     book,
-    cash: book.accounts[0].id,
-    salary: book.accounts[1].id,
-    food: book.accounts[2].id,
+    cash: accountNamed(book, "Cash").id,
+    salary: accountNamed(book, "Salary").id,
+    food: accountNamed(book, "Food").id,
   };
 }
 
@@ -71,7 +71,7 @@ describe("turnoverInRange on a leaf", () => {
   it("counts a card charge as outflow, a repayment as inflow, and grows net with the debt", () => {
     let { book, cash, food } = bookWithCashSalaryFood();
     book = leaf(book, "Card", "liability");
-    const card = book.accounts[3].id;
+    const card = accountNamed(book, "Card").id;
     book = move(book, card, food, "2026-08-03", 4000); // charge: credit the card
     book = move(book, cash, card, "2026-08-20", 1500); // repayment: debit the card
     expect(unwrap(turnoverInRange(book, card, AUGUST))).toEqual({
@@ -136,24 +136,23 @@ describe("turnoverInRange on a leaf", () => {
 
 describe("turnoverInRange on a group", () => {
   function bookWithExpenseGroup() {
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+    let book = realBook();
     book = leaf(book, "Cash ILS", "asset", "ILS");
     book = leaf(book, "Cash USD", "asset", "USD");
     book = leaf(book, "Cash EUR", "asset", "EUR");
-    book = group(book, "Expenses", "expense");
-    const expenses = book.accounts[3].id;
+    const expenses = ROOT.expense;
     book = leaf(book, "Food", "expense", "ILS", expenses);
     book = leaf(book, "Travel", "expense", "USD", expenses);
     book = leaf(book, "Books", "expense", "EUR", expenses);
     return {
       book,
-      cashIls: book.accounts[0].id,
-      cashUsd: book.accounts[1].id,
-      cashEur: book.accounts[2].id,
+      cashIls: accountNamed(book, "Cash ILS").id,
+      cashUsd: accountNamed(book, "Cash USD").id,
+      cashEur: accountNamed(book, "Cash EUR").id,
       expenses,
-      food: book.accounts[4].id,
-      travel: book.accounts[5].id,
-      books: book.accounts[6].id,
+      food: accountNamed(book, "Food").id,
+      travel: accountNamed(book, "Travel").id,
+      books: accountNamed(book, "Books").id,
     };
   }
 

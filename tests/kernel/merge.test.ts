@@ -1,5 +1,4 @@
 import { createAccount, deleteAccount, updateAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import { removeBudget, setBudget } from "../../src/kernel/budgets";
 import { mergeBooks } from "../../src/kernel/merge";
@@ -7,16 +6,23 @@ import { budgetKeyOf } from "../../src/kernel/tombstones";
 import { validateBook } from "../../src/kernel/validate";
 import type { Book } from "../../src/kernel/types";
 import { unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 const T = (m: number) => `2026-09-02T10:${String(m).padStart(2, "0")}:00.000Z`;
 
-/** Base: Cash (asset leaf), Food (expense leaf), Groups (expense placeholder). */
+/** Base: the four category roots, with Cash (asset leaf), Food (expense leaf) and Groups
+ * (expense placeholder) under them. */
 function base(): { book: Book; cashId: string; foodId: string; groupId: string } {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, T(0)));
-  book = unwrap(createAccount(book, { parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, T(0)));
-  book = unwrap(createAccount(book, { parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, T(0)));
-  book = unwrap(createAccount(book, { parentId: null, name: "Groups", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
-  return { book, cashId: book.accounts[0].id, foodId: book.accounts[1].id, groupId: book.accounts[2].id };
+  let book = realBook("ILS", T(0));
+  book = unwrap(createAccount(book, { parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, T(0)));
+  book = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, T(0)));
+  book = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Groups", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+  return {
+    book,
+    cashId: accountNamed(book, "Cash").id,
+    foodId: accountNamed(book, "Food").id,
+    groupId: accountNamed(book, "Groups").id,
+  };
 }
 
 function spend(book: Book, cashId: string, foodId: string, amount: number, at: string): Book {
@@ -159,14 +165,14 @@ describe("mergeBooks repair ladder", () => {
     const budgeted = unwrap(
       setBudget(book, { accountId: foodId, period: "month", currency: "ILS", limit: 100 }, T(1)),
     );
-    // The retype is written directly rather than through `updateAccount`, which refuses
-    // it (ACCOUNT_HAS_BUDGETS) precisely so this state cannot be created locally. The
-    // state still reaches a merge — from a client built before that guard, or from an
+    // The retype-and-move is written directly rather than through `updateAccount`, which
+    // refuses it (ACCOUNT_HAS_BUDGETS) precisely so this state cannot be created locally.
+    // The state still reaches a merge — from a client built before that guard, or from an
     // imported snapshot — and handling it is what this test is about.
     const b: Book = {
       ...budgeted,
       accounts: budgeted.accounts.map((x) =>
-        x.id === foodId ? { ...x, type: "income" as const, updatedAt: T(2) } : x,
+        x.id === foodId ? { ...x, type: "income" as const, parentId: ROOT.income, updatedAt: T(2) } : x,
       ),
     };
     const a = unwrap(deleteAccount(book, foodId, T(3)));
@@ -188,12 +194,14 @@ describe("mergeBooks repair ladder", () => {
     // the next sync: it changes `name`, which sorts ahead of `parentId`, so an
     // unstamped repair loses the very tie it came from — the parent flips back, the
     // clash dissolves and the rename is undone.
-    let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, T(0)));
-    book = unwrap(createAccount(book, { parentId: null, name: "G1", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
-    book = unwrap(createAccount(book, { parentId: null, name: "G2", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
-    const [lo, hi] = [book.accounts[0].id, book.accounts[1].id].sort();
+    // G1 and G2 are groups under Expenses: a contested parent is the subject, and two
+    // top-level groups of one type are not a shape a real book has.
+    let book = realBook("ILS", T(0));
+    book = unwrap(createAccount(book, { parentId: ROOT.expense, name: "G1", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+    book = unwrap(createAccount(book, { parentId: ROOT.expense, name: "G2", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+    const [lo, hi] = [accountNamed(book, "G1").id, accountNamed(book, "G2").id].sort();
     book = unwrap(createAccount(book, { parentId: hi, name: "Daily", type: "expense", currency: "ILS", isPlaceholder: false }, T(0)));
-    const dailyId = book.accounts[2].id;
+    const dailyId = accountNamed(book, "Daily").id;
 
     const a = book;
     // Same stamp as the creation: two devices, one clock tick.
@@ -223,8 +231,9 @@ describe("mergeBooks repair ladder", () => {
 
   it("cascades the parent's type onto a concurrent child", () => {
     const { book, groupId } = base();
-    // A: retype the childless placeholder group expense -> income
-    const a = unwrap(updateAccount(book, { id: groupId, type: "income" }, T(2)));
+    // A: retype the childless placeholder group expense -> income — a real move under
+    // Income, since a retype is a move.
+    const a = unwrap(updateAccount(book, { id: groupId, type: "income", parentId: ROOT.income }, T(2)));
     // B: add an expense child under it
     const b = unwrap(createAccount(book, { parentId: groupId, name: "Cafes", type: "expense", currency: "ILS", isPlaceholder: false }, T(1)));
     const merged = mergedBothOrders(a, b);
@@ -233,9 +242,9 @@ describe("mergeBooks repair ladder", () => {
   });
 
   it("renames duplicate siblings deterministically (the doubled-onboarding case)", () => {
-    const { book } = base();
-    const a = unwrap(createAccount(book, { parentId: null, name: "Assets", type: "asset", currency: "ILS", isPlaceholder: true }, T(1)));
-    const b = unwrap(createAccount(book, { parentId: null, name: "Assets", type: "asset", currency: "ILS", isPlaceholder: true }, T(2)));
+    // Two devices onboarded separately: the same four root names at different ids.
+    const a = realBook("ILS", T(1));
+    const b = realBook("ILS", T(2), { asset: "b:asset", liability: "b:liability", income: "b:income", expense: "b:expense" });
     const merged = mergedBothOrders(a, b);
     const names = merged.accounts.filter((x) => x.name.startsWith("Assets")).map((x) => x.name).sort();
     expect(names).toEqual(["Assets", "Assets 2"]);
@@ -247,7 +256,7 @@ describe("mergeBooks repair ladder", () => {
     const cafesId = leafed.accounts.find((x) => x.name === "Cafes")!.id;
     const a = unwrap(setBudget(leafed, { accountId: cafesId, period: "month", currency: "ILS", limit: 100 }, T(1)));
     // B: retype the whole group (childless? no - Cafes exists on B too, so retype the LEAF instead)
-    const b = unwrap(updateAccount(leafed, { id: cafesId, type: "income", parentId: null }, T(2)));
+    const b = unwrap(updateAccount(leafed, { id: cafesId, type: "income", parentId: ROOT.income }, T(2)));
     const merged = mergedBothOrders(a, b);
     expect(merged.budgets).toHaveLength(0);
   });
@@ -263,7 +272,7 @@ describe("mergeBooks repair ladder", () => {
     const key = { accountId: foodId, period: "month" as const, currency: "ILS" };
     const a = unwrap(setBudget(book, { ...key, limit: 100 }, T(1)));
     const b = unwrap(
-      updateAccount(unwrap(removeBudget(a, key, T(1))), { id: foodId, type: "income" }, T(1)),
+      updateAccount(unwrap(removeBudget(a, key, T(1))), { id: foodId, type: "income", parentId: ROOT.income }, T(1)),
     );
     const merged = mergedBothOrders(a, b);
     expect(merged.budgets).toHaveLength(0);
@@ -279,7 +288,7 @@ describe("mergeBooks repair ladder", () => {
 
   it("breaks a parent cycle by detaching its lowest-id member", () => {
     const { book, groupId } = base();
-    const two = unwrap(createAccount(book, { parentId: null, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+    const two = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
     const otherId = two.accounts.find((x) => x.name === "Other")!.id;
     // Each move is legal locally: wouldCreateCycle only ever sees one device's book.
     const a = unwrap(updateAccount(two, { id: groupId, parentId: otherId }, T(1)));
@@ -299,7 +308,7 @@ describe("mergeBooks repair ladder", () => {
     // fall. Both arrangements are exercised, so neither draw can hide the other.
     const runWith = (which: "low" | "high") => {
       const { book, cashId, groupId } = base();
-      const two = unwrap(createAccount(book, { parentId: null, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+      const two = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
       const otherId = two.accounts.find((x) => x.name === "Other")!.id;
       const [low, high] = groupId < otherId ? [groupId, otherId] : [otherId, groupId];
       const poster = which === "low" ? low : high;
@@ -333,15 +342,46 @@ describe("mergeBooks repair ladder", () => {
     runWith("high");
   });
 
+  it("refuses, rather than leaving a leaf at the top level, when a detached group was posted to on a device that had not synced", () => {
+    // Rung 2 cuts a cycle member loose at the top level, where the child it still has keeps
+    // it a group. A device that had not seen that merge still holds the member where it
+    // was, and there it can move the child away, turn the member into a leaf and spend
+    // through it — every step legal on that book. Its copy of the member predates the
+    // detach, so the next merge keeps the top-level one, now childless and posted to.
+    // Forcing it off placeholder would hand the sync engine a top-level leaf, a book
+    // validateBook refuses; there is no parent to give it back, so the merge refuses.
+    // Real-time order throughout: no device's clock runs ahead of another's.
+    const { book, cashId, groupId } = base();
+    const two = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+    const [low, high] = [groupId, accountNamed(two, "Other").id].sort();
+    // A moves `high` under `low` and syncs. B, which has not seen that, moves `low` under
+    // `high` later and syncs too: the union is a cycle, and rung 2 detaches `low` — no
+    // entry posts to either — one tick past B's move.
+    const a1 = unwrap(updateAccount(two, { id: high, parentId: low }, T(1)));
+    const b1 = unwrap(updateAccount(two, { id: low, parentId: high }, T(4)));
+    const detached = mergedBothOrders(a1, b1);
+    expect(detached.accounts.find((x) => x.id === low)?.parentId).toBe(null);
+    // A, meanwhile and not yet synced again: `high` back under Expenses, then `low` made a
+    // leaf and spent through. Both before B's move, so both older than the detach.
+    let a2 = unwrap(updateAccount(a1, { id: high, parentId: ROOT.expense }, T(2)));
+    a2 = unwrap(updateAccount(a2, { id: low, isPlaceholder: false }, T(3)));
+    a2 = spend(a2, cashId, low, 100, T(3));
+    expect(unwrapErr(mergeBooks(detached, a2)).code).toBe("SYNC_MERGE_CONFLICT");
+    expect(unwrapErr(mergeBooks(a2, detached)).code).toBe("SYNC_MERGE_CONFLICT");
+    expect(unwrapErr(mergeBooks(detached, a2)).details).toEqual({ reason: "rootWithPostings" });
+    expect(unwrapErr(mergeBooks(a2, detached)).details).toEqual({ reason: "rootWithPostings" });
+  });
+
   it("cascades the type onto accounts freed from a cycle", () => {
     const { book, groupId } = base();
-    const two = unwrap(createAccount(book, { parentId: null, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+    const two = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
     const otherId = two.accounts.find((x) => x.name === "Other")!.id;
-    // A retypes both to income while they are still childless roots, then parents
-    // Groups under Other. B only parents Other under Groups, keeping them expense.
-    // Each account's winner brings its own type, so the merged cycle is mistyped.
-    let a = unwrap(updateAccount(two, { id: groupId, type: "income" }, T(1)));
-    a = unwrap(updateAccount(a, { id: otherId, type: "income" }, T(1)));
+    // A moves both under Income while they are still childless — in a real book a retype
+    // is a move — then parents Groups under Other. B only parents Other under Groups,
+    // keeping them expense. Each account's winner brings its own type, so the merged
+    // cycle is mistyped.
+    let a = unwrap(updateAccount(two, { id: groupId, type: "income", parentId: ROOT.income }, T(1)));
+    a = unwrap(updateAccount(a, { id: otherId, type: "income", parentId: ROOT.income }, T(1)));
     a = unwrap(updateAccount(a, { id: groupId, parentId: otherId }, T(2)));
     const b = unwrap(updateAccount(two, { id: otherId, parentId: groupId }, T(3)));
     const merged = mergedBothOrders(a, b);
@@ -369,7 +409,7 @@ describe("mergeBooks repair ladder", () => {
 
   it("refuses a currency change that invalidates a concurrent fx entry", () => {
     const { book, foodId } = base();
-    const withUsd = unwrap(createAccount(book, { parentId: null, name: "CashUSD", type: "asset", currency: "USD", isPlaceholder: false }, T(0)));
+    const withUsd = unwrap(createAccount(book, { parentId: ROOT.asset, name: "CashUSD", type: "asset", currency: "USD", isPlaceholder: false }, T(0)));
     const usdId = withUsd.accounts.find((x) => x.name === "CashUSD")!.id;
     const a = unwrap(updateAccount(withUsd, { id: foodId, currency: "EUR" }, T(1)));
     const b = unwrap(
@@ -389,8 +429,8 @@ describe("mergeBooks repair ladder", () => {
 
   it("refuses a type change under an entry the other device posted", () => {
     const { book, cashId, foodId } = base();
-    // A: Food is a childless root leaf with no postings here, so retyping it is legal.
-    const a = unwrap(updateAccount(book, { id: foodId, type: "income" }, T(1)));
+    // A: Food has no postings here, so retyping it — a move under Income — is legal.
+    const a = unwrap(updateAccount(book, { id: foodId, type: "income", parentId: ROOT.income }, T(1)));
     // B: spends 100 through Food. The union would file that spend as income — nothing
     // structural breaks, since a posting records only an account id, but every report
     // classifies by the account's current type.
@@ -407,16 +447,17 @@ describe("mergeBooks repair ladder", () => {
     const withLeaf = unwrap(createAccount(book, { parentId: groupId, name: "Cafes", type: "expense", currency: "ILS", isPlaceholder: false }, T(1)));
     const cafesId = withLeaf.accounts.find((x) => x.name === "Cafes")!.id;
     const a = spend(withLeaf, cashId, cafesId, 100, T(2));
-    // B: Groups is childless and postless here, so retyping the *parent* is legal. The
-    // union hands the cascade a mismatched child and Cafes comes out income.
-    const b = unwrap(updateAccount(book, { id: groupId, type: "income" }, T(3)));
+    // B: Groups is childless and postless here, so retyping the *parent* — a move under
+    // Income — is legal. The union hands the cascade a mismatched child and Cafes comes
+    // out income.
+    const b = unwrap(updateAccount(book, { id: groupId, type: "income", parentId: ROOT.income }, T(3)));
     expect(unwrapErr(mergeBooks(a, b)).details).toEqual({ reason: "accountType" });
     expect(unwrapErr(mergeBooks(b, a)).details).toEqual({ reason: "accountType" });
   });
 
   it("names currency, not type, when one merge breaks both", () => {
     const { book, cashId, foodId } = base();
-    const a = unwrap(updateAccount(book, { id: foodId, type: "income", currency: "USD" }, T(1)));
+    const a = unwrap(updateAccount(book, { id: foodId, type: "income", currency: "USD", parentId: ROOT.income }, T(1)));
     const b = spend(book, cashId, foodId, 100, T(2));
     // Both orders have to pick the same one of the two, or the symmetry property sees a
     // difference the code alone would hide.
@@ -426,9 +467,9 @@ describe("mergeBooks repair ladder", () => {
 
   it("allows a type change on an account no entry touches", () => {
     const { book, cashId, foodId } = base();
-    const spare = unwrap(createAccount(book, { parentId: null, name: "Spare", type: "expense", currency: "ILS", isPlaceholder: false }, T(0)));
+    const spare = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Spare", type: "expense", currency: "ILS", isPlaceholder: false }, T(0)));
     const spareId = spare.accounts.find((x) => x.name === "Spare")!.id;
-    const a = unwrap(updateAccount(spare, { id: spareId, type: "income" }, T(1)));
+    const a = unwrap(updateAccount(spare, { id: spareId, type: "income", parentId: ROOT.income }, T(1)));
     const b = spend(spare, cashId, foodId, 100, T(2));
     const merged = mergedBothOrders(a, b);
     expect(merged.accounts.find((x) => x.id === spareId)?.type).toBe("income");
@@ -437,7 +478,7 @@ describe("mergeBooks repair ladder", () => {
 
   it("allows a currency change on an account no entry touches", () => {
     const { book, cashId, foodId } = base();
-    const spare = unwrap(createAccount(book, { parentId: null, name: "Spare", type: "asset", currency: "ILS", isPlaceholder: false }, T(0)));
+    const spare = unwrap(createAccount(book, { parentId: ROOT.asset, name: "Spare", type: "asset", currency: "ILS", isPlaceholder: false }, T(0)));
     const spareId = spare.accounts.find((x) => x.name === "Spare")!.id;
     const a = unwrap(updateAccount(spare, { id: spareId, currency: "USD" }, T(1)));
     const b = spend(spare, cashId, foodId, 100, T(2));

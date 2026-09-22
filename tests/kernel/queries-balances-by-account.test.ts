@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { createAccount } from "../../src/kernel/accounts";
-import { createBook } from "../../src/kernel/create-book";
 import { postEntry } from "../../src/kernel/journal";
 import {
   balance,
@@ -8,26 +7,27 @@ import {
   balanceInRange,
   balancesByAccount,
 } from "../../src/kernel/queries";
-import type { AccountType, Book, CurrencyCode } from "../../src/kernel/types";
+import type { Book, CurrencyCode } from "../../src/kernel/types";
 import { NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT, type RootType } from "../helpers/book";
 
 const AUGUST = { from: "2026-08-01", to: "2026-08-31" };
 
 function leaf(
   book: Book,
   name: string,
-  type: AccountType,
+  type: RootType,
   currency: CurrencyCode = "ILS",
-  parentId: string | null = null,
+  parentId: string = ROOT[type],
 ): Book {
   return unwrap(
     createAccount(book, { parentId, name, type, currency, isPlaceholder: false }, NOW),
   );
 }
 
-function group(book: Book, name: string, type: AccountType): Book {
+function group(book: Book, name: string, type: RootType): Book {
   return unwrap(
-    createAccount(book, { parentId: null, name, type, currency: "ILS", isPlaceholder: true }, NOW),
+    createAccount(book, { parentId: ROOT[type], name, type, currency: "ILS", isPlaceholder: true }, NOW),
   );
 }
 
@@ -68,23 +68,22 @@ function receive(book: Book, cash: string, source: string, date: string, amount:
 /** Three currencies, a group whose EUR nets to zero in August, a leaf with no postings
  * at all, and entries on both sides of the window — every branch of the balance shape. */
 function fixture() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+  let book = realBook();
   book = leaf(book, "Cash ILS", "asset", "ILS");
   book = leaf(book, "Cash USD", "asset", "USD");
   book = leaf(book, "Cash EUR", "asset", "EUR");
-  book = group(book, "Expenses", "expense");
-  const cashIls = book.accounts[0].id;
-  const cashUsd = book.accounts[1].id;
-  const cashEur = book.accounts[2].id;
-  const expenses = book.accounts[3].id;
+  const cashIls = accountNamed(book, "Cash ILS").id;
+  const cashUsd = accountNamed(book, "Cash USD").id;
+  const cashEur = accountNamed(book, "Cash EUR").id;
+  const expenses = ROOT.expense;
   book = leaf(book, "Food", "expense", "ILS", expenses);
   book = leaf(book, "Travel", "expense", "USD", expenses);
   book = leaf(book, "Books", "expense", "EUR", expenses);
   book = leaf(book, "Rent", "expense", "ILS", expenses);
-  const food = book.accounts[4].id;
-  const travel = book.accounts[5].id;
-  const books = book.accounts[6].id;
-  const rent = book.accounts[7].id;
+  const food = accountNamed(book, "Food").id;
+  const travel = accountNamed(book, "Travel").id;
+  const books = accountNamed(book, "Books").id;
+  const rent = accountNamed(book, "Rent").id;
 
   book = spend(book, cashIls, food, "2026-07-20", 1000);
   book = spend(book, cashIls, food, "2026-08-03", 4000);

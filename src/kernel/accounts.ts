@@ -182,21 +182,6 @@ export function updateAccount(
     });
   }
 
-  // Only createHousehold puts an account at the top level. Moving one there is what would
-  // let the merge ladder's rung 3 ("postings force it off") turn it into a top-level leaf
-  // when another device posted to the same account — two valid books merging into one
-  // validateBook refuses. The edit form never offered the move.
-  if (parentId === null && account.parentId !== null) {
-    return err("ACCOUNT_PARENT_INVALID", "An account cannot be moved to the top level", {
-      id: account.id,
-    });
-  }
-  if (parentId === null && !isPlaceholder) {
-    return err("ACCOUNT_ROOT_NOT_PLACEHOLDER", "A top-level account must be a placeholder", {
-      id: account.id,
-    });
-  }
-
   if (parentId !== null) {
     const parent = findAccount(book, parentId);
     if (!parent) {
@@ -215,6 +200,27 @@ export function updateAccount(
     if (parent.type !== type) {
       return err("ACCOUNT_TYPE_MISMATCH", "Child type must match parent type");
     }
+  }
+
+  // An account's level is fixed for life. It reaches the top level only by being created
+  // there — createHousehold's roots, recordOpeningBalance's Opening Balances group — or by
+  // the merge ladder's rung 2 detaching a cycle member; no edit moves it up or down. A move
+  // either way lets one device hold the account at the top level while another holds it
+  // under a parent, turns it into a leaf and posts to it. Whenever the top-level copy is
+  // the newer one, the merge meets a top-level account with postings, which rung 3 cannot
+  // repair: there is no parent to give it, and forcing it off placeholder would leave a
+  // top-level leaf, which validateBook rejects. The edit form never offers either move.
+  // Checked after the parent itself, so a move that is wrong on its own terms — a cycle, a
+  // leaf or mistyped parent — is still refused for that.
+  if ((parentId === null) !== (account.parentId === null)) {
+    return err("ACCOUNT_PARENT_INVALID", "An account cannot move between the top level and a parent", {
+      id: account.id,
+    });
+  }
+  if (parentId === null && !isPlaceholder) {
+    return err("ACCOUNT_ROOT_NOT_PLACEHOLDER", "A top-level account must be a placeholder", {
+      id: account.id,
+    });
   }
 
   if (siblingNameTaken(book, parentId, name, account.id)) {

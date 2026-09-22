@@ -80,6 +80,36 @@ describe("updateAccount at the top level", () => {
     );
   });
 
+  it("refuses to move a root under a group of its type, which would let a merge meet a top-level account with postings", () => {
+    // A doubled book: a second expense root beside Expenses, which has a group of its own.
+    // Device B moves the second root under the group, turns it into a leaf and posts to
+    // it; device A renames it where it stands. If A's copy is newer, the merge holds a
+    // top-level account with postings, which the ladder cannot repair.
+    let book = unwrap(
+      createAccount(realBook(), { parentId: null, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, NOW),
+    );
+    book = unwrap(
+      createAccount(book, { parentId: ROOT.expense, name: "Housing", type: "expense", currency: "ILS", isPlaceholder: true }, NOW),
+    );
+    expect(
+      unwrapErr(updateAccount(book, { id: accountNamed(book, "Other").id, parentId: accountNamed(book, "Housing").id }, NOW)).code,
+    ).toBe("ACCOUNT_PARENT_INVALID");
+  });
+
+  it("refuses to move a root under another root", () => {
+    // Under a root of its own type, and under a root of another type by retyping it to
+    // match in the same edit — the retype alone is legal on a childless root.
+    const doubled = unwrap(
+      createAccount(realBook(), { parentId: null, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, NOW),
+    );
+    expect(unwrapErr(updateAccount(doubled, { id: accountNamed(doubled, "Other").id, parentId: ROOT.expense }, NOW)).code).toBe(
+      "ACCOUNT_PARENT_INVALID",
+    );
+    expect(
+      unwrapErr(updateAccount(realBook(), { id: ROOT.income, type: "expense", parentId: ROOT.expense }, NOW)).code,
+    ).toBe("ACCOUNT_PARENT_INVALID");
+  });
+
   it("still renames a root, and retypes a childless one", () => {
     let book = unwrap(updateAccount(realBook(), { id: ROOT.expense, name: "Spending" }, NOW));
     book = unwrap(updateAccount(book, { id: ROOT.liability, type: "equity" }, NOW));

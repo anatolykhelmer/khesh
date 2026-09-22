@@ -78,11 +78,13 @@ type Op = {
  *                duplicate sibling names.
  * - reparent x3  the only route to a parent cycle. `wouldCreateCycle` only sees one
  *                device's book, so "A moves G1 under G2" and "B moves G2 under G1"
- *                are each legal alone and only collide in the union. A root never
- *                moves (`ACCOUNT_PARENT_INVALID`) and never gains a child of another
- *                type (`ACCOUNT_TYPE_MISMATCH`), so in a real book both the target and
- *                the new parent are drawn from the non-root accounts of one type. Needs
- *                a reparent on both sides picking the reversed pair, hence x3.
+ *                are each legal alone and only collide in the union. The target is
+ *                drawn from the non-roots because a root cannot move
+ *                (`ACCOUNT_PARENT_INVALID`: an account keeps the level it was created
+ *                at). The new parent is any group of the target's own type, a root of
+ *                that type included: no account gains a child of another type
+ *                (`ACCOUNT_TYPE_MISMATCH`). Needs a reparent on both sides picking the
+ *                reversed pair, hence x3.
  * - retype x2    the only route to a parent/child type mismatch (type-cascade rung)
  *                and to a budget whose account stopped being an expense (budget-drop
  *                rung). Legal only on a childless, postingless account: a root retypes in
@@ -193,9 +195,10 @@ function applyOp(book: Book, op: Op): Book {
       }
       case "reparent": {
         // Groups are targets too, not just leaves: only a group can be a parent, so
-        // only a group-under-group move can close a cycle across two devices. A root
-        // can be neither: it never moves and never takes a child of another type, so
-        // both draws stay among the non-root accounts of the target's own type.
+        // only a group-under-group move can close a cycle across two devices. The target
+        // is drawn from the non-roots because a root cannot move (ACCOUNT_PARENT_INVALID).
+        // The parent is any group of the target's own type, a root of that type included,
+        // since no account takes a child of another type.
         const target = pick(book.accounts.filter((a) => a.parentId !== null), op.x);
         const parent = target
           ? pick(groups.filter((g) => g.type === target.type && g.id !== target.id), op.y)
@@ -486,7 +489,7 @@ describe("mergeBooks properties", () => {
           if (!ab.ok || !ba.ok) {
             // Refusing is a legitimate outcome — but only for the one code, and only if
             // both argument orders agree. The whole error is compared, not just the
-            // code: mergeBooks refuses for two structurally distinct reasons, so an
+            // code: mergeBooks refuses for several structurally distinct reasons, so an
             // order-dependent choice *between* them would otherwise pass unnoticed.
             if (!ab.ok) expect(ab.error.code).toBe("SYNC_MERGE_CONFLICT");
             if (!ba.ok) expect(ba.error.code).toBe("SYNC_MERGE_CONFLICT");

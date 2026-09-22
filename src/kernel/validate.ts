@@ -109,9 +109,11 @@ export function validateBook(book: Book): Result<true> {
       });
     }
     // A top-level account is a category root, and a category holds no money. No command
-    // creates a top-level leaf, the edit form offers no top-level parent, and
-    // updateAccount refuses the move to the top that would let the merge ladder make one.
-    // A book that has one came from outside the app.
+    // creates a top-level leaf or moves an account between the top level and a parent
+    // (updateAccount keeps each at the level it was created at). Nor does the merge ladder
+    // make one: rung 3 turns a posted-to group into a leaf, but for a top-level account it
+    // refuses the merge instead (`rootWithPostings`). A book that has one came from
+    // outside the app.
     if (account.parentId === null && !account.isPlaceholder) {
       violations.push({
         code: "ACCOUNT_ROOT_NOT_PLACEHOLDER",

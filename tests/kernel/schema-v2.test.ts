@@ -7,16 +7,17 @@ import { EPOCH, normalizeBook } from "../../src/kernel/normalize";
 import { budgetKeyOf } from "../../src/kernel/tombstones";
 import { validateBook } from "../../src/kernel/validate";
 import { LATER, NOW, unwrap, unwrapErr } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 function baseBook() {
-  let book = unwrap(createBook({ name: "Home", homeCurrency: "ILS" }, NOW));
+  let book = realBook();
   book = unwrap(
-    createAccount(book, { parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW),
+    createAccount(book, { parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW),
   );
   book = unwrap(
-    createAccount(book, { parentId: null, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW),
+    createAccount(book, { parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: false }, NOW),
   );
-  return { book, cashId: book.accounts[0].id, foodId: book.accounts[1].id };
+  return { book, cashId: accountNamed(book, "Cash").id, foodId: accountNamed(book, "Food").id };
 }
 
 describe("schema v2 stamping", () => {
@@ -96,12 +97,15 @@ describe("schema v2 stamping", () => {
 
 describe("v1/v2 -> v3 migration", () => {
   it("normalizeBook epoch-stamps a v1 book and adds tombstones", () => {
+    // v1 records carry no updatedAt, and a v1 book still nests its leaves under a
+    // root (this one at ROOT.asset's id, written out since v1 predates `ROOT`).
     const v1 = {
       schemaVersion: 1,
       name: "Home",
       homeCurrency: "ILS",
       accounts: [
-        { id: "a1", parentId: null, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false },
+        { id: "root:asset", parentId: null, name: "Assets", type: "asset", currency: "ILS", isPlaceholder: true },
+        { id: "a1", parentId: "root:asset", name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false },
       ],
       journal: [],
       budgets: [{ accountId: "a1", period: "month", currency: "ILS", limit: 5 }],
@@ -109,7 +113,7 @@ describe("v1/v2 -> v3 migration", () => {
     const book = normalizeBook(v1 as any);
     expect(book.schemaVersion).toBe(3);
     expect(book.metaUpdatedAt).toBe(EPOCH);
-    expect(book.accounts[0].updatedAt).toBe(EPOCH);
+    expect(book.accounts.find((a) => a.id === "a1")?.updatedAt).toBe(EPOCH);
     expect(book.budgets[0].updatedAt).toBe(EPOCH);
     expect(book.tombstones).toEqual([]);
     expect(book.recurrences).toEqual([]);

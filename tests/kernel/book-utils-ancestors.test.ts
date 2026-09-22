@@ -3,6 +3,7 @@ import { ancestorsOf } from "../../src/kernel/book-utils";
 import { periodBreakdown } from "../../src/kernel/queries";
 import type { Book } from "../../src/kernel/types";
 import { NOW } from "../helpers";
+import { rootAccounts, ROOT } from "../helpers/book";
 
 function makeBook(accounts: Book["accounts"]): Book {
   return {
@@ -19,14 +20,15 @@ function makeBook(accounts: Book["accounts"]): Book {
 }
 
 const linear = makeBook([
-  { id: "root", parentId: null, name: "Expenses", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
-  { id: "mid", parentId: "root", name: "Food", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
+  ...rootAccounts(),
+  { id: "mid", parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
   { id: "leaf", parentId: "mid", name: "Cafes", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
 ]);
 
-// A leaf hanging off a parent cycle (A -> B -> A). Only reachable in a book that
-// skipped validateBook, but the walk must still terminate. The subject is a leaf so
-// `descendants` is never entered — this isolates the upward walk.
+// Deliberate (S8): an invalid book by construction — a leaf hanging off a parent
+// cycle (A -> B -> A). Only reachable in a book that skipped validateBook, but the
+// walk must still terminate. The subject is a leaf so `descendants` is never
+// entered — this isolates the upward walk.
 const cyclic = makeBook([
   { id: "leaf", parentId: "A", name: "Leaf", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
   { id: "A", parentId: "B", name: "A", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
@@ -35,11 +37,11 @@ const cyclic = makeBook([
 
 describe("ancestorsOf", () => {
   it("yields ancestors nearest-first, excluding the starting account", () => {
-    expect([...ancestorsOf(linear, "leaf")].map((a) => a.id)).toEqual(["mid", "root"]);
+    expect([...ancestorsOf(linear, "leaf")].map((a) => a.id)).toEqual(["mid", ROOT.expense]);
   });
 
   it("yields nothing for a root account", () => {
-    expect([...ancestorsOf(linear, "root")]).toEqual([]);
+    expect([...ancestorsOf(linear, ROOT.expense)]).toEqual([]);
   });
 
   it("yields nothing for an unknown account", () => {

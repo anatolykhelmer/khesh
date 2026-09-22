@@ -1,39 +1,47 @@
 import { describe, expect, it } from "vitest";
 import { replaceIfChanged } from "../../src/kernel/book-utils";
-import { createBook } from "../../src/kernel/create-book";
 import type { Book } from "../../src/kernel/types";
-import { NOW, LATER, unwrap } from "../helpers";
+import { NOW, LATER } from "../helpers";
+import { accountNamed, realBook, ROOT } from "../helpers/book";
 
 function seeded(): Book {
-  const book = unwrap(createBook({ name: "Household", homeCurrency: "ILS" }, NOW));
-  book.accounts = [
-    { id: "bank", parentId: null, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-  ];
+  const book = realBook();
+  book.accounts.push(
+    { id: "bank", parentId: ROOT.asset, name: "Bank", type: "asset", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+  );
   return book;
 }
 
 describe("replaceIfChanged", () => {
   it("returns the same book when the candidate equals the record ignoring updatedAt", () => {
     const book = seeded();
-    const candidate = { ...book.accounts[0], updatedAt: LATER };
-    const result = replaceIfChanged(book, "accounts", 0, candidate, LATER);
+    const bank = accountNamed(book, "Bank");
+    const candidate = { ...bank, updatedAt: LATER };
+    const result = replaceIfChanged(book, "accounts", book.accounts.length - 1, candidate, LATER);
     expect(result).toBe(book);
-    expect(book.accounts[0].updatedAt).toBe(NOW);
+    expect(accountNamed(book, "Bank").updatedAt).toBe(NOW);
   });
 
   it("returns a clone with the candidate stamped when a field differs", () => {
     const book = seeded();
-    const result = replaceIfChanged(book, "accounts", 0, { ...book.accounts[0], name: "Wallet" }, LATER);
+    const bank = accountNamed(book, "Bank");
+    const result = replaceIfChanged(
+      book,
+      "accounts",
+      book.accounts.length - 1,
+      { ...bank, name: "Wallet" },
+      LATER,
+    );
     expect(result).not.toBe(book);
-    expect(result.accounts[0]).toEqual({ ...book.accounts[0], name: "Wallet", updatedAt: LATER });
-    expect(book.accounts[0].name).toBe("Bank");
+    expect(accountNamed(result, "Wallet")).toEqual({ ...bank, name: "Wallet", updatedAt: LATER });
+    expect(accountNamed(book, "Bank").name).toBe("Bank");
   });
 
   it("compares structurally, not by reference, and ignores key order", () => {
     const book = seeded();
-    const { id, parentId, name, type, currency, isPlaceholder } = book.accounts[0];
+    const { id, parentId, name, type, currency, isPlaceholder } = accountNamed(book, "Bank");
     const reordered = { updatedAt: LATER, isPlaceholder, currency, type, name, parentId, id };
-    expect(replaceIfChanged(book, "accounts", 0, reordered, LATER)).toBe(book);
+    expect(replaceIfChanged(book, "accounts", book.accounts.length - 1, reordered, LATER)).toBe(book);
   });
 
   it("does not alias the candidate's nested arrays into the new book", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { descendants } from "../../src/kernel/book-utils";
 import type { Book } from "../../src/kernel/types";
 import { NOW } from "../helpers";
+import { rootAccounts, ROOT } from "../helpers/book";
 
 function makeBook(accounts: Book["accounts"]): Book {
   return {
@@ -18,15 +19,15 @@ function makeBook(accounts: Book["accounts"]): Book {
 }
 
 const tree = makeBook([
-  { id: "root", parentId: null, name: "Expenses", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
-  { id: "food", parentId: "root", name: "Food", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
+  ...rootAccounts(),
+  { id: "food", parentId: ROOT.expense, name: "Food", type: "expense", currency: "ILS", isPlaceholder: true, updatedAt: NOW },
   { id: "cafes", parentId: "food", name: "Cafes", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
-  { id: "rent", parentId: "root", name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
+  { id: "rent", parentId: ROOT.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false, updatedAt: NOW },
 ]);
 
 describe("descendants", () => {
   it("returns the whole subtree depth-first", () => {
-    expect(descendants(tree, "root").map((a) => a.id)).toEqual(["food", "cafes", "rent"]);
+    expect(descendants(tree, ROOT.expense).map((a) => a.id)).toEqual(["food", "cafes", "rent"]);
   });
 
   it("returns nothing for a leaf", () => {

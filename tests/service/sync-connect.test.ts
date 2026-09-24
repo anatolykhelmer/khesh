@@ -128,6 +128,27 @@ describe("applyFirstConnect", () => {
     expect(bookFingerprint(unwrap(decodeEnvelope(store.getPayload()!)))).toBe(bookFingerprint(book));
   });
 
+  it("merges two books that were onboarded separately into one tree, on both sides", async () => {
+    // Two pre-seed-id devices: the same four roots at their own ids, one leaf each. This is
+    // the case the backlog row is about, and the one the collapse rung repairs.
+    const bRoots = { asset: "b:asset", liability: "b:liability", income: "b:income", expense: "b:expense" };
+    const local = unwrap(
+      createAccount(realBook("ILS", NOW), { parentId: ROOT.expense, name: "Groceries", type: "expense", currency: "ILS", isPlaceholder: false }, NOW),
+    );
+    const remote = unwrap(
+      createAccount(realBook("ILS", LATER, bRoots), { parentId: bRoots.expense, name: "Rent", type: "expense", currency: "ILS", isPlaceholder: false }, LATER),
+    );
+    const repo = createMemoryRepository(local);
+    const store = createMemorySyncStore(encodeEnvelope(remote));
+    const book = unwrap(await applyFirstConnect("merge", { repo, store }));
+    expect(book.accounts.filter((x) => x.parentId === null)).toHaveLength(4);
+    expect(book.accounts.map((x) => x.name).sort()).toEqual([
+      "Assets", "Expenses", "Groceries", "Income", "Liabilities", "Rent",
+    ]);
+    expect(bookFingerprint(unwrap(await repo.load())!)).toBe(bookFingerprint(book));
+    expect(bookFingerprint(unwrap(decodeEnvelope(store.getPayload()!)))).toBe(bookFingerprint(book));
+  });
+
   it("useRemote propagates a read failure without touching local or remote state", async () => {
     const local = makeBook("Cash", NOW);
     const remote = makeBook("Wallet", LATER);

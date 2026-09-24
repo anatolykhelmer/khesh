@@ -12,12 +12,13 @@ import {
 import { isCurrencyCode } from "./currency";
 import { createId } from "./ids";
 import { err, ok, type Result } from "./result";
-import { addTombstone, budgetKeyOf } from "./tombstones";
+import { addTombstone, budgetKeyOf, clearTombstone } from "./tombstones";
 import type { AccountType, Book, CurrencyCode } from "./types";
 
 export function createAccount(
   book: Book,
   input: {
+    id?: string;
     parentId: string | null;
     name: string;
     type: AccountType;
@@ -29,6 +30,9 @@ export function createAccount(
   const name = input.name.trim();
   if (name.length === 0) {
     return err("ACCOUNT_NAME_INVALID", "Account name must be non-empty");
+  }
+  if (input.id !== undefined && book.accounts.some((account) => account.id === input.id)) {
+    return err("ACCOUNT_ID_DUPLICATE", `Duplicate account id ${input.id}`, { id: input.id });
   }
   if (!isCurrencyCode(input.currency)) {
     return err("INVALID_CURRENCY_CODE", `Invalid currency ${input.currency}`, {
@@ -68,7 +72,7 @@ export function createAccount(
 
   const next = cloneBook(book);
   next.accounts.push({
-    id: createId(),
+    id: input.id ?? createId(),
     parentId: input.parentId,
     name,
     type: input.type,
@@ -76,6 +80,10 @@ export function createAccount(
     isPlaceholder: input.isPlaceholder,
     updatedAt: now,
   });
+  // A re-created record must not leave its own tombstone behind — that shadowing is
+  // exactly what validateBook rejects ("Tombstone shadows a live record"). Only reachable
+  // for an explicit id; a fresh ulid has never been deleted.
+  if (input.id !== undefined) clearTombstone(next, "account", input.id);
   return ok(next);
 }
 

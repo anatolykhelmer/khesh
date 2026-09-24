@@ -100,8 +100,10 @@ function newerAccount(a: Account, b: Account): Account {
  *
  * `latestLiveAccounts` answers "what is the newest version of this record". Rung 2's
  * re-attachment needs the opposite: a parent the winning version does *not* have, because
- * the winning version is the one that points into the cycle. Tombstoned snapshots are left
- * out — a deleted copy is not a home to send an account back to.
+ * the winning version is the one that points into the cycle. A tombstoned copy never shows
+ * up here — not because anything filters it out, but because this only reads `book.accounts`,
+ * which holds live records to begin with, so a deleted copy was never a candidate to send an
+ * account back to in the first place.
  */
 function accountVersions(books: readonly Book[]): Map<string, Account[]> {
   const versions = new Map<string, Account[]>();
@@ -118,33 +120,50 @@ function accountVersions(books: readonly Book[]): Map<string, Account[]> {
  *
  * Three answers, in order. First, the parent it last had outside the cycle: the input copies
  * are the history of where the account lived before the two devices tied the knot, and the
- * newest of them that points outside it is the last place a user actually put it. Second, the
- * top-level placeholder of its own type — the category root — which is where a stray group
- * belongs when its own history offers nothing. Third, null: park it, which is what this rung
- * did for every member before BL-048. The third is reachable only for a book that holds no
- * root of the member's type at all, which `createHousehold` cannot produce and an imported
- * book can.
+ * newest of them that points outside the cycle *and can still take a child* is the last place
+ * a user actually put it. A parent that holds postings cannot take a child — handing the
+ * member to it would create exactly the children-and-postings pair rung 3 calls irreducible —
+ * so a candidate like that is skipped in favour of the next-newest, and only once none of the
+ * input copies qualify does the ladder fall through. Second, the lowest-id top-level
+ * placeholder of the member's own type: ordinarily the category root, but when another member
+ * was cut loose from the same cycle and is still parked, this can name that sibling instead —
+ * adopting it keeps both alive, since the root-collapse rung below then folds the sibling into
+ * the root, where parking both would instead leave the sibling to be dissolved with nothing
+ * pointing at it any more. Third, null: park it, which is what this rung did for every member
+ * before BL-048. The third is reached only when a book holds no root of the member's type at
+ * all — which `createHousehold` cannot produce and an imported book can — or when every
+ * candidate, root included, already holds postings, which a valid book cannot produce (a
+ * posted account cannot be a placeholder, so it cannot be this member's outside parent either)
+ * but an imported or hand-edited one might.
  *
- * Every candidate is checked twice: still live in the draft, and not reachable *from* the
- * member — re-attaching to a descendant would tie a fresh knot around the one just cut.
- * `wouldCreateCycle` answers the second question against the draft as it stands, which is
- * after the detach loop and therefore acyclic.
+ * Every candidate is checked three ways: still live in the draft, not reachable *from* the
+ * member — re-attaching to a descendant would tie a fresh knot around the one just cut — and
+ * not posted to, since an account with postings cannot also take a child. `wouldCreateCycle`
+ * answers the second question against the draft as it stands, which is after the detach loop
+ * and therefore acyclic.
  */
 function reattachTarget(
   draft: Book,
   member: Account,
   cycle: ReadonlySet<string>,
   versions: Map<string, Account[]>,
+  posted: ReadonlySet<string>,
 ): string | null {
   const live = new Set(draft.accounts.map((a) => a.id));
   const usable = (parentId: string): boolean =>
-    parentId !== member.id && live.has(parentId) && !wouldCreateCycle(draft, member.id, parentId);
+    parentId !== member.id &&
+    live.has(parentId) &&
+    !posted.has(parentId) &&
+    !wouldCreateCycle(draft, member.id, parentId);
 
-  const outside = (versions.get(member.id) ?? []).filter(
-    (version) =>
-      version.parentId !== null && !cycle.has(version.parentId) && usable(version.parentId),
-  );
-  if (outside.length > 0) return outside.reduce(newerAccount).parentId;
+  const outside = (versions.get(member.id) ?? [])
+    .filter(
+      (version): version is Account & { parentId: string } =>
+        version.parentId !== null && !cycle.has(version.parentId),
+    )
+    .sort((x, y) => (newerAccount(x, y) === x ? -1 : 1));
+  const reattachable = outside.find((version) => usable(version.parentId));
+  if (reattachable !== undefined) return reattachable.parentId;
 
   const root = draft.accounts
     .filter((a) => a.parentId === null && a.isPlaceholder && a.type === member.type)
@@ -402,7 +421,13 @@ function repair(
   for (const id of [...cutLoose.keys()].sort()) {
     const member = draft.accounts.find((a) => a.id === id);
     if (member === undefined) continue; // nothing removes accounts here; unreachable
-    const parentId = reattachTarget(draft, member, cutLoose.get(id) as Set<string>, versions);
+    const parentId = reattachTarget(
+      draft,
+      member,
+      cutLoose.get(id) as Set<string>,
+      versions,
+      posted,
+    );
     if (parentId === null) continue;
     member.parentId = parentId;
     repaired(member);
@@ -413,20 +438,20 @@ function repair(
   //    So is a top-level account with postings. Forcing it off placeholder would leave a
   //    top-level leaf, which validateBook rejects (a top-level account is a category root),
   //    and the other way out — hanging it under a parent — needs a parent the ladder does
-  //    not have: in the draft the account has none. Re-attaching it under the parent the
-  //    posting device had it under is BL-048's; until then the merge refuses, which reaches
-  //    the sync engine as a conflict the user resolves (SYNC_MERGE_CONFLICT) rather than as
-  //    a merged book that will not load.
+  //    not have: in the draft the account has none. BL-048 added that re-attachment, but in
+  //    rung 2 rather than here, so what reaches this check either came in already parked on
+  //    purpose or from outside the kernel, and refusing sends the sync engine a conflict the
+  //    user resolves (SYNC_MERGE_CONFLICT) instead of a merged book that will not load.
   //
-  //    Nothing reachable produces this shape any more, and the check stays regardless.
-  //    Commands cannot: updateAccount keeps every account at the level it was created at and
-  //    refuses a top-level leaf outright. Rung 2 was the exception — it parked a cut-loose
-  //    cycle member at the top level, where a device that had not synced that merge could
-  //    make its own copy a childless leaf and post to it, and the next merge kept the parked
-  //    copy — and it now hands that member back to a parent instead (BL-048). So no test
-  //    constructs this branch: it guards the same invariant validateBook does, against a book
-  //    that reaches the kernel from an import or a hand-edited file, and the alternative to
-  //    refusing is a merged book that will not load.
+  //    This shape is rarer after BL-048, not impossible: rung 2's re-attachment can itself
+  //    leave a member parked, when the draft holds no placeholder root of its type to hand it
+  //    back to, and its detach loop can still cut loose a member that holds postings when every
+  //    member of a cycle does — either can land an account here with postings and no parent.
+  //    Commands alone still cannot set it up directly: updateAccount keeps every account at
+  //    the level it was created at and refuses a top-level leaf outright, so besides rung 2's
+  //    own park this reaches the kernel only from an import or a hand-edited file. Either way
+  //    the check guards the same invariant validateBook does, and the alternative to refusing
+  //    is a merged book that will not load.
   //
   //    Checked after children-and-postings, so an account that is both is still refused
   //    for that. Accounts are visited in the draft's order, which does not depend on which

@@ -393,6 +393,31 @@ describe("mergeBooks repair ladder", () => {
     expect(merged.accounts.find((x) => x.id === "cyc:b")?.type).toBe("expense");
   });
 
+  it("skips an outside parent the other device turned into a posted leaf, and falls through to the type root", () => {
+    // `cyc:b` leaves Nest and `cyc:a` moves under it, which empties Nest — legal on A, so A
+    // un-flags Nest and spends through it. B, unsynced, only swaps `cyc:a` and `cyc:b`'s
+    // places inside Nest. The union ties them into a cycle, and the only outside parent
+    // `cyc:a`'s history remembers is Nest — which by now holds a posting and so cannot also
+    // take a child. Handing `cyc:a` to it anyway would give Nest both a child and a posting,
+    // exactly the pair rung 3 refuses; the rule instead skips a posted candidate and falls
+    // through to the type root.
+    const seeded = nested(["cyc:a", "cyc:b"]);
+    let a = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: ROOT.expense }, T(1)));
+    a = unwrap(updateAccount(a, { id: "cyc:a", parentId: "cyc:b" }, T(2)));
+    a = unwrap(updateAccount(a, { id: "nest", isPlaceholder: false }, T(3)));
+    a = spend(a, "cash", "nest", 100, T(3));
+    const b = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: "cyc:a" }, T(2)));
+
+    const merged = mergedBothOrders(a, b);
+    // Not "nest": posted, so unusable. Not null: the type root is live and takes no postings.
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe(ROOT.expense);
+    expect(merged.accounts.find((x) => x.id === "cyc:b")?.parentId).toBe("cyc:a");
+    expect(merged.accounts.find((x) => x.id === "nest")?.isPlaceholder).toBe(false);
+    expect(merged.journal).toHaveLength(1);
+    expect(unwrap(mergeBooks(merged, a))).toEqual(merged);
+    expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
+  });
+
   it("refuses a currency change under an entry the other device posted", () => {
     const { book, cashId, foodId } = base();
     // A: Food carries no postings here, so changing its currency is legal.

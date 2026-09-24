@@ -80,7 +80,7 @@ export function firstConnectOptions(
  * Connect, or — with the choice list narrowed by `local` — never have contained that
  * choice at all. Acting on it anyway runs a load/merge/save/write the current plan
  * deliberately withheld: `merge` against a seed adds nothing `useRemote` doesn't
- * already, `replaceRemote` uploads over a book.
+ * already give, `replaceRemote` uploads over a book.
  *
  * A plan offers what it names: `choose` its list, `apply` the single choice it carries,
  * `explain` nothing. Null — no screen — offers nothing.

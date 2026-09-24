@@ -1,6 +1,7 @@
 import { wouldCreateCycle } from "./book-utils";
 import { canonicalJson } from "./canonical-json";
 import { err, ok, type Result } from "./result";
+import { isSeedAccountId } from "./seed-ids";
 import { addTombstone, budgetKeyOf } from "./tombstones";
 import type {
   Account,
@@ -176,14 +177,27 @@ function byId<T extends { id: string }>(a: T, b: T): number {
   return compareStrings(a.id, b.id);
 }
 
+/** The top-level placeholder that survives a same-type collapse. A seed id wins outright:
+ * it is the id every newer build mints, so a book that predates them converges on it rather
+ * than dragging a device-local ULID forward. Otherwise `later`'s convention — greater
+ * `updatedAt`, then the canonically greater body — so both argument orders agree. */
+function betterRoot(a: Account, b: Account): Account {
+  const aSeed = isSeedAccountId(a.id);
+  const bSeed = isSeedAccountId(b.id);
+  if (aSeed !== bSeed) return aSeed ? a : b;
+  return newerAccount(a, b);
+}
+
 /**
  * Mutates `book`. Run before the repair ladder as well as after it, for two different
  * reasons. Going in: the draft is assembled in `Map` insertion order, which is argument
- * order, and rung 5 groups siblings by walking `accounts` — a canonical order there is
- * what makes its grouping (and so its renames) independent of which book came first.
- * That is all the pre-sort guarantees: rung 1 appends restored accounts behind it, so
- * the arrays are no longer sorted by the time rungs 2-6 run. Coming out: the sort is
- * what puts the merged book itself in canonical order.
+ * order, and rung 6 groups siblings by walking `accounts` — a canonical order there is
+ * what makes its grouping (and so its renames) independent of which book came first
+ * — and rung 5 collects each type's top-level placeholders by the same walk, so which root
+ * wins, and the renames its reparenting then feeds rung 6, are argument-order-independent for
+ * the same reason. That is all the pre-sort guarantees: rung 1 appends restored accounts
+ * behind it, so the arrays are no longer sorted by the time rungs 2-7 run. Coming out: the
+ * sort is what puts the merged book itself in canonical order.
  */
 function sortBook(book: Book): void {
   book.accounts.sort(byId);
@@ -495,7 +509,50 @@ function repair(
     cascade(root);
   }
 
-  // 5. Deduplicate sibling names: canonically greatest record keeps the name. The slot
+  // 5. One top-level placeholder per account type. Two live ones of a type mean the same
+  //    category root arriving from two devices: `createHousehold` is the only code that
+  //    creates a top-level account — `addAccount` requires a parent — and it marks all four
+  //    roots placeholders, so the shape has no other origin in a book this app produced.
+  //    Since BL-080 the kernel says the rest of it: a top-level account must be a
+  //    placeholder, refused by `createAccount`, `updateAccount` and `validateBook` alike, and
+  //    no edit moves an account between the top level and a parent. The `isPlaceholder`
+  //    clause below is therefore a guard on the draft rather than a filter on real books:
+  //    rung 2's last resort still parks a member here, before rung 3 has forced its flag.
+  //
+  //    Ordering: after rung 1, because this drops accounts through `keepValid` and rung 1 is
+  //    the only consumer of account tombstones — earlier, and rung 1 would read the tombstone
+  //    straight back and resurrect the root. Before the dedup rung, because reparenting is
+  //    what creates the sibling-name clashes that rung exists to resolve; after it, the
+  //    clashes survive into a result `validateBook` rejects.
+  const roots = new Map<Account["type"], Account[]>();
+  for (const account of draft.accounts) {
+    if (account.parentId !== null || !account.isPlaceholder) continue;
+    if (account.id.startsWith("sys:")) continue;
+    roots.set(account.type, [...(roots.get(account.type) ?? []), account]);
+  }
+  const absorbed = new Set<string>();
+  for (const group of roots.values()) {
+    if (group.length < 2) continue;
+    const winner = group.reduce(betterRoot);
+    for (const loser of group) {
+      if (loser === winner) continue;
+      absorbed.add(loser.id);
+      for (const child of draft.accounts) {
+        if (child.parentId !== loser.id) continue;
+        child.parentId = winner.id;
+        repaired(child);
+      }
+    }
+  }
+  draft.accounts = keepValid(
+    draft,
+    "account",
+    draft.accounts,
+    (account) => account.id,
+    (account) => !absorbed.has(account.id),
+  );
+
+  // 6. Deduplicate sibling names: canonically greatest record keeps the name. The slot
   //    key is JSON-encoded rather than concatenated so a name containing the separator
   //    cannot masquerade as a different parent — ids never do, a hand-edited file might.
   const bySibling = new Map<string, Account[]>();
@@ -524,7 +581,7 @@ function repair(
     }
   }
 
-  // 6. A budget only makes sense on an expense account. Rung 1 has already restored
+  // 7. A budget only makes sense on an expense account. Rung 1 has already restored
   //    every account a budget references, so this drops exactly the limits whose
   //    account was concurrently retyped away from expense — each one tombstoned by
   //    `keepValid`, which is what keeps the merge idempotent.
@@ -537,10 +594,10 @@ function repair(
     (b) => typeById.get(b.accountId) === "expense",
   );
 
-  // 7. A recurrence is only postable while every account it touches is not a placeholder
+  // 8. A recurrence is only postable while every account it touches is not a placeholder
   //    and they all share one currency. Rung 1 has restored the accounts, so this drops
   //    exactly the rules a concurrent retype-to-placeholder or currency change made
-  //    impossible — the same treatment, tombstone included, rung 6 gives a budget whose
+  //    impossible — the same treatment, tombstone included, rung 7 gives a budget whose
   //    account stopped being an expense.
   const accountById = new Map(draft.accounts.map((a) => [a.id, a]));
   draft.recurrences = keepValid(

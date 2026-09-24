@@ -168,7 +168,7 @@ describe("mergeBooks repair ladder", () => {
   it("keeps a resurrected account alive once a later rung drops what referenced it", () => {
     // B budgets Food and then retypes it; A deletes it. The delete is later, so the
     // union kills Food — but B's budget still points at it, so rung 1 brings it back,
-    // and rung 6 then drops that budget because Food is no longer an expense. The
+    // and rung 7 then drops that budget because Food is no longer an expense. The
     // reference the restore rested on is gone, so nothing would bring Food back a
     // second time: the restored record has to outrank the tombstone by itself, or
     // re-merging A deletes Food again and the two devices never settle. Rung 2 does
@@ -254,15 +254,6 @@ describe("mergeBooks repair ladder", () => {
     expect(child?.type).toBe("income");
   });
 
-  it("renames duplicate siblings deterministically (the doubled-onboarding case)", () => {
-    // Two devices onboarded separately: the same four root names at different ids.
-    const a = realBook("ILS", T(1));
-    const b = realBook("ILS", T(2), { asset: "b:asset", liability: "b:liability", income: "b:income", expense: "b:expense" });
-    const merged = mergedBothOrders(a, b);
-    const names = merged.accounts.filter((x) => x.name.startsWith("Assets")).map((x) => x.name).sort();
-    expect(names).toEqual(["Assets", "Assets 2"]);
-  });
-
   it("drops a budget whose account got retyped away from expense", () => {
     const { book, groupId } = base();
     const leafed = unwrap(createAccount(book, { parentId: groupId, name: "Cafes", type: "expense", currency: "ILS", isPlaceholder: false }, T(0)));
@@ -276,7 +267,7 @@ describe("mergeBooks repair ladder", () => {
 
   it("leaves a tombstone for the budget it drops, so the delete stops coming back", () => {
     // B removes the limit and retypes Food in the same instant; A still holds the limit.
-    // `later` hands a live/dead tie to the data, so B's tombstone loses — and rung 6 then
+    // `later` hands a live/dead tie to the data, so B's tombstone loses — and rung 7 then
     // drops the very record that beat it, because Food is no longer an expense. Writing
     // nothing would leave the merged book with no claim at all on that key: re-merging B
     // would adopt B's tombstone outright, so a merge that should be a no-op would hand

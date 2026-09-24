@@ -74,7 +74,7 @@ describe("merging recurrences", () => {
   it("leaves a tombstone for the rule it drops, so the delete stops coming back", () => {
     // The same shape as the budget half of this in `merge.test.ts`: B deletes the rule
     // at the instant A last wrote it, so `later` hands the live/dead tie to A's live copy
-    // and discards B's tombstone — then rung 7 drops that copy, because B also moved an
+    // and discards B's tombstone — then rung 8 drops that copy, because B also moved an
     // account it touches to another currency. With nothing written in its place the
     // merged book holds no claim on `r1` at all, and re-merging B pulls B's tombstone
     // back in: `mergeBooks(mergeBooks(a, b), b)` stops being `mergeBooks(a, b)`.

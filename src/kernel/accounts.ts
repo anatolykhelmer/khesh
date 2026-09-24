@@ -133,7 +133,7 @@ export function updateAccount(
       });
     }
     // A limit only makes sense on an expense account (ACCOUNT_TYPE_MISMATCH in
-    // validateBook, and rung 6 of the merge ladder drops such a limit outright).
+    // validateBook, and rung 7 of the merge ladder drops such a limit outright).
     // Retyping an account is not destructive on its face, so — by the same argument
     // the placeholder guard below makes for recurrences — it must refuse rather than
     // silently orphan the limit into a book that will not load.

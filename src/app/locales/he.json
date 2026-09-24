@@ -254,7 +254,7 @@
     "confirmReplaceRemoteWarning": "\"{{name}}\" ו-{{entries}} הרשומות ביומן שלו יימחקו מ-Drive ויוחלפו בספר שבמכשיר הזה. אי אפשר לבטל את הפעולה.",
     "confirmReplaceRemoteYes": "כן, לדרוס את הספר שב-Drive",
     "choiceMerge": "למזג את שני הספרים",
-    "choiceMergeWarning": "מיזוג של שני ספרים שהוקמו בנפרד מכפיל את קטגוריות השורש.",
+    "choiceMergeHint": "שומר את הכל משני הספרים. גם המכשיר הזה וגם העותק ב-Drive יקבלו את הספר המאוחד.",
     "applyingChoice": "עובדים על זה…",
     "choiceUnreadable": "לא ניתן לקרוא את הקובץ ב-Drive. אפשר לדרוס אותו בספר מהמכשיר הזה.",
     "explainRemoteEmpty": "עדיין אין ספר Khesh ב-Google Drive שלכם. התחילו ספר כאן, ואז חברו.",

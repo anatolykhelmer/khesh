@@ -251,7 +251,7 @@
     "confirmReplaceRemoteWarning": "\"{{name}}\" and its {{entries}} journal entries will be deleted from Drive and replaced by the book on this device. This cannot be undone.",
     "confirmReplaceRemoteYes": "Yes, replace the Drive book",
     "choiceMerge": "Merge the two books",
-    "choiceMergeWarning": "Merging two books that were set up separately doubles the root categories.",
+    "choiceMergeHint": "Keeps everything from both books. This device and the Drive copy both end up with the merged book.",
     "applyingChoice": "Working…",
     "choiceUnreadable": "The file in Drive could not be read. You can overwrite it with this device's book.",
     "explainRemoteEmpty": "There is no Khesh book in your Google Drive yet. Start a book here first, then connect.",

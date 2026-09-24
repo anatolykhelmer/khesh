@@ -36,8 +36,8 @@ export type FirstConnectPlan =
  * Two things live here that used to be spread between `SyncProvider.connect()` and
  * `SyncSection`'s markup: whether the flow acts immediately or asks, and which choices
  * are meaningful. Neither could see the local side before, which is why `merge` was
- * offered to a book with nothing in it — the case that doubles the root accounts,
- * because root ids are per-device (see BL-048).
+ * offered to a book with nothing in it — merging a seed adds nothing that `useRemote`
+ * doesn't already give, so offering both is offering the same outcome twice (see BL-048).
  *
  * `remote` is the whole inspection, not just its `kind`: `unreadable` splits by
  * `errorCode`, and a remote written by a *newer* Khesh must never be offered for
@@ -79,8 +79,8 @@ export function firstConnectOptions(
  * the plan may have been dropped (`afterLocalStateChange`), replaced by a second
  * Connect, or — with the choice list narrowed by `local` — never have contained that
  * choice at all. Acting on it anyway runs a load/merge/save/write the current plan
- * deliberately withheld: `merge` against a seed doubles the roots, `replaceRemote`
- * uploads over a book.
+ * deliberately withheld: `merge` against a seed adds nothing `useRemote` doesn't
+ * already, `replaceRemote` uploads over a book.
  *
  * A plan offers what it names: `choose` its list, `apply` the single choice it carries,
  * `explain` nothing. Null — no screen — offers nothing.

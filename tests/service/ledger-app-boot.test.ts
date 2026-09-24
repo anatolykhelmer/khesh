@@ -41,7 +41,8 @@ describe("LedgerApp boot + createHousehold", () => {
 
   /* The seed is what `localState` reads as "empty", and that reading is what keeps merge
    * away from a second device's first connect: local `"empty"` never offers it, because
-   * merging a seed against a real book doubles the roots (BL-048). `holdsNoUserData` has
+   * merging a seed against a real book adds nothing that `useRemote` doesn't already give
+   * (BL-048). `holdsNoUserData` has
    * its own suite, but every case there builds its book by hand — so a `createHousehold`
    * that grew a nested group or a non-placeholder root would make this false, bring merge
    * back to second-device setup, and leave that suite green. Assert the two together. */

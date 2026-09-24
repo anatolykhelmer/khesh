@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createAccount } from "../../src/kernel/accounts";
-import { setBudget } from "../../src/kernel/budgets";
+import { removeBudget, setBudget } from "../../src/kernel/budgets";
 import { postEntry } from "../../src/kernel/journal";
 import { bookFingerprint, mergeBooks } from "../../src/kernel/merge";
 import { budgetKeyOf } from "../../src/kernel/tombstones";
@@ -177,6 +177,41 @@ describe("mergeBooks root collapse", () => {
     expect(budgetTombstone.key).toBe(
       budgetKeyOf({ accountId: ROOT.expense, period: "month", currency: "ILS" }),
     );
+    expect(bookFingerprint(unwrap(mergeBooks(merged, a)))).toBe(bookFingerprint(merged));
+    expect(bookFingerprint(unwrap(mergeBooks(merged, b)))).toBe(bookFingerprint(merged));
+  });
+
+  it("resolves a relocated budget against a tombstone already sitting at the winner's key, instead of shadowing it", () => {
+    // B set a budget on its own root and then removed it, leaving a tombstone at exactly the
+    // key A's budget is about to be relocated onto once A's root loses the collapse. Pushing
+    // the moved budget on top of that tombstone unconditionally is what `validateBook` calls a
+    // tombstone shadowing a live record. A's budget (T(6)) outranks B's removal (T(3)), so
+    // `later`'s rule says the moved budget wins and the tombstone clears.
+    const a = unwrap(
+      setBudget(
+        device(ROOT, "a:leaf", "Groceries", T(1)),
+        { accountId: ROOT.expense, period: "month", currency: "ILS", limit: 100 },
+        T(6),
+      ),
+    );
+    const bWithBudget = unwrap(
+      setBudget(
+        device(B, "b:leaf", "Rent", T(2)),
+        { accountId: B.expense, period: "month", currency: "ILS", limit: 200 },
+        T(2),
+      ),
+    );
+    const b = unwrap(
+      removeBudget(bWithBudget, { accountId: B.expense, period: "month", currency: "ILS" }, T(3)),
+    );
+    const merged = mergedBothOrders(a, b);
+    const expenseRoot = merged.accounts.find((x) => x.parentId === null && x.type === "expense")!;
+    // A's content (limit 100) survives at the winner's key, and the tombstone B's removal
+    // left there is gone — a live budget and a tombstone can never both claim one key.
+    expect(merged.budgets).toEqual([
+      { accountId: expenseRoot.id, period: "month", currency: "ILS", limit: 100, updatedAt: expect.any(String) },
+    ]);
+    expect(merged.tombstones.filter((t) => t.kind === "budget")).toHaveLength(1);
     expect(bookFingerprint(unwrap(mergeBooks(merged, a)))).toBe(bookFingerprint(merged));
     expect(bookFingerprint(unwrap(mergeBooks(merged, b)))).toBe(bookFingerprint(merged));
   });

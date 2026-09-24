@@ -2,7 +2,7 @@ import { wouldCreateCycle } from "./book-utils";
 import { canonicalJson } from "./canonical-json";
 import { err, ok, type Result } from "./result";
 import { isSeedAccountId } from "./seed-ids";
-import { addTombstone, budgetKeyOf } from "./tombstones";
+import { addTombstone, budgetKeyOf, clearTombstone } from "./tombstones";
 import type {
   Account,
   Book,
@@ -580,14 +580,24 @@ function repair(
   //    every budget on a loser is dropped through `keepValid`, exactly as any other rung
   //    drops a record, which tombstones it at the key it is actually leaving — the loser
   //    account's own — so a device that still holds that key does not hand it back on
-  //    the next sync. Only then is a moved copy considered for the winner's key, because
-  //    a live budget can already be sitting there (the two accounts each had one), and
-  //    `validateBook` refuses two budgets at one key; tombstoning *that* collision at the
-  //    winner's key would just as surely refuse, since the key stays live either way.
-  //    Keep the newer by `later`'s own convention instead — greater `updatedAt`, then
-  //    the canonically greater body — so both argument orders still agree on which
-  //    content the surviving key holds, with nothing further to tombstone: the losing
-  //    side of that comparison never had a key of its own to begin with.
+  //    the next sync.
+  //
+  //    Only then is a moved copy considered for the winner's key, which can already be
+  //    occupied two different ways — both real: the winner's own account can have had a
+  //    budget of its own before this merge, live or (`removeBudget`) deleted. A live one
+  //    is resolved by keeping the newer of the two by `later`'s own convention
+  //    (`newerBudget`) — greater `updatedAt`, then the canonically greater body — and
+  //    dropping the other, needing no tombstone of its own since its key was already
+  //    vacated above. A dead one is exactly as much a claim on that key as a live budget
+  //    is: pushing `moved` on top of it unconditionally is what `validateBook` calls a
+  //    tombstone shadowing a live record, and the claims union at the top of this
+  //    function would undo the push on the very next merge regardless, since a dead and
+  //    a live claim for the same key there resolve by the same rule. So this weighs
+  //    `moved` against the tombstone with `later` too: the tombstone wins outright if
+  //    it is newer (`moved` is dropped — its own key already carries the record of its
+  //    going), and otherwise `moved` wins, clearing the tombstone before it is pushed —
+  //    exactly what a fresh `setBudget` does when it resurrects a budget over one a
+  //    tombstone still names.
   const relocated = draft.budgets.filter((b) => rootWinner.has(b.accountId));
   draft.budgets = keepValid(
     draft,
@@ -603,6 +613,18 @@ function repair(
     };
     repaired(moved);
     const key = budgetKeyOf(moved);
+    const tombstone = draft.tombstones.find((t) => t.kind === "budget" && t.key === key);
+    if (tombstone !== undefined) {
+      const verdict = later(
+        { alive: false, at: tombstone.deletedAt, stone: tombstone },
+        { alive: true, at: moved.updatedAt, record: moved },
+      );
+      if (verdict.alive) {
+        clearTombstone(draft, "budget", key);
+        draft.budgets.push(moved);
+      }
+      continue;
+    }
     const incumbentIndex = draft.budgets.findIndex((b) => budgetKeyOf(b) === key);
     if (incumbentIndex === -1) {
       draft.budgets.push(moved);

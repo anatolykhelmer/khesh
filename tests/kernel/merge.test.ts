@@ -394,6 +394,35 @@ describe("mergeBooks repair ladder", () => {
     expect(merged.accounts.find((x) => x.id === "cyc:b")?.type).toBe("income");
   });
 
+  it("cascades onto a member actually freed from a cycle, when no type-root exists to prefer", () => {
+    // The test above shows the ladder now steering *away* from a cascade wherever a type-root
+    // is available, which leaves rung 4 retyping a member genuinely freed from a cycle (the
+    // third answer: a mismatched candidate accepted only because no root of that type exists)
+    // without a test anywhere in this file. Same setup as the test above, but both inputs have
+    // the Income root removed before merging — the "imported book" case the docstring already
+    // allows for the fourth answer, and it applies here too, one answer earlier. Nothing else
+    // in either book still points at that root: `cyc:a`'s own final parent is `cyc:b`, and the
+    // draft's `cyc:b` is B's record, which never left Nest.
+    const seeded = nested(["cyc:a", "cyc:b"]);
+    let a = unwrap(updateAccount(seeded, { id: "cyc:a", type: "income", parentId: ROOT.income }, T(1)));
+    a = unwrap(updateAccount(a, { id: "cyc:b", type: "income", parentId: ROOT.income }, T(1)));
+    a = unwrap(updateAccount(a, { id: "cyc:a", parentId: "cyc:b" }, T(2)));
+    const b = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: "cyc:a" }, T(3)));
+    const dropIncomeRoot = (book: Book): Book => ({
+      ...book,
+      accounts: book.accounts.filter((x) => x.id !== ROOT.income),
+    });
+    const merged = mergedBothOrders(dropIncomeRoot(a), dropIncomeRoot(b));
+    // `cyc:a` is cut loose exactly as above; its only outside-the-cycle candidate is B's, whose
+    // named parent (`nest`) is expense, mismatching `cyc:a`'s income — so the first answer is
+    // rejected. With the Income root gone, the second answer has nothing to offer either, so
+    // the third answer accepts that same mismatched candidate anyway, and rung 4 retypes
+    // `cyc:a` — a member actually freed from the cycle — back to expense to match `nest`.
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe("nest");
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.type).toBe("expense");
+    expect(merged.accounts.find((x) => x.id === "cyc:b")?.type).toBe("expense");
+  });
+
   it("keeps the member's type instead of retyping it into a manufactured refusal", () => {
     // BL-048's Finding 1: before this fix, `reattachTarget` took the newest outside-the-cycle
     // history candidate regardless of type. Here that candidate (B's, still under Nest, still
@@ -426,6 +455,39 @@ describe("mergeBooks repair ladder", () => {
     expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe(ROOT.income);
     expect(merged.accounts.find((x) => x.id === "cyc:a")?.type).toBe("income");
     expect(merged.accounts.find((x) => x.id === "cyc:a-leaf")?.type).toBe("income");
+    expect(merged.journal).toHaveLength(1);
+  });
+
+  it("checks the candidate's parent by its draft type, not the snapshot's own stale type", () => {
+    // Finding 1's re-review: the type gate above compared the history snapshot's own `type`
+    // against the member's, but that is not what decides whether rung 4's cascade fires — the
+    // parent's *draft* type does, and a snapshot can be perfectly accurate about the member
+    // while the parent it names has since been retyped by the other device. Three groups this
+    // time, so the member's own snapshot can carry the *right* type while still pointing at a
+    // parent the other device retyped out from under it.
+    const seeded = nested(["g1", "g2", "g3"]);
+    // A: g1 under g2 (still expense on A throughout), a posted leaf under g1, then g3 under g1.
+    let a = unwrap(updateAccount(seeded, { id: "g1", parentId: "g2" }, T(1)));
+    a = unwrap(createAccount(a, { id: "g1-leaf", parentId: "g1", name: "Leaf", type: "expense", currency: "ILS", isPlaceholder: false }, T(2)));
+    a = spend(a, "cash", "g1-leaf", 100, T(2));
+    a = unwrap(updateAccount(a, { id: "g3", parentId: "g1" }, T(3)));
+    // B, unsynced from the same `seeded`: retypes the still-childless g2 to a liability (a
+    // retype is a move, so g2 goes to the Liabilities root with it), then moves g1 under g3.
+    let b = unwrap(updateAccount(seeded, { id: "g2", type: "liability", parentId: ROOT.liability }, T(4)));
+    b = unwrap(updateAccount(b, { id: "g1", parentId: "g3" }, T(5)));
+
+    // Derived from the rule: the union ties g1 <-> g3 (B's newer g1 points at g3; A's g3 still
+    // points at g1), so g1 — the lower id, and not posted itself — is cut loose. Its winning
+    // record is B's (expense, unretyped), and its only outside-the-cycle history candidate is
+    // A's own copy, which names g2 — live, unposted, not reachable from g1, so `usable`, and
+    // its *own* type field still reads expense. But g2's type in the draft is liability (B's
+    // retype won the union for g2), so the gate must reject this candidate on the parent's
+    // current type, not accept it on the snapshot's. With no other type-matching history
+    // candidate and no reason to reject the Expense root, that root is what g1 lands on.
+    const merged = mergedBothOrders(a, b);
+    expect(merged.accounts.find((x) => x.id === "g1")?.parentId).toBe(ROOT.expense);
+    expect(merged.accounts.find((x) => x.id === "g1")?.type).toBe("expense");
+    expect(merged.accounts.find((x) => x.id === "g1-leaf")?.type).toBe("expense");
     expect(merged.journal).toHaveLength(1);
   });
 

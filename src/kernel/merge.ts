@@ -119,18 +119,25 @@ function accountVersions(books: readonly Book[]): Map<string, Account[]> {
 /**
  * The parent a cut-loose cycle member goes back under, or null to leave it at the top level.
  *
- * Four answers, in order, and the first one whose type matches the member's current type wins
- * outright — a mismatch is accepted only once every type-matching answer has been ruled out.
+ * Four answers, in order, and the first one whose parent still matches the member's current
+ * type wins outright — a mismatch is accepted only once every type-matching answer has been
+ * ruled out. "Matches" is checked against the *parent*'s type as it stands in the draft right
+ * now, never the snapshot's own `type` field: what actually decides whether rung 4's cascade
+ * fires is the type the named parent currently carries, and a snapshot's own type can still be
+ * accurate — the member really was that type, on that device, when it pointed there — while the
+ * parent it names has since been retyped by the *other* device. Comparing the snapshot's own
+ * type instead would accept a candidate whose parent no longer agrees with it, and the cascade
+ * would fire anyway.
  *
  * First, the parent it last had outside the cycle: the input copies are the history of where
  * the account lived before the two devices tied the knot, and the newest of them that points
  * outside the cycle *and can still take a child* is the last place a user actually put it.
- * Among those, one whose `type` still matches the member's current type is tried before any
- * whose type does not, newest first within each group. A parent that holds postings cannot
- * take a child — handing the member to it would create exactly the children-and-postings pair
- * rung 3 calls irreducible — so a candidate like that is skipped in favour of the next-newest
- * (within its type group, then the other), and only once none of the input copies qualify does
- * the ladder fall through.
+ * Among those, one whose named parent's draft type still matches the member's current type is
+ * tried before any whose named parent's type does not, newest first within each group. A
+ * parent that holds postings cannot take a child — handing the member to it would create
+ * exactly the children-and-postings pair rung 3 calls irreducible — so a candidate like that is
+ * skipped in favour of the next-newest (within its type group, then the other), and only once
+ * none of the input copies qualify does the ladder fall through.
  *
  * Second, the lowest-id top-level placeholder of the member's own type: ordinarily the category
  * root. This is where the ladder turns to *before* accepting a differently-typed answer from the
@@ -139,15 +146,20 @@ function accountVersions(books: readonly Book[]): Map<string, Account[]> {
  * `entryMeaningBroken` then refuses the whole merge for a type change no device actually made —
  * this rung exists to repair the cycle without manufacturing that refusal, so a same-type root
  * is preferred over a differently-typed history candidate rather than the other way around. A
- * member cut loose from the same cycle never lingers here as a stand-in for it: this same loop
- * re-attaches cut-loose members in id order, so a sibling with a lower id has already been sent
- * to the type root by this same second answer before this member's lookup runs, and is no
- * longer a top-level placeholder for this member to name.
+ * member cut loose from the same cycle usually does not linger here as a stand-in for it: this
+ * same loop re-attaches cut-loose members in id order, so a sibling with a lower id has usually
+ * already been sent to the type root by this same second answer before this member's lookup
+ * runs. That is not absolute, though — when the draft holds no root of that type at all (the
+ * imported-book case the fourth answer below contemplates), the lower-id sibling's own lookup
+ * falls all the way to park, and a parked account *is* a top-level placeholder of its type, so
+ * it remains exactly the kind of candidate this second answer looks for and a later member's
+ * lookup can still name it.
  *
- * Third, back to the first answer's own best candidate even though its type does not match —
- * reached only when neither of the first two answers offered one that does. This is the one
- * case where the result carries a type mismatch through to rung 4; it is still preferred over
- * parking, since it keeps more of the account's history than starting it over at the top level.
+ * Third, back to the first answer's own best candidate even though its named parent's type
+ * does not match — reached only when neither of the first two answers offered one that does.
+ * This is the one case where the result carries a type mismatch through to rung 4; it is still
+ * preferred over parking, since it keeps more of the account's history than starting it over at
+ * the top level.
  *
  * Fourth, null: park it, which is what this rung did for every member before BL-048. The fourth
  * is reached only when a book holds no root of the member's type at all — which `createHousehold`
@@ -161,10 +173,15 @@ function accountVersions(books: readonly Book[]): Map<string, Account[]> {
  * answers the second question against the draft as it stands, which is after the detach loop
  * and therefore acyclic.
  *
- * The type preference — both within the first answer and between the first three answers — is
- * a property of the candidate records alone — each one's own `type` against the member's own
- * `type` — never of the order `versions` or the draft happen to hold them in, so it picks the
- * same candidate whichever book `mergeBooks` was given first.
+ * The type preference — both within the first answer and between the first three answers — still
+ * agrees in both argument orders of `mergeBooks`, even though it now reads the draft rather than
+ * the candidate record alone: the draft it reads is the post-union, canonically sorted book that
+ * `repair` starts from, which is the same set of accounts with the same fields regardless of
+ * which side of `mergeBooks(a, b)` supplied `a` — `later`/`newerAccount` already agree in both
+ * orders, and rung 2's own detach loop mutates the same ids the same way whichever book was
+ * merged first (see its own comment above). So looking up a parent's current type in that draft,
+ * rather than trusting the candidate's own copy of it, is still a pure function of the two input
+ * books, never of `versions`' or an array's iteration order.
  */
 function reattachTarget(
   draft: Book,
@@ -173,12 +190,15 @@ function reattachTarget(
   versions: Map<string, Account[]>,
   posted: ReadonlySet<string>,
 ): string | null {
-  const live = new Set(draft.accounts.map((a) => a.id));
+  const draftById = new Map(draft.accounts.map((a) => [a.id, a]));
   const usable = (parentId: string): boolean =>
     parentId !== member.id &&
-    live.has(parentId) &&
+    draftById.has(parentId) &&
     !posted.has(parentId) &&
     !wouldCreateCycle(draft, member.id, parentId);
+  // The parent's own draft type, not the snapshot's — see the doc comment above. Undefined
+  // for a parent no longer live, which only ever matters for a candidate `usable` excludes.
+  const draftType = (parentId: string): Account["type"] | undefined => draftById.get(parentId)?.type;
 
   const outside = (versions.get(member.id) ?? [])
     .filter(
@@ -186,13 +206,15 @@ function reattachTarget(
         version.parentId !== null && !cycle.has(version.parentId),
     )
     .sort((x, y) => {
-      const xMatches = x.type === member.type;
-      const yMatches = y.type === member.type;
+      const xMatches = draftType(x.parentId) === member.type;
+      const yMatches = draftType(y.parentId) === member.type;
       if (xMatches !== yMatches) return xMatches ? -1 : 1;
       return newerAccount(x, y) === x ? -1 : 1;
     });
   const reattachable = outside.find((version) => usable(version.parentId));
-  if (reattachable !== undefined && reattachable.type === member.type) return reattachable.parentId;
+  if (reattachable !== undefined && draftType(reattachable.parentId) === member.type) {
+    return reattachable.parentId;
+  }
 
   const root = draft.accounts
     .filter((a) => a.parentId === null && a.isPlaceholder && a.type === member.type)

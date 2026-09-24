@@ -1,3 +1,4 @@
+import { wouldCreateCycle } from "./book-utils";
 import { canonicalJson } from "./canonical-json";
 import { err, ok, type Result } from "./result";
 import { addTombstone, budgetKeyOf } from "./tombstones";
@@ -91,6 +92,65 @@ function latestLiveAccounts(books: readonly Book[]): Map<string, Account> {
 function newerAccount(a: Account, b: Account): Account {
   if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
   return canonicalJson(a) >= canonicalJson(b) ? a : b;
+}
+
+/**
+ * Every input copy of each account, by id — the versions last-writer-wins discarded as well
+ * as the one it kept.
+ *
+ * `latestLiveAccounts` answers "what is the newest version of this record". Rung 2's
+ * re-attachment needs the opposite: a parent the winning version does *not* have, because
+ * the winning version is the one that points into the cycle. Tombstoned snapshots are left
+ * out — a deleted copy is not a home to send an account back to.
+ */
+function accountVersions(books: readonly Book[]): Map<string, Account[]> {
+  const versions = new Map<string, Account[]>();
+  for (const book of books) {
+    for (const account of book.accounts) {
+      versions.set(account.id, [...(versions.get(account.id) ?? []), account]);
+    }
+  }
+  return versions;
+}
+
+/**
+ * The parent a cut-loose cycle member goes back under, or null to leave it at the top level.
+ *
+ * Three answers, in order. First, the parent it last had outside the cycle: the input copies
+ * are the history of where the account lived before the two devices tied the knot, and the
+ * newest of them that points outside it is the last place a user actually put it. Second, the
+ * top-level placeholder of its own type — the category root — which is where a stray group
+ * belongs when its own history offers nothing. Third, null: park it, which is what this rung
+ * did for every member before BL-048. The third is reachable only for a book that holds no
+ * root of the member's type at all, which `createHousehold` cannot produce and an imported
+ * book can.
+ *
+ * Every candidate is checked twice: still live in the draft, and not reachable *from* the
+ * member — re-attaching to a descendant would tie a fresh knot around the one just cut.
+ * `wouldCreateCycle` answers the second question against the draft as it stands, which is
+ * after the detach loop and therefore acyclic.
+ */
+function reattachTarget(
+  draft: Book,
+  member: Account,
+  cycle: ReadonlySet<string>,
+  versions: Map<string, Account[]>,
+): string | null {
+  const live = new Set(draft.accounts.map((a) => a.id));
+  const usable = (parentId: string): boolean =>
+    parentId !== member.id && live.has(parentId) && !wouldCreateCycle(draft, member.id, parentId);
+
+  const outside = (versions.get(member.id) ?? []).filter(
+    (version) =>
+      version.parentId !== null && !cycle.has(version.parentId) && usable(version.parentId),
+  );
+  if (outside.length > 0) return outside.reduce(newerAccount).parentId;
+
+  const root = draft.accounts
+    .filter((a) => a.parentId === null && a.isPlaceholder && a.type === member.type)
+    .filter((a) => !a.id.startsWith("sys:") && usable(a.id))
+    .sort(byId)[0];
+  return root === undefined ? null : root.id;
 }
 
 function byId<T extends { id: string }>(a: T, b: T): number {
@@ -237,7 +297,11 @@ type RepairFailure = "childrenAndPostings" | "rootWithPostings" | "missingTombst
 
 /** Deterministic repair of a merged draft. Mutates `draft`. Returns null when the draft
  * is repaired, or what made the conflict irreducible. */
-function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | null {
+function repair(
+  draft: Book,
+  restorable: Map<string, Account>,
+  versions: Map<string, Account[]>,
+): RepairFailure | null {
   // 1. Restore referenced accounts from tombstones, transitively (parents included).
   //    Every pass consumes at least one tombstone, so the loop cannot spin.
   for (;;) {
@@ -307,6 +371,13 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
   //    deterministic and the same in either argument order. When every member is posted
   //    to there is no such choice and rung 3 is right to refuse.
   //    Each pass clears one parentId, so the loop is bounded by the account count.
+  //
+  //    Two phases. The loop cuts every cycle exactly as before; the phase below then gives
+  //    each cut-loose member a parent again. They are separate because the loop's bound is
+  //    "each pass clears one parentId" — an attach inside it would feed the next findCycle
+  //    pass and lose that argument. The loop runs to completion first, and the phase then
+  //    attaches only to parents the member cannot reach, so the forest stays a forest.
+  const cutLoose = new Map<string, Set<string>>();
   for (;;) {
     const index = new Map(draft.accounts.map((a) => [a.id, a]));
     const cycle = findCycle(draft.accounts, index);
@@ -318,6 +389,23 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
     if (detached === undefined) break; // cycle ids come from index; unreachable
     detached.parentId = null;
     repaired(detached);
+    cutLoose.set(lowest, new Set(cycle));
+  }
+
+  //    Parking a member at the top level is a last resort, not the repair. An account left
+  //    there is a fifth category root the user cannot move back — `updateAccount` refuses any
+  //    move between the top level and a parent — and the root-collapse rung below would
+  //    dissolve it into the type's root, tombstoning a group somebody made. `id` order, so
+  //    two members cut loose in one repair are re-attached in the same sequence whichever
+  //    book was merged first. The member is stamped twice, once per change; the second stamp
+  //    is what the other device's copy of the re-attachment has to beat.
+  for (const id of [...cutLoose.keys()].sort()) {
+    const member = draft.accounts.find((a) => a.id === id);
+    if (member === undefined) continue; // nothing removes accounts here; unreachable
+    const parentId = reattachTarget(draft, member, cutLoose.get(id) as Set<string>, versions);
+    if (parentId === null) continue;
+    member.parentId = parentId;
+    repaired(member);
   }
 
   // 3. Placeholder consistency: children force it on; postings force it off; both is irreducible.
@@ -330,14 +418,15 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
   //    the sync engine as a conflict the user resolves (SYNC_MERGE_CONFLICT) rather than as
   //    a merged book that will not load.
   //
-  //    Commands alone cannot set this up: updateAccount keeps every account at the level
-  //    it was created at, so without a merge in between an account is top-level on every
-  //    device that holds it or on none. Rung 2 is the exception. The member it detaches is
-  //    a group here — the child that still points at it keeps it one — and its top-level
-  //    copy is stamped one tick past both inputs' copies. A device that had not yet synced
-  //    that merge may, in its own book, have moved the child away, turned the member into a
-  //    leaf and posted to it — all older than the detach, so the next merge keeps the
-  //    detached copy, now childless and posted to.
+  //    Nothing reachable produces this shape any more, and the check stays regardless.
+  //    Commands cannot: updateAccount keeps every account at the level it was created at and
+  //    refuses a top-level leaf outright. Rung 2 was the exception — it parked a cut-loose
+  //    cycle member at the top level, where a device that had not synced that merge could
+  //    make its own copy a childless leaf and post to it, and the next merge kept the parked
+  //    copy — and it now hands that member back to a parent instead (BL-048). So no test
+  //    constructs this branch: it guards the same invariant validateBook does, against a book
+  //    that reaches the kernel from an import or a hand-edited file, and the alternative to
+  //    refusing is a merged book that will not load.
   //
   //    Checked after children-and-postings, so an account that is both is still refused
   //    for that. Accounts are visited in the draft's order, which does not depend on which
@@ -563,7 +652,7 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
   // `reason` names which of the refusals this is. The code is the same for all of them, so
   // without it a caller — or the symmetry property, which compares the whole error —
   // cannot tell an order-dependent choice *between* the reasons from agreement.
-  const unrepaired = repair(draft, latestLiveAccounts([a, b]));
+  const unrepaired = repair(draft, latestLiveAccounts([a, b]), accountVersions([a, b]));
   if (unrepaired !== null) {
     return err("SYNC_MERGE_CONFLICT", "Books conflict beyond automatic repair", {
       reason: unrepaired,

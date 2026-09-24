@@ -188,16 +188,28 @@ function betterRoot(a: Account, b: Account): Account {
   return newerAccount(a, b);
 }
 
+/** The newer of two budgets that collided on the same (accountId, period, currency) key
+ * after the root-collapse rung repointed one onto the other's account — `later`'s
+ * convention again: greater `updatedAt`, then the canonically greater body, so both
+ * argument orders agree. */
+function newerBudget(a: Budget, b: Budget): Budget {
+  if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
+  return canonicalJson(a) >= canonicalJson(b) ? a : b;
+}
+
 /**
  * Mutates `book`. Run before the repair ladder as well as after it, for two different
  * reasons. Going in: the draft is assembled in `Map` insertion order, which is argument
  * order, and rung 6 groups siblings by walking `accounts` — a canonical order there is
- * what makes its grouping (and so its renames) independent of which book came first
- * — and rung 5 collects each type's top-level placeholders by the same walk, so which root
- * wins, and the renames its reparenting then feeds rung 6, are argument-order-independent for
- * the same reason. That is all the pre-sort guarantees: rung 1 appends restored accounts
- * behind it, so the arrays are no longer sorted by the time rungs 2-7 run. Coming out: the
- * sort is what puts the merged book itself in canonical order.
+ * what makes its grouping (and so its renames) independent of which book came first.
+ * Rung 5 above walks the same array to collect each type's top-level placeholders, but
+ * its winner is argument-order-independent for a different reason: `betterRoot` is a
+ * total order, so `reduce` picks the same winner no matter which book's copy the walk
+ * meets first. What the canonical walk still fixes is the renames rung 6 then applies to
+ * the children that reparenting hands it. That is all the pre-sort guarantees: rung 1
+ * appends restored accounts behind it, so the arrays are no longer sorted by the time
+ * rungs 2-7 run. Coming out: the sort is what puts the merged book itself in canonical
+ * order.
  */
 function sortBook(book: Book): void {
   book.accounts.sort(byId);
@@ -530,13 +542,16 @@ function repair(
     if (account.id.startsWith("sys:")) continue;
     roots.set(account.type, [...(roots.get(account.type) ?? []), account]);
   }
-  const absorbed = new Set<string>();
+  // Loser id -> winner id. A map rather than a set of losers because the budget
+  // repointing below needs to know *where* to send a limit, not just that its account
+  // is going away.
+  const rootWinner = new Map<string, string>();
   for (const group of roots.values()) {
     if (group.length < 2) continue;
     const winner = group.reduce(betterRoot);
     for (const loser of group) {
       if (loser === winner) continue;
-      absorbed.add(loser.id);
+      rootWinner.set(loser.id, winner.id);
       for (const child of draft.accounts) {
         if (child.parentId !== loser.id) continue;
         child.parentId = winner.id;
@@ -549,8 +564,52 @@ function repair(
     "account",
     draft.accounts,
     (account) => account.id,
-    (account) => !absorbed.has(account.id),
+    (account) => !rootWinner.has(account.id),
   );
+
+  //    A budget follows its account exactly as a child does. Nothing forbids one on a
+  //    top-level placeholder — `setBudget` and `validateBook` both refuse only
+  //    `type !== "expense"`, not a placeholder — so a limit can legally sit directly on
+  //    a category root, and rung 7 below would otherwise drop it for the wrong reason:
+  //    not because it stopped covering an expense account, but because its account just
+  //    disappeared out from under it.
+  //
+  //    A budget's key is its own account id, period and currency — unlike an account,
+  //    which keeps a stable id no matter where it moves, relocating a budget changes its
+  //    key outright. So this is a vacate-and-recreate, not a field edit in place: first
+  //    every budget on a loser is dropped through `keepValid`, exactly as any other rung
+  //    drops a record, which tombstones it at the key it is actually leaving — the loser
+  //    account's own — so a device that still holds that key does not hand it back on
+  //    the next sync. Only then is a moved copy considered for the winner's key, because
+  //    a live budget can already be sitting there (the two accounts each had one), and
+  //    `validateBook` refuses two budgets at one key; tombstoning *that* collision at the
+  //    winner's key would just as surely refuse, since the key stays live either way.
+  //    Keep the newer by `later`'s own convention instead — greater `updatedAt`, then
+  //    the canonically greater body — so both argument orders still agree on which
+  //    content the surviving key holds, with nothing further to tombstone: the losing
+  //    side of that comparison never had a key of its own to begin with.
+  const relocated = draft.budgets.filter((b) => rootWinner.has(b.accountId));
+  draft.budgets = keepValid(
+    draft,
+    "budget",
+    draft.budgets,
+    budgetKeyOf,
+    (b) => !rootWinner.has(b.accountId),
+  );
+  for (const budget of relocated) {
+    const moved: Budget = {
+      ...structuredClone(budget),
+      accountId: rootWinner.get(budget.accountId) as string,
+    };
+    repaired(moved);
+    const key = budgetKeyOf(moved);
+    const incumbentIndex = draft.budgets.findIndex((b) => budgetKeyOf(b) === key);
+    if (incumbentIndex === -1) {
+      draft.budgets.push(moved);
+    } else if (newerBudget(draft.budgets[incumbentIndex], moved) === moved) {
+      draft.budgets[incumbentIndex] = moved;
+    }
+  }
 
   // 6. Deduplicate sibling names: canonically greatest record keeps the name. The slot
   //    key is JSON-encoded rather than concatenated so a name containing the separator
@@ -581,10 +640,13 @@ function repair(
     }
   }
 
-  // 7. A budget only makes sense on an expense account. Rung 1 has already restored
-  //    every account a budget references, so this drops exactly the limits whose
-  //    account was concurrently retyped away from expense — each one tombstoned by
-  //    `keepValid`, which is what keeps the merge idempotent.
+  // 7. A budget only makes sense on an expense account. Two rungs above have already
+  //    dealt with a budget's account disappearing: rung 1 restores one deleted on the
+  //    other device, and rung 5 relocates one that sat directly on a root the collapse
+  //    absorbed, onto the surviving root. So a budget's account is never simply missing
+  //    by the time this runs, and what this drops is exactly the limits whose account is
+  //    not an expense — ordinarily one a concurrent edit retyped away from it — each one
+  //    tombstoned by `keepValid`, which is what keeps the merge idempotent.
   const typeById = new Map(draft.accounts.map((a) => [a.id, a.type]));
   draft.budgets = keepValid(
     draft,

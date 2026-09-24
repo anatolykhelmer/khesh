@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createAccount } from "../../src/kernel/accounts";
+import { setBudget } from "../../src/kernel/budgets";
 import { postEntry } from "../../src/kernel/journal";
 import { bookFingerprint, mergeBooks } from "../../src/kernel/merge";
+import { budgetKeyOf } from "../../src/kernel/tombstones";
 import { validateBook } from "../../src/kernel/validate";
 import type { Book } from "../../src/kernel/types";
 import { unwrap } from "../helpers";
@@ -115,5 +117,67 @@ describe("mergeBooks root collapse", () => {
     const expenseRoot = merged.accounts.find((x) => x.parentId === null && x.type === "expense")!;
     expect(merged.accounts.find((x) => x.id === "a:leaf")?.parentId).toBe(expenseRoot.id);
     expect(merged.journal).toHaveLength(1);
+  });
+
+  it("repoints a budget on the losing root onto the winner, rather than dropping it", () => {
+    // Nothing forbids a budget directly on a top-level placeholder: `setBudget` only checks
+    // `type === "expense"`. B's root outranks A's here on device timestamp alone (T(2) > T(1),
+    // neither is a seed id), so A's root — and the budget sitting on it — is what gets folded
+    // away.
+    const a = unwrap(
+      setBudget(
+        device(ROOT, "a:leaf", "Groceries", T(1)),
+        { accountId: ROOT.expense, period: "month", currency: "ILS", limit: 100 },
+        T(1),
+      ),
+    );
+    const b = device(B, "b:leaf", "Rent", T(2));
+    const merged = mergedBothOrders(a, b);
+    const expenseRoot = merged.accounts.find((x) => x.parentId === null && x.type === "expense")!;
+    expect(merged.budgets).toEqual([
+      { accountId: expenseRoot.id, period: "month", currency: "ILS", limit: 100, updatedAt: expect.any(String) },
+    ]);
+    // Re-merging with either original input is still a no-op: the loser root's tombstone
+    // (from the account collapse) and the budget's own vacated-key tombstone both outrank
+    // what each device still holds, so neither comes back.
+    expect(bookFingerprint(unwrap(mergeBooks(merged, a)))).toBe(bookFingerprint(merged));
+    expect(bookFingerprint(unwrap(mergeBooks(merged, b)))).toBe(bookFingerprint(merged));
+  });
+
+  it("collapses budgets on both roots at the same period and currency to the newer one, with a tombstone for the other", () => {
+    // A's budget (T(6)) is stamped later than B's (T(3)); the root collapse itself still goes
+    // B's way (T(2) > T(1) on the accounts, independent of the budgets' own stamps). So this
+    // exercises the general case: the surviving content at the winner's key is decided by the
+    // budgets' own timestamps, not by which root happened to win.
+    const a = unwrap(
+      setBudget(
+        device(ROOT, "a:leaf", "Groceries", T(1)),
+        { accountId: ROOT.expense, period: "month", currency: "ILS", limit: 100 },
+        T(6),
+      ),
+    );
+    const b = unwrap(
+      setBudget(
+        device(B, "b:leaf", "Rent", T(2)),
+        { accountId: B.expense, period: "month", currency: "ILS", limit: 200 },
+        T(3),
+      ),
+    );
+    const merged = mergedBothOrders(a, b);
+    const expenseRoot = merged.accounts.find((x) => x.parentId === null && x.type === "expense")!;
+    // A's repointed budget is stamped one tick past T(6), still well past B's T(3), so A's
+    // content (limit 100) is what the single surviving budget holds.
+    expect(merged.budgets).toEqual([
+      { accountId: expenseRoot.id, period: "month", currency: "ILS", limit: 100, updatedAt: expect.any(String) },
+    ]);
+    // The key it vacated — A's own root, before repointing — is what carries the tombstone,
+    // not the winner's key: the winner's key stays live throughout, so tombstoning it would
+    // shadow the surviving budget and `validateBook` would refuse the book outright.
+    const budgetTombstone = merged.tombstones.find((t) => t.kind === "budget")!;
+    expect(budgetTombstone.key).toBe(
+      budgetKeyOf({ accountId: ROOT.expense, period: "month", currency: "ILS" }),
+    );
+    expect(bookFingerprint(unwrap(mergeBooks(merged, a)))).toBe(bookFingerprint(merged));
+    expect(bookFingerprint(unwrap(mergeBooks(merged, b)))).toBe(bookFingerprint(merged));
   });
 });

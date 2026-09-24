@@ -119,29 +119,52 @@ function accountVersions(books: readonly Book[]): Map<string, Account[]> {
 /**
  * The parent a cut-loose cycle member goes back under, or null to leave it at the top level.
  *
- * Three answers, in order. First, the parent it last had outside the cycle: the input copies
- * are the history of where the account lived before the two devices tied the knot, and the
- * newest of them that points outside the cycle *and can still take a child* is the last place
- * a user actually put it. A parent that holds postings cannot take a child — handing the
- * member to it would create exactly the children-and-postings pair rung 3 calls irreducible —
- * so a candidate like that is skipped in favour of the next-newest, and only once none of the
- * input copies qualify does the ladder fall through. Second, the lowest-id top-level
- * placeholder of the member's own type: ordinarily the category root, but when another member
- * was cut loose from the same cycle and is still parked, this can name that sibling instead —
- * adopting it keeps both alive, since the root-collapse rung below then folds the sibling into
- * the root, where parking both would instead leave the sibling to be dissolved with nothing
- * pointing at it any more. Third, null: park it, which is what this rung did for every member
- * before BL-048. The third is reached only when a book holds no root of the member's type at
- * all — which `createHousehold` cannot produce and an imported book can — or when every
- * candidate, root included, already holds postings, which a valid book cannot produce (a
- * posted account cannot be a placeholder, so it cannot be this member's outside parent either)
- * but an imported or hand-edited one might.
+ * Four answers, in order, and the first one whose type matches the member's current type wins
+ * outright — a mismatch is accepted only once every type-matching answer has been ruled out.
+ *
+ * First, the parent it last had outside the cycle: the input copies are the history of where
+ * the account lived before the two devices tied the knot, and the newest of them that points
+ * outside the cycle *and can still take a child* is the last place a user actually put it.
+ * Among those, one whose `type` still matches the member's current type is tried before any
+ * whose type does not, newest first within each group. A parent that holds postings cannot
+ * take a child — handing the member to it would create exactly the children-and-postings pair
+ * rung 3 calls irreducible — so a candidate like that is skipped in favour of the next-newest
+ * (within its type group, then the other), and only once none of the input copies qualify does
+ * the ladder fall through.
+ *
+ * Second, the lowest-id top-level placeholder of the member's own type: ordinarily the category
+ * root. This is where the ladder turns to *before* accepting a differently-typed answer from the
+ * first: handing the member a mismatched parent would give rung 4's cascade a reason to retype
+ * the member (and its subtree) to match, and if a posted entry relies on any of it,
+ * `entryMeaningBroken` then refuses the whole merge for a type change no device actually made —
+ * this rung exists to repair the cycle without manufacturing that refusal, so a same-type root
+ * is preferred over a differently-typed history candidate rather than the other way around. A
+ * member cut loose from the same cycle never lingers here as a stand-in for it: this same loop
+ * re-attaches cut-loose members in id order, so a sibling with a lower id has already been sent
+ * to the type root by this same second answer before this member's lookup runs, and is no
+ * longer a top-level placeholder for this member to name.
+ *
+ * Third, back to the first answer's own best candidate even though its type does not match —
+ * reached only when neither of the first two answers offered one that does. This is the one
+ * case where the result carries a type mismatch through to rung 4; it is still preferred over
+ * parking, since it keeps more of the account's history than starting it over at the top level.
+ *
+ * Fourth, null: park it, which is what this rung did for every member before BL-048. The fourth
+ * is reached only when a book holds no root of the member's type at all — which `createHousehold`
+ * cannot produce and an imported book can — or when every candidate, root included, already
+ * holds postings, which a valid book cannot produce (a posted account cannot be a placeholder,
+ * so it cannot be this member's outside parent either) but an imported or hand-edited one might.
  *
  * Every candidate is checked three ways: still live in the draft, not reachable *from* the
  * member — re-attaching to a descendant would tie a fresh knot around the one just cut — and
  * not posted to, since an account with postings cannot also take a child. `wouldCreateCycle`
  * answers the second question against the draft as it stands, which is after the detach loop
  * and therefore acyclic.
+ *
+ * The type preference — both within the first answer and between the first three answers — is
+ * a property of the candidate records alone — each one's own `type` against the member's own
+ * `type` — never of the order `versions` or the draft happen to hold them in, so it picks the
+ * same candidate whichever book `mergeBooks` was given first.
  */
 function reattachTarget(
   draft: Book,
@@ -162,15 +185,23 @@ function reattachTarget(
       (version): version is Account & { parentId: string } =>
         version.parentId !== null && !cycle.has(version.parentId),
     )
-    .sort((x, y) => (newerAccount(x, y) === x ? -1 : 1));
+    .sort((x, y) => {
+      const xMatches = x.type === member.type;
+      const yMatches = y.type === member.type;
+      if (xMatches !== yMatches) return xMatches ? -1 : 1;
+      return newerAccount(x, y) === x ? -1 : 1;
+    });
   const reattachable = outside.find((version) => usable(version.parentId));
-  if (reattachable !== undefined) return reattachable.parentId;
+  if (reattachable !== undefined && reattachable.type === member.type) return reattachable.parentId;
 
   const root = draft.accounts
     .filter((a) => a.parentId === null && a.isPlaceholder && a.type === member.type)
     .filter((a) => !a.id.startsWith("sys:") && usable(a.id))
     .sort(byId)[0];
-  return root === undefined ? null : root.id;
+  if (root !== undefined) return root.id;
+
+  if (reattachable !== undefined) return reattachable.parentId;
+  return null;
 }
 
 function byId<T extends { id: string }>(a: T, b: T): number {
@@ -208,8 +239,8 @@ function newerBudget(a: Budget, b: Budget): Budget {
  * meets first. What the canonical walk still fixes is the renames rung 6 then applies to
  * the children that reparenting hands it. That is all the pre-sort guarantees: rung 1
  * appends restored accounts behind it, so the arrays are no longer sorted by the time
- * rungs 2-7 run. Coming out: the sort is what puts the merged book itself in canonical
- * order.
+ * every rung after the first runs. Coming out: the sort is what puts the merged book itself
+ * in canonical order.
  */
 function sortBook(book: Book): void {
   book.accounts.sort(byId);
@@ -529,7 +560,9 @@ function repair(
   //    placeholder, refused by `createAccount`, `updateAccount` and `validateBook` alike, and
   //    no edit moves an account between the top level and a parent. The `isPlaceholder`
   //    clause below is therefore a guard on the draft rather than a filter on real books:
-  //    rung 2's last resort still parks a member here, before rung 3 has forced its flag.
+  //    rung 3 forces the flag only where a child requires it or a posting forbids it, and a
+  //    member rung 2's last resort parks here childless and unposted trips neither, so it can
+  //    still reach this point carrying whatever flag it had before it was cut loose.
   //
   //    Ordering: after rung 1, because this drops accounts through `keepValid` and rung 1 is
   //    the only consumer of account tombstones — earlier, and rung 1 would read the tombstone
@@ -590,8 +623,8 @@ function repair(
   //    dropping the other, needing no tombstone of its own since its key was already
   //    vacated above. A dead one is exactly as much a claim on that key as a live budget
   //    is: pushing `moved` on top of it unconditionally is what `validateBook` calls a
-  //    tombstone shadowing a live record, and the claims union at the top of this
-  //    function would undo the push on the very next merge regardless, since a dead and
+  //    tombstone shadowing a live record, and the claims union at the top of `mergeBooks`
+  //    would undo the push on the very next merge regardless, since a dead and
   //    a live claim for the same key there resolve by the same rule. So this weighs
   //    `moved` against the tombstone with `later` too: the tombstone wins outright if
   //    it is newer (`moved` is dropped — its own key already carries the record of its

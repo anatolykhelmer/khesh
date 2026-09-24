@@ -367,7 +367,13 @@ describe("mergeBooks repair ladder", () => {
     expect(merged.journal).toHaveLength(1);
   });
 
-  it("cascades the type onto accounts freed from a cycle", () => {
+  it("prefers a type-matching root over a differently-typed history candidate when freeing a cycle member", () => {
+    // Before BL-048's Finding 1, this rung took the newest outside-the-cycle history candidate
+    // regardless of type, which handed rung 4's cascade a reason to undo A's retype here (and,
+    // where a posted entry relied on the member, could turn that into a manufactured
+    // SYNC_MERGE_CONFLICT — see "keeps its type instead of retyping into a manufactured
+    // refusal" below). It now prefers a same-type answer first, so the retype survives and the
+    // cascade runs onto the sibling that still disagrees with it instead.
     const seeded = nested(["cyc:a", "cyc:b"]);
     // A moves both under Income while they are still childless — in a real book a retype is
     // a move — then parents `cyc:a` under `cyc:b`. B only parents `cyc:b` under `cyc:a`,
@@ -377,11 +383,50 @@ describe("mergeBooks repair ladder", () => {
     a = unwrap(updateAccount(a, { id: "cyc:a", parentId: "cyc:b" }, T(2)));
     const b = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: "cyc:a" }, T(3)));
     const merged = mergedBothOrders(a, b);
-    // `cyc:a` is cut loose; A's copy points into the cycle, so B's — still under Nest —
-    // decides. The cascade then follows it down from Expenses and undoes A's retype.
-    expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe("nest");
-    expect(merged.accounts.find((x) => x.id === "cyc:a")?.type).toBe("expense");
-    expect(merged.accounts.find((x) => x.id === "cyc:b")?.type).toBe("expense");
+    // `cyc:a` is cut loose; A's copy points into the cycle, so B's — still under Nest, still
+    // expense — is the only outside-the-cycle history candidate, and its type does not match
+    // `cyc:a`'s current type (income, from A's retype). The Income root is live, unposted and
+    // matches by construction, so it is preferred over that mismatched history candidate.
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe(ROOT.income);
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.type).toBe("income");
+    // The cascade still runs — just the other way: `cyc:b` still points at `cyc:a` (B's own
+    // edit), and now follows it from expense to income instead of the reverse.
+    expect(merged.accounts.find((x) => x.id === "cyc:b")?.type).toBe("income");
+  });
+
+  it("keeps the member's type instead of retyping it into a manufactured refusal", () => {
+    // BL-048's Finding 1: before this fix, `reattachTarget` took the newest outside-the-cycle
+    // history candidate regardless of type. Here that candidate (B's, still under Nest, still
+    // expense) mismatches `cyc:a`'s current type (income, from A's retype below), so rung 4's
+    // cascade retyped `cyc:a` and its posted leaf, and `entryMeaningBroken` then refused the
+    // whole merge for a type change no device actually made — although the pre-BL-048 rung,
+    // which never reattached at all and just parked the member, returned a book here, keeping
+    // the member's own (income) type. This rung must too.
+    const seeded = nested(["cyc:a", "cyc:b"]);
+    let a = unwrap(updateAccount(seeded, { id: "cyc:a", type: "income", parentId: ROOT.income }, T(1)));
+    a = unwrap(updateAccount(a, { id: "cyc:b", type: "income", parentId: ROOT.income }, T(1)));
+    a = unwrap(createAccount(a, { id: "cyc:a-leaf", parentId: "cyc:a", name: "Gift", type: "income", currency: "ILS", isPlaceholder: false }, T(2)));
+    a = unwrap(
+      postEntry(a, {
+        date: "2026-01-10",
+        description: "x",
+        postings: [
+          { accountId: "cyc:a-leaf", side: "credit", amount: 100 },
+          { accountId: "cash", side: "debit", amount: 100 },
+        ],
+      }, T(2)),
+    );
+    a = unwrap(updateAccount(a, { id: "cyc:a", parentId: "cyc:b" }, T(3)));
+    const b = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: "cyc:a" }, T(3)));
+
+    // Derived from the rule, not pasted from a run: `cyc:a`'s only outside-the-cycle history
+    // candidate mismatches its type, and the Income root is live and unposted, so — same as
+    // the test above, this time with a posted entry riding on the outcome — the root wins.
+    const merged = mergedBothOrders(a, b);
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe(ROOT.income);
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.type).toBe("income");
+    expect(merged.accounts.find((x) => x.id === "cyc:a-leaf")?.type).toBe("income");
+    expect(merged.journal).toHaveLength(1);
   });
 
   it("skips an outside parent the other device turned into a posted leaf, and falls through to the type root", () => {

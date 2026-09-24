@@ -215,4 +215,43 @@ describe("mergeBooks root collapse", () => {
     expect(bookFingerprint(unwrap(mergeBooks(merged, a)))).toBe(bookFingerprint(merged));
     expect(bookFingerprint(unwrap(mergeBooks(merged, b)))).toBe(bookFingerprint(merged));
   });
+
+  it("drops a relocated budget when the tombstone at the winner's key is newer, leaving no trace of its own", () => {
+    // Mirrors the test above, but B's removal (T(7)) is stamped later than A's budget (T(6)),
+    // so this time the tombstone already sitting at the winner's key outranks the relocated
+    // copy instead of losing to it. `moved` is then dropped with no tombstone of its own — the
+    // only place in the ladder that lets a live record disappear without leaving its own trace
+    // — because its own original key (the loser root's) was already sealed by the vacate step
+    // above, and the winner's key is still faithfully covered by B's own tombstone.
+    const a = unwrap(
+      setBudget(
+        device(ROOT, "a:leaf", "Groceries", T(1)),
+        { accountId: ROOT.expense, period: "month", currency: "ILS", limit: 100 },
+        T(6),
+      ),
+    );
+    const bWithBudget = unwrap(
+      setBudget(
+        device(B, "b:leaf", "Rent", T(2)),
+        { accountId: B.expense, period: "month", currency: "ILS", limit: 200 },
+        T(2),
+      ),
+    );
+    const b = unwrap(
+      removeBudget(bWithBudget, { accountId: B.expense, period: "month", currency: "ILS" }, T(7)),
+    );
+    const merged = mergedBothOrders(a, b);
+    // No budget survives anywhere: the vacate step tombstones A's original key (the loser
+    // root's), and B's own removal tombstones the winner's key — both keys accounted for, both
+    // as tombstones, neither shadowing a live record.
+    expect(merged.budgets).toHaveLength(0);
+    expect(merged.tombstones.filter((t) => t.kind === "budget").map((t) => t.key).sort()).toEqual(
+      [
+        budgetKeyOf({ accountId: ROOT.expense, period: "month", currency: "ILS" }),
+        budgetKeyOf({ accountId: B.expense, period: "month", currency: "ILS" }),
+      ].sort(),
+    );
+    expect(bookFingerprint(unwrap(mergeBooks(merged, a)))).toBe(bookFingerprint(merged));
+    expect(bookFingerprint(unwrap(mergeBooks(merged, b)))).toBe(bookFingerprint(merged));
+  });
 });

@@ -47,6 +47,7 @@ import {
 } from "../kernel";
 import type { PostingInput } from "../kernel/entry-validation";
 import { err, ok, type Result } from "../kernel/result";
+import { seedAccountId } from "../kernel/seed-ids";
 import type { LedgerRepository } from "../ports/ledger-repository";
 import { importJson as importBookJson } from "../adapters/import-book";
 import { bookToJson } from "../adapters/json-codec";
@@ -319,7 +320,10 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
       const created = createBook({ name: HOUSEHOLD_BOOK_NAME, homeCurrency }, nowIso());
       if (!created.ok) return created;
       let book = created.value;
-      const ids = new Map<string, string>();
+      // Every id is a function of the plan item, so the map is filled up front rather than
+      // learned from the book as accounts appear — and the account the loop just created no
+      // longer has to be found by diffing the id set.
+      const ids = new Map(plan.map((item) => [item.key, seedAccountId(item)]));
       for (const item of plan) {
         const parentId = item.parentKey === null ? null : ids.get(item.parentKey);
         if (item.parentKey !== null && parentId === undefined) {
@@ -327,10 +331,10 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
             parentKey: item.parentKey,
           });
         }
-        const before = new Set(book.accounts.map((a) => a.id));
         const next = createAccount(
           book,
           {
+            id: ids.get(item.key)!,
             parentId: parentId ?? null,
             name: i18n.t(item.nameKey, item.nameArgs),
             type: item.type,
@@ -341,7 +345,6 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
         );
         if (!next.ok) return next;
         book = next.value;
-        ids.set(item.key, book.accounts.find((a) => !before.has(a.id))!.id);
       }
       return commit(book);
     },

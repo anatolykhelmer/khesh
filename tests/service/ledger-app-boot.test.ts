@@ -157,4 +157,29 @@ describe("LedgerApp boot + createHousehold", () => {
     expect(cards).toHaveLength(3);
     expect(new Set(cards.map((a) => a.name)).size).toBe(3);
   });
+
+  it("mints the four roots at ids two devices will agree on", async () => {
+    const app = createLedgerApp(createMemoryRepository(null));
+    const book = unwrap(await app.createHousehold("ILS"));
+    expect(book.accounts.map((a) => a.id).sort()).toEqual([
+      "seed:assets",
+      "seed:expenses",
+      "seed:income",
+      "seed:liabilities",
+    ]);
+  });
+
+  it("gives a starter leaf its currency and a starter group none", async () => {
+    const app = createLedgerApp(createMemoryRepository(null));
+    const answers = applyOption(applyOption(EMPTY_ANSWERS, "household", "solo", "ILS"), "money", "cash", "ILS");
+    const book = unwrap(await app.createHousehold("ILS", planStarterBook(answers, "ILS")));
+    expect(book.accounts.find((a) => a.id === "seed:cash:ILS")).toMatchObject({
+      parentId: "seed:assets",
+      isPlaceholder: false,
+    });
+    expect(book.accounts.find((a) => a.id === "seed:groceries:ILS")).toMatchObject({
+      parentId: "seed:expenses",
+      isPlaceholder: false,
+    });
+  });
 });

@@ -10,6 +10,7 @@ import { AccountPicker } from "../components/AccountPicker";
 import { ChevronBack, ChevronForward, ArrowForward } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { accountPathLabel, formatDate, formatMinor, monthLabel } from "../format";
+import { entryFlow, flowScope } from "../entry-flow";
 import { isDefaultFilter, parseJournalFilter, toListJournalFilter } from "../journal-filter";
 import { journalRows } from "../journal-rows";
 import { useLedger } from "../ledger-context";
@@ -72,6 +73,7 @@ export function JournalScreen() {
 
   const entries = listed.value;
   const rows = journalRows(entries, due, currentBook, listFilter);
+  const scope = flowScope(currentBook, listFilter.accountId);
   const currencyOf = (accountId: string) =>
     currentBook.accounts.find((a) => a.id === accountId)?.currency ?? currentBook.homeCurrency;
 
@@ -186,6 +188,9 @@ export function JournalScreen() {
                 ? `/recurring/${row.due.ruleId}/post/${row.due.date}`
                 : `/journal/${row.entry.id}`;
             const { title, subtitle, amount } = entryDisplay(entry);
+            const flow = entryFlow(entry, currentBook, scope, { pending });
+            const amountClass =
+              flow && flow.tone !== "none" ? `journal-amount ${flow.tone}` : "journal-amount";
             return (
               <li key={key}>
                 <Link className={pending ? "journal-row pending" : "journal-row"} to={to}>
@@ -197,8 +202,8 @@ export function JournalScreen() {
                     {subtitle ? <div className="muted">{subtitle}</div> : null}
                     <div className="muted">{formatDate(entry.date)}</div>
                   </div>
-                  <div className="journal-amount">
-                    <Ltr>{amount}</Ltr>
+                  <div className={amountClass}>
+                    <Ltr>{flow ? flow.text : amount}</Ltr>
                   </div>
                 </Link>
               </li>

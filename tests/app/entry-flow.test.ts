@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { entryFlow, flowScope } from "../../src/app/entry-flow";
+import { entryFlow, flowScope, fxCounterpart } from "../../src/app/entry-flow";
 import { recordOpeningBalance } from "../../src/kernel";
 import type { Account, AccountType, Book, FxSpec, JournalEntry, Posting } from "../../src/kernel/types";
 import { NOW, unwrap } from "../helpers";
@@ -72,25 +72,25 @@ describe("flowScope", () => {
 describe("entryFlow", () => {
   it("signs income into an asset as a green gain", () => {
     const book = seeded();
-    expect(entryFlow(salaryIn, book, flowScope(book, "bank"))).toEqual({ tone: "pos", text: "+1,200.00 ₪" });
-    expect(entryFlow(salaryIn, book, flowScope(book, undefined))).toEqual({ tone: "pos", text: "+1,200.00 ₪" });
+    expect(entryFlow(salaryIn, book, flowScope(book, "bank"))).toEqual({ tone: "pos", text: "+1,200.00 ₪", currency: "ILS" });
+    expect(entryFlow(salaryIn, book, flowScope(book, undefined))).toEqual({ tone: "pos", text: "+1,200.00 ₪", currency: "ILS" });
   });
 
   it("signs spending from an asset as a red loss", () => {
     const book = seeded();
-    expect(entryFlow(groceriesFromBank, book, flowScope(book, "bank"))).toEqual({ tone: "neg", text: "-300.00 ₪" });
+    expect(entryFlow(groceriesFromBank, book, flowScope(book, "bank"))).toEqual({ tone: "neg", text: "-300.00 ₪", currency: "ILS" });
   });
 
   it("signs spending on a credit card as a red loss, since the debt grew", () => {
     const book = seeded();
-    expect(entryFlow(groceriesOnCard, book, flowScope(book, "card"))).toEqual({ tone: "neg", text: "-300.00 ₪" });
-    expect(entryFlow(groceriesOnCard, book, flowScope(book, undefined))).toEqual({ tone: "neg", text: "-300.00 ₪" });
+    expect(entryFlow(groceriesOnCard, book, flowScope(book, "card"))).toEqual({ tone: "neg", text: "-300.00 ₪", currency: "ILS" });
+    expect(entryFlow(groceriesOnCard, book, flowScope(book, undefined))).toEqual({ tone: "neg", text: "-300.00 ₪", currency: "ILS" });
   });
 
   it("reads a card repayment from each side, and as neutral against net worth", () => {
     const book = seeded();
-    expect(entryFlow(cardRepayment, book, flowScope(book, "card"))).toEqual({ tone: "pos", text: "+1,000.00 ₪" });
-    expect(entryFlow(cardRepayment, book, flowScope(book, "bank"))).toEqual({ tone: "neg", text: "-1,000.00 ₪" });
+    expect(entryFlow(cardRepayment, book, flowScope(book, "card"))).toEqual({ tone: "pos", text: "+1,000.00 ₪", currency: "ILS" });
+    expect(entryFlow(cardRepayment, book, flowScope(book, "bank"))).toEqual({ tone: "neg", text: "-1,000.00 ₪", currency: "ILS" });
     expect(entryFlow(cardRepayment, book, flowScope(book, undefined))).toBeNull();
   });
 
@@ -118,14 +118,14 @@ describe("entryFlow", () => {
       quoteCurrency: "ILS",
       quoteAmount: 7400,
     });
-    expect(entryFlow(usdToGroceries, book, flowScope(book, "usd"))).toEqual({ tone: "neg", text: "-20.00 $" });
+    expect(entryFlow(usdToGroceries, book, flowScope(book, "usd"))).toEqual({ tone: "neg", text: "-20.00 $", currency: "USD" });
   });
 
   it("shows a split entry as what it meant for each point of view", () => {
     const book = seeded();
-    expect(entryFlow(split, book, flowScope(book, "bank"))).toEqual({ tone: "neg", text: "-500.00 ₪" });
-    expect(entryFlow(split, book, flowScope(book, "savings"))).toEqual({ tone: "pos", text: "+200.00 ₪" });
-    expect(entryFlow(split, book, flowScope(book, undefined))).toEqual({ tone: "neg", text: "-300.00 ₪" });
+    expect(entryFlow(split, book, flowScope(book, "bank"))).toEqual({ tone: "neg", text: "-500.00 ₪", currency: "ILS" });
+    expect(entryFlow(split, book, flowScope(book, "savings"))).toEqual({ tone: "pos", text: "+200.00 ₪", currency: "ILS" });
+    expect(entryFlow(split, book, flowScope(book, undefined))).toEqual({ tone: "neg", text: "-300.00 ₪", currency: "ILS" });
     expect(entryFlow(split, book, flowScope(book, "groceries"))).toBeNull();
   });
 
@@ -133,7 +133,7 @@ describe("entryFlow", () => {
     const book = seeded();
     const assets = flowScope(book, ROOT.asset);
     expect(entryFlow(bankToSavings, book, assets)).toBeNull();
-    expect(entryFlow(salaryIn, book, assets)).toEqual({ tone: "pos", text: "+1,200.00 ₪" });
+    expect(entryFlow(salaryIn, book, assets)).toEqual({ tone: "pos", text: "+1,200.00 ₪", currency: "ILS" });
   });
 
   it("signs an opening balance without colour, up for an asset and down for a debt", () => {
@@ -143,8 +143,8 @@ describe("entryFlow", () => {
     const cardOpening = book.journal.find((e) => e.id === "opening:card");
     if (!bankOpening || !cardOpening) throw new Error("opening entries missing");
     const scope = flowScope(book, undefined);
-    expect(entryFlow(bankOpening, book, scope)).toEqual({ tone: "none", text: "+5,000.00 ₪" });
-    expect(entryFlow(cardOpening, book, scope)).toEqual({ tone: "none", text: "-3,000.00 ₪" });
+    expect(entryFlow(bankOpening, book, scope)).toEqual({ tone: "none", text: "+5,000.00 ₪", currency: "ILS" });
+    expect(entryFlow(cardOpening, book, scope)).toEqual({ tone: "none", text: "-3,000.00 ₪", currency: "ILS" });
   });
 
   it("leaves an opening balance as today under an equity filter", () => {
@@ -159,6 +159,7 @@ describe("entryFlow", () => {
     expect(entryFlow(groceriesFromBank, book, flowScope(book, "bank"), { pending: true })).toEqual({
       tone: "none",
       text: "-300.00 ₪",
+      currency: "ILS",
     });
   });
 
@@ -183,5 +184,17 @@ describe("entryFlow", () => {
     const book = seeded();
     const twoCurrencies = entry([credit("bank", 10000), credit("usd", 1000), debit("groceries", 13700)]);
     expect(entryFlow(twoCurrencies, book, flowScope(book, undefined))).toBeNull();
+  });
+});
+
+describe("fxCounterpart", () => {
+  const fx: FxSpec = { baseCurrency: "USD", baseAmount: 54000, quoteCurrency: "EUR", quoteAmount: 50000 };
+
+  it("names the received side when the row shows what left the source", () => {
+    expect(fxCounterpart(fx, "USD")).toEqual({ amount: 50000, currency: "EUR" });
+  });
+
+  it("names the sent side when the row shows what arrived", () => {
+    expect(fxCounterpart(fx, "EUR")).toEqual({ amount: 54000, currency: "USD" });
   });
 });

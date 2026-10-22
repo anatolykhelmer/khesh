@@ -1,9 +1,10 @@
 import { journalScope } from "../kernel";
-import type { Book, JournalEntry } from "../kernel";
+import type { Book, CurrencyCode, FxSpec, JournalEntry, MinorUnits } from "../kernel";
 import { formatSignedMinor } from "./format";
 
 export type FlowTone = "pos" | "neg" | "none";
-export type EntryFlow = { tone: FlowTone; text: string };
+/** `currency` is the one `text` is written in, so the row can name the other side of an exchange. */
+export type EntryFlow = { tone: FlowTone; text: string; currency: CurrencyCode };
 
 /**
  * The accounts a journal row's amount is signed against. Unfiltered, that is net worth:
@@ -63,5 +64,21 @@ export function entryFlow(
   return {
     tone: muted ? "none" : amount > 0 ? "pos" : "neg",
     text: formatSignedMinor(amount, currency),
+    currency,
   };
+}
+
+/**
+ * The side of an exchange the row's amount does not already show. Viewed from the source
+ * account the row shows what left it, so the subtitle names what arrived; everywhere else
+ * the row shows what arrived, so the subtitle names what was paid. Either way both sides of
+ * the rate stay on screen, and neither is printed twice.
+ */
+export function fxCounterpart(
+  fx: FxSpec,
+  shownCurrency: CurrencyCode,
+): { amount: MinorUnits; currency: CurrencyCode } {
+  return shownCurrency === fx.baseCurrency
+    ? { amount: fx.quoteAmount, currency: fx.quoteCurrency }
+    : { amount: fx.baseAmount, currency: fx.baseCurrency };
 }

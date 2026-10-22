@@ -10,7 +10,7 @@ import { AccountPicker } from "../components/AccountPicker";
 import { ChevronBack, ChevronForward, ArrowForward } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { accountPathLabel, formatDate, formatMinor, monthLabel } from "../format";
-import { entryFlow, flowScope } from "../entry-flow";
+import { entryFlow, flowScope, fxCounterpart, type EntryFlow } from "../entry-flow";
 import { isDefaultFilter, parseJournalFilter, toListJournalFilter } from "../journal-filter";
 import { journalRows } from "../journal-rows";
 import { useLedger } from "../ledger-context";
@@ -77,7 +77,10 @@ export function JournalScreen() {
   const currencyOf = (accountId: string) =>
     currentBook.accounts.find((a) => a.id === accountId)?.currency ?? currentBook.homeCurrency;
 
-  function entryDisplay(entry: JournalEntry): { title: string; subtitle: ReactNode; amount: string } {
+  function entryDisplay(
+    entry: JournalEntry,
+    flow: EntryFlow | null,
+  ): { title: string; subtitle: ReactNode; amount: string } {
     const shape = inferEntryLines(entry);
     const title =
       entry.kind === "opening"
@@ -88,10 +91,14 @@ export function JournalScreen() {
       const fromPath = accountPathLabel(currentBook, shape.fromAccountId);
       const toPath = accountPathLabel(currentBook, shape.lines[0].toAccountId);
       if (shape.fx) {
+        const other = fxCounterpart(
+          shape.fx,
+          flow?.currency ?? currencyOf(shape.lines[0].toAccountId),
+        );
         subtitle = (
           <>
             {fromPath} <span className="flow-arrow"><ArrowForward /></span> {toPath} ·{" "}
-            <Ltr>{formatMinor(shape.fromAmount, shape.fx.baseCurrency)}</Ltr>
+            <Ltr>{formatMinor(other.amount, other.currency)}</Ltr>
           </>
         );
       } else if (shape.lines.length === 1) {
@@ -112,12 +119,12 @@ export function JournalScreen() {
     } else if (entry.kind === "opening") {
       subtitle = t("journal.opening");
     }
-    const amount = shape
+    const fallback = shape
       ? formatMinor(shape.total, currencyOf(shape.lines[0].toAccountId))
       : entry.postings[0]
         ? formatMinor(entry.postings[0].amount, currencyOf(entry.postings[0].accountId))
         : "";
-    return { title, subtitle, amount };
+    return { title, subtitle, amount: flow ? flow.text : fallback };
   }
 
   return (
@@ -187,8 +194,8 @@ export function JournalScreen() {
               row.kind === "pending"
                 ? `/recurring/${row.due.ruleId}/post/${row.due.date}`
                 : `/journal/${row.entry.id}`;
-            const { title, subtitle, amount } = entryDisplay(entry);
             const flow = entryFlow(entry, currentBook, scope, { pending });
+            const { title, subtitle, amount } = entryDisplay(entry, flow);
             const amountClass =
               flow && flow.tone !== "none" ? `journal-amount ${flow.tone}` : "journal-amount";
             return (
@@ -203,7 +210,7 @@ export function JournalScreen() {
                     <div className="muted">{formatDate(entry.date)}</div>
                   </div>
                   <div className={amountClass}>
-                    <Ltr>{flow ? flow.text : amount}</Ltr>
+                    <Ltr>{amount}</Ltr>
                   </div>
                 </Link>
               </li>

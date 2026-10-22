@@ -5,6 +5,7 @@ import {
   formatMinor,
   formatRate,
   formatRelativeTime,
+  formatSignedMinor,
   formatTurnoverField,
   monthLabel,
   relativeSyncTime,
@@ -61,6 +62,20 @@ describe("formatMinor", () => {
   it("keeps the sign when the integer part is zero", () => {
     // "-0.50" splits to whole "-0"; Number("-0") is -0 and Intl must render its sign.
     expect(formatMinor(-50, "ILS")).toBe("-0.50 ₪");
+  });
+});
+
+describe("formatSignedMinor", () => {
+  it("puts an explicit plus on a gain", () => {
+    expect(formatSignedMinor(120000, "ILS")).toBe("+1,200.00 ₪");
+  });
+
+  it("keeps formatMinor's minus on a loss", () => {
+    expect(formatSignedMinor(-30000, "ILS")).toBe("-300.00 ₪");
+  });
+
+  it("leaves zero unsigned", () => {
+    expect(formatSignedMinor(0, "ILS")).toBe("0.00 ₪");
   });
 });
 

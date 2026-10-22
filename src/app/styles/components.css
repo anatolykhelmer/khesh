@@ -427,6 +427,17 @@ legend + .choice {
   white-space: nowrap;
 }
 
+/* Which way the row moved the viewed net position (entry-flow.ts). The sign carries the
+   meaning on its own; colour only makes a long list scannable. Pending and opening rows
+   never receive a tone class, so they keep their own muted or plain ink. */
+.journal-amount.pos {
+  color: var(--pos);
+}
+
+.journal-amount.neg {
+  color: var(--neg);
+}
+
 /* A pending row is not money yet, so it reads as a quieter, greyed-out version of a
    confirmed one rather than gaining any attention-grabbing colour of its own. */
 .journal-row.pending .journal-title,

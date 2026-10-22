@@ -28,6 +28,15 @@ export function formatMinor(minor: number, currency: string): string {
 }
 
 /**
+ * A movement rather than a balance: a gain carries an explicit "+", so the sign alone says
+ * which way the money went even where colour is lost. A loss keeps `formatMinor`'s minus;
+ * zero stays unsigned.
+ */
+export function formatSignedMinor(minor: number, currency: string): string {
+  return minor > 0 ? `+${formatMinor(minor, currency)}` : formatMinor(minor, currency);
+}
+
+/**
  * Display-only rate implied by the two amounts on an entry. Never stored or used
  * to compute an amount — the amounts the user typed are the source of truth.
  */

@@ -5,6 +5,7 @@ import {
   formatMinor,
   formatRate,
   formatRelativeTime,
+  formatRunningBalance,
   formatSignedMinor,
   formatTurnoverField,
   monthLabel,
@@ -109,6 +110,22 @@ describe("formatAccountBalance", () => {
 
   it("shows a zero in the home currency when a group holds nothing", () => {
     expect(formatAccountBalance({ kind: "placeholder", balances: {} }, "ILS")).toBe("0.00 ₪");
+  });
+});
+
+describe("formatRunningBalance", () => {
+  it("prints one currency as one amount", () => {
+    expect(formatRunningBalance({ USD: 535350 }, "USD")).toBe("5,353.50 $");
+  });
+
+  it("puts the home currency first and the rest alphabetically", () => {
+    expect(formatRunningBalance({ ILS: 1000, EUR: 150000, USD: 1006000 }, "USD")).toBe(
+      "10,060.00 $ · 1,500.00 € · 10.00 ₪",
+    );
+  });
+
+  it("keeps a zero, which formatAccountBalance would drop", () => {
+    expect(formatRunningBalance({ EUR: 150000, USD: 0 }, "USD")).toBe("0.00 $ · 1,500.00 €");
   });
 });
 

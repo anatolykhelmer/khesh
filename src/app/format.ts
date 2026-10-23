@@ -118,6 +118,15 @@ export function relativeSyncTime(
   return Number.isFinite(ms) ? formatRelativeTime(ms, now, locale) : null;
 }
 
+/** Home currency first, the rest alphabetically: the order every multi-currency figure uses. */
+function homeFirst(homeCurrency: CurrencyCode) {
+  return ([a]: [string, number], [b]: [string, number]): number => {
+    if (a === homeCurrency) return -1;
+    if (b === homeCurrency) return 1;
+    return a.localeCompare(b);
+  };
+}
+
 /**
  * A leaf shows its one amount. A group shows every non-zero currency it holds, home
  * currency first and the rest alphabetically, joined with " · ". A group holding
@@ -130,13 +139,23 @@ export function formatAccountBalance(
   if (balance.kind === "leaf") return formatMinor(balance.amount, balance.currency);
   const parts = Object.entries(balance.balances)
     .filter(([, amount]) => amount !== 0)
-    .sort(([a], [b]) => {
-      if (a === homeCurrency) return -1;
-      if (b === homeCurrency) return 1;
-      return a.localeCompare(b);
-    })
+    .sort(homeFirst(homeCurrency))
     .map(([currency, amount]) => formatMinor(amount, currency));
   return parts.length === 0 ? formatMinor(0, homeCurrency) : parts.join(" · ");
+}
+
+/**
+ * The balance a journal row leaves behind, in every currency the entry moved. Unlike
+ * `formatAccountBalance` a zero stays: an account this entry emptied is worth seeing.
+ */
+export function formatRunningBalance(
+  balances: Record<CurrencyCode, number>,
+  homeCurrency: CurrencyCode,
+): string {
+  return Object.entries(balances)
+    .sort(homeFirst(homeCurrency))
+    .map(([currency, amount]) => formatMinor(amount, currency))
+    .join(" · ");
 }
 
 export type TurnoverField = keyof Turnover;

@@ -21,6 +21,7 @@ import {
   recordOpeningBalance,
   recurrenceEntryId,
   removeBudget,
+  runningBalances,
   setBudget,
   setRecurrencePaused as kernelSetRecurrencePaused,
   skipOccurrence as kernelSkipOccurrence,
@@ -44,6 +45,7 @@ import {
   type PeriodBreakdown,
   type PeriodTotals,
   type RecurrenceInput,
+  type RunningBalances,
 } from "../kernel";
 import type { PostingInput } from "../kernel/entry-validation";
 import { err, ok, type Result } from "../kernel/result";
@@ -680,6 +682,10 @@ export function createLedgerApp(repo: LedgerRepository, hooks: LedgerAppHooks = 
 
     balanceOf(book: Book, accountId: string): Result<AccountBalance> {
       return balance(book, accountId);
+    },
+
+    runningBalances(book: Book, accountId: string): Result<RunningBalances> {
+      return runningBalances(book, accountId);
     },
 
     balanceInRange(

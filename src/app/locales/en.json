@@ -390,7 +390,8 @@
     "openingBalance": "Opening balance",
     "transfer": "Transfer",
     "opening": "Opening",
-    "categoriesCount": "{{count}} categories"
+    "categoriesCount": "{{count}} categories",
+    "balanceAfter": "Balance:"
   },
   "entryDetail": {
     "titleEntry": "Entry",

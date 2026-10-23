@@ -513,6 +513,52 @@ export function matchesJournalFilter(
   return true;
 }
 
+/** The journal's one display order: newest date first, then newest id within a day. */
+function newestFirst(a: JournalEntry, b: JournalEntry): number {
+  if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+  return a.id < b.id ? 1 : -1;
+}
+
+/** Per entry id, the filtered subtree's balance after that entry, by currency. */
+export type RunningBalances = Map<string, Record<CurrencyCode, number>>;
+
+/**
+ * The subtree's balance after each entry that touches it, statement-style. Only the
+ * currencies an entry moved inside the subtree are present, so a dollar spend in a group
+ * that also holds euros carries the dollar total alone, and a transfer between two of the
+ * group's own accounts carries a balance that did not change.
+ *
+ * Entries run in the reverse of `journal()`'s order — the same comparator, so a balance
+ * can never disagree with the row it sits under — and every posting is signed as
+ * `balance()` signs it, so the latest entry's figure is the account's balance and a debt
+ * reads as a positive number.
+ */
+export function runningBalances(book: Book, accountId: string): Result<RunningBalances> {
+  const account = findAccount(book, accountId);
+  if (!account) return err("ACCOUNT_NOT_FOUND", "Account not found", { id: accountId });
+
+  const subtree = new Map(
+    [account, ...descendants(book, accountId)].map((a): [string, Account] => [a.id, a]),
+  );
+  const running: Record<CurrencyCode, number> = {};
+  const result: RunningBalances = new Map();
+  for (const entry of [...book.journal].sort((a, b) => newestFirst(b, a))) {
+    const touched = new Set<CurrencyCode>();
+    for (const posting of entry.postings) {
+      const owner = subtree.get(posting.accountId);
+      if (owner === undefined) continue;
+      const debit = posting.side === "debit" ? posting.amount : 0;
+      const credit = posting.side === "credit" ? posting.amount : 0;
+      running[owner.currency] = (running[owner.currency] ?? 0) + signedAmount(owner.type, debit, credit);
+      touched.add(owner.currency);
+    }
+    // An entry with no posting in the subtree is not one of its rows: no balance to show.
+    if (touched.size === 0) continue;
+    result.set(entry.id, Object.fromEntries([...touched].map((c) => [c, running[c]])));
+  }
+  return ok(result);
+}
+
 export function journal(book: Book, filter?: JournalFilter): Result<Book["journal"]> {
   if (filter?.from !== undefined && !isCalendarDate(filter.from)) {
     return err("ENTRY_DATE_INVALID", `Invalid date ${filter.from}`, { date: filter.from });
@@ -526,9 +572,6 @@ export function journal(book: Book, filter?: JournalFilter): Result<Book["journa
 
   const scope = journalScope(book, filter?.accountId);
   const rows = book.journal.filter((entry) => matchesJournalFilter(entry, filter, scope));
-  rows.sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
-    return a.id < b.id ? 1 : -1;
-  });
+  rows.sort(newestFirst);
   return ok(rows.map((entry) => structuredClone(entry)));
 }

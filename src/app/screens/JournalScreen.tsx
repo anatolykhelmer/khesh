@@ -9,7 +9,7 @@ import type { YearMonth } from "../../service/dates";
 import { AccountPicker } from "../components/AccountPicker";
 import { ChevronBack, ChevronForward, ArrowForward } from "../components/icons";
 import { Ltr } from "../components/Ltr";
-import { accountPathLabel, formatDate, formatMinor, monthLabel } from "../format";
+import { accountPathLabel, formatDate, formatMinor, formatRunningBalance, monthLabel } from "../format";
 import { entryFlow, flowScope, fxCounterpart, type EntryFlow } from "../entry-flow";
 import { isDefaultFilter, parseJournalFilter, toListJournalFilter } from "../journal-filter";
 import { journalRows } from "../journal-rows";
@@ -74,6 +74,17 @@ export function JournalScreen() {
   const entries = listed.value;
   const rows = journalRows(entries, due, currentBook, listFilter);
   const scope = flowScope(currentBook, listFilter.accountId);
+  // A running balance only means something for one account or group of assets or
+  // liabilities: `scope` is empty for a category filter and is net worth when unfiltered.
+  const balances =
+    listFilter.accountId !== undefined && scope.size > 0
+      ? app.runningBalances(currentBook, listFilter.accountId)
+      : null;
+  const balanceAfter = (entryId: string): string | null => {
+    if (!balances?.ok) return null;
+    const after = balances.value.get(entryId);
+    return after ? formatRunningBalance(after, currentBook.homeCurrency) : null;
+  };
   const currencyOf = (accountId: string) =>
     currentBook.accounts.find((a) => a.id === accountId)?.currency ?? currentBook.homeCurrency;
 
@@ -198,6 +209,8 @@ export function JournalScreen() {
             const { title, subtitle, amount } = entryDisplay(entry, flow);
             const amountClass =
               flow && flow.tone !== "none" ? `journal-amount ${flow.tone}` : "journal-amount";
+            // Pending rows are not in the book, so they have no balance and shift none.
+            const balanceText = row.kind === "entry" ? balanceAfter(row.entry.id) : null;
             return (
               <li key={key}>
                 <Link className={pending ? "journal-row pending" : "journal-row"} to={to}>
@@ -211,6 +224,12 @@ export function JournalScreen() {
                   </div>
                   <div className={amountClass}>
                     <Ltr>{amount}</Ltr>
+                    {balanceText ? (
+                      <div className="journal-balance">
+                        <span className="visually-hidden">{t("journal.balanceAfter")} </span>
+                        <Ltr>{balanceText}</Ltr>
+                      </div>
+                    ) : null}
                   </div>
                 </Link>
               </li>

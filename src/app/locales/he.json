@@ -393,7 +393,8 @@
     "openingBalance": "יתרת פתיחה",
     "transfer": "העברה",
     "opening": "פתיחה",
-    "categoriesCount": "{{count}} קטגוריות"
+    "categoriesCount": "{{count}} קטגוריות",
+    "balanceAfter": "יתרה:"
   },
   "entryDetail": {
     "titleEntry": "תנועה",

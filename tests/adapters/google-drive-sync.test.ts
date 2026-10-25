@@ -391,12 +391,14 @@ function fakeGis() {
   let callback: (response: { access_token?: string; expires_in?: number; error?: string }) => void =
     () => undefined;
   let clients = 0;
+  let loginHint: string | undefined;
   (globalThis as { google?: unknown }).google = {
     accounts: {
       oauth2: {
-        initTokenClient(config: { callback: typeof callback }) {
+        initTokenClient(config: { callback: typeof callback; login_hint?: string }) {
           clients += 1;
           callback = config.callback;
+          loginHint = config.login_hint;
           return {
             requestAccessToken(options?: Prompt) {
               requests.push(options);
@@ -410,6 +412,7 @@ function fakeGis() {
   return {
     requests,
     clients: () => clients,
+    loginHint: () => loginHint,
     grant: (accessToken: string) => callback({ access_token: accessToken, expires_in: 3600 }),
     deny: () => callback({ error: "popup" }),
   };
@@ -464,6 +467,24 @@ describe("google auth token requests", () => {
 
     expect(unwrap(await auth.getToken(false))).toBe("tok-9");
     expect(gis.requests).toHaveLength(1);
+  });
+
+  it("names the stored account to Google, so a silent request skips the account chooser", async () => {
+    const gis = fakeGis();
+    const auth = createGoogleAuth("client-1", "a@b.c");
+    void auth.getToken(false);
+    await Promise.resolve();
+    // Without a hint, a browser signed in to several Google accounts answers every silent
+    // request after a reload with the chooser — `prompt: ""` only skips the consent screen.
+    expect(gis.loginHint()).toBe("a@b.c");
+  });
+
+  it("sends no hint when no account is known yet", async () => {
+    const gis = fakeGis();
+    const auth = createGoogleAuth("client-1", null);
+    void auth.getToken(true);
+    await Promise.resolve();
+    expect(gis.loginHint()).toBeUndefined();
   });
 
   it("a tap waits out a silent request rather than settling for its answer", async () => {

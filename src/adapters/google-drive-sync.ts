@@ -25,6 +25,7 @@ type Gis = {
       initTokenClient(config: {
         client_id: string;
         scope: string;
+        login_hint?: string;
         callback: (response: TokenResponse) => void;
         error_callback?: (error: { type?: string }) => void;
       }): TokenClient;
@@ -63,8 +64,13 @@ export interface GoogleAuth {
 
 /** In-memory hourly token. There are no refresh tokens in a pure frontend; when the
  * silent path fails (popup blocked without a user gesture), callers surface
- * needsAuth and retry from a tap. */
-export function createGoogleAuth(clientId: string): GoogleAuth {
+ * needsAuth and retry from a tap.
+ *
+ * `loginHint` is the account this device last connected as. The token dies with the page,
+ * so every reload asks Google again, and `prompt: ""` only skips the consent screen: a
+ * browser signed in to several Google accounts answers a request that names none with the
+ * account chooser, every time. */
+export function createGoogleAuth(clientId: string, loginHint: string | null = null): GoogleAuth {
   let token: string | null = null;
   let expiresAt = 0;
   /** The one request in flight, shared by every caller that arrives while it runs.
@@ -81,6 +87,7 @@ export function createGoogleAuth(clientId: string): GoogleAuth {
       client = gis()!.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: SCOPE,
+        ...(loginHint ? { login_hint: loginHint } : {}),
         callback: (response) => pending?.callback(response),
         error_callback: () => pending?.callback({ error: "popup" }),
       });

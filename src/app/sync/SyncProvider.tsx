@@ -34,7 +34,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   if (sessionRef.current === null) {
     sessionRef.current = createSyncSession({
       clientId: CLIENT_ID,
-      createAuth: () => createGoogleAuth(CLIENT_ID),
+      createAuth: (loginHint) => createGoogleAuth(CLIENT_ID, loginHint),
       createStore: createDriveSyncStore,
       createEngine: createSyncEngine,
       metaStore: createSyncMetaStore(),

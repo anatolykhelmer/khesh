@@ -29,8 +29,8 @@ export { isCalendarDate } from "./dates";
 export { validateBook } from "./validate";
 export { EPOCH, normalizeBook } from "./normalize";
 export type { StoredBook } from "./normalize";
-export { accountPath, balance, balanceAsOf, balanceInRange, balancesByAccount, budgetReport, chart, journal, journalScope, matchesJournalFilter, periodBreakdown, periodTotals, trialBalance, turnoverInRange } from "./queries";
-export type { AccountTurnover, BudgetReport, BudgetRow, DateBounds, JournalFilter, PeriodBreakdown, PeriodSlice, PeriodTotals, Turnover } from "./queries";
+export { accountPath, balance, balanceAsOf, balanceInRange, balancesByAccount, budgetReport, chart, journal, journalScope, matchesJournalFilter, periodBreakdown, periodTotals, runningBalances, trialBalance, turnoverInRange } from "./queries";
+export type { AccountTurnover, BudgetReport, BudgetRow, DateBounds, JournalFilter, PeriodBreakdown, PeriodSlice, PeriodTotals, RunningBalances, Turnover } from "./queries";
 export type {
   Account,
   AccountBalance,

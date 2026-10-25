@@ -425,6 +425,7 @@ legend + .choice {
 
 .journal-amount {
   white-space: nowrap;
+  text-align: end;
 }
 
 /* Which way the row moved the viewed net position (entry-flow.ts). The sign carries the
@@ -436,6 +437,13 @@ legend + .choice {
 
 .journal-amount.neg {
   color: var(--neg);
+}
+
+/* The balance an entry left behind. Its own colour keeps the row's red or green tone off it:
+   the tone is about the movement, not about where the account ended up. */
+.journal-balance {
+  color: var(--ink-muted);
+  font-size: var(--t-sm);
 }
 
 /* A pending row is not money yet, so it reads as a quieter, greyed-out version of a

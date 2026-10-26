@@ -62,7 +62,8 @@ export type ConnectionIO = {
 
 export type SyncSessionPorts = {
   clientId: string;
-  createAuth: () => GoogleAuth;
+  /** `loginHint`: the account to ask Google for, when this device already knows it. */
+  createAuth: (loginHint: string | null) => GoogleAuth;
   createStore: (io: ConnectionIO) => SyncStorePort;
   createEngine: (deps: SyncEngineDeps) => SyncEngine;
   metaStore: SyncMetaStore;
@@ -231,14 +232,14 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
    * and that touches no session state. It is idempotent, which is what makes the
    * `superseded` early-returns free to release the same connection again a moment later.
    */
-  function openConnection(): Connection {
+  function openConnection(loginHint: string | null): Connection {
     const displaced = current;
     if (displaced) {
       void releaseConnection(displaced).catch((error: unknown) =>
         swallow("openConnection: release", error),
       );
     }
-    const auth = ports.createAuth();
+    const auth = ports.createAuth(loginHint);
     // `io` closes over `conn`, never over session-level state — that is the whole of
     // BL-053: a teardown abandons this object, so `getFileId` keeps answering the id this
     // connection actually holds instead of the null a shared ref would have been given.
@@ -457,7 +458,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
       // this may not commit into at all.
       if (erasing || disconnecting || connecting) return;
       resumeSettled = true;
-      const conn = openConnection();
+      const conn = openConnection(meta.accountEmail);
       conn.fileId = meta.fileId;
       connected = true;
       email = meta.accountEmail;
@@ -542,7 +543,7 @@ export function createSyncSession(ports: SyncSessionPorts): SyncSession {
     publish();
     try {
       const endsAtStart = userEnds;
-      const conn = openConnection();
+      const conn = openConnection(email);
       const token = await conn.auth.getToken(true);
       // Doomed, so let go of it — the same answer `applyAndFinalize` and `finalize` give
       // further down this flow, and for the same reason: a bare `return` leaves a connection

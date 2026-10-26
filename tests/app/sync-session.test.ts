@@ -906,6 +906,23 @@ describe("sync session: the book moving underneath", () => {
     void meta;
   });
 
+  it("hands the stored account to the auth it resumes with", async () => {
+    // The reload path: the token died with the page, so the first cycle asks Google again,
+    // and only the stored email lets it ask for that account instead of offering a chooser.
+    const hints: (string | null)[] = [];
+    const auth = createGatedAuth();
+    const { session } = makeSession({
+      metaStore: createGatedMetaStore({ connected: true, fileId: "file-1", accountEmail: "a@b.c" }),
+      createAuth: (loginHint: string | null) => {
+        hints.push(loginHint);
+        return auth;
+      },
+    });
+    session.setBook(bookWithEntry());
+    await flush();
+    expect(hints).toEqual(["a@b.c"]);
+  });
+
   it("does not commit a resumed connection whose book vanished while the load was in flight", async () => {
     // Reviewer-found gap in Task 5. `resumeStoredConnection`'s callback guarded only
     // `!meta.connected || connected` — not the book having vanished *while the load

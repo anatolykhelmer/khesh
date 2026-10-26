@@ -46,6 +46,19 @@ function mergedBothOrders(a: Book, b: Book): Book {
   return ab;
 }
 
+/** A book with `Cash` under Assets, `Nest` under Expenses, and `ids` as placeholder groups
+ * inside `Nest` — the shape a parent cycle needs: real categories, nested, at ids the
+ * fixture can name. `Cash` is the counter-account for `spend`, so a test that posts does
+ * not have to borrow a second book's accounts. */
+function nested(ids: readonly string[]): Book {
+  let book = unwrap(createAccount(realBook("ILS", T(0)), { id: "cash", parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, T(0)));
+  book = unwrap(createAccount(book, { id: "nest", parentId: ROOT.expense, name: "Nest", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+  for (const id of ids) {
+    book = unwrap(createAccount(book, { id, parentId: "nest", name: id.toUpperCase(), type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
+  }
+  return book;
+}
+
 describe("mergeBooks record LWW", () => {
   it("is idempotent: merging a book with itself returns that book, sorted", () => {
     const { book } = base();
@@ -155,7 +168,7 @@ describe("mergeBooks repair ladder", () => {
   it("keeps a resurrected account alive once a later rung drops what referenced it", () => {
     // B budgets Food and then retypes it; A deletes it. The delete is later, so the
     // union kills Food — but B's budget still points at it, so rung 1 brings it back,
-    // and rung 6 then drops that budget because Food is no longer an expense. The
+    // and rung 7 then drops that budget because Food is no longer an expense. The
     // reference the restore rested on is gone, so nothing would bring Food back a
     // second time: the restored record has to outrank the tombstone by itself, or
     // re-merging A deletes Food again and the two devices never settle. Rung 2 does
@@ -241,15 +254,6 @@ describe("mergeBooks repair ladder", () => {
     expect(child?.type).toBe("income");
   });
 
-  it("renames duplicate siblings deterministically (the doubled-onboarding case)", () => {
-    // Two devices onboarded separately: the same four root names at different ids.
-    const a = realBook("ILS", T(1));
-    const b = realBook("ILS", T(2), { asset: "b:asset", liability: "b:liability", income: "b:income", expense: "b:expense" });
-    const merged = mergedBothOrders(a, b);
-    const names = merged.accounts.filter((x) => x.name.startsWith("Assets")).map((x) => x.name).sort();
-    expect(names).toEqual(["Assets", "Assets 2"]);
-  });
-
   it("drops a budget whose account got retyped away from expense", () => {
     const { book, groupId } = base();
     const leafed = unwrap(createAccount(book, { parentId: groupId, name: "Cafes", type: "expense", currency: "ILS", isPlaceholder: false }, T(0)));
@@ -263,7 +267,7 @@ describe("mergeBooks repair ladder", () => {
 
   it("leaves a tombstone for the budget it drops, so the delete stops coming back", () => {
     // B removes the limit and retypes Food in the same instant; A still holds the limit.
-    // `later` hands a live/dead tie to the data, so B's tombstone loses — and rung 6 then
+    // `later` hands a live/dead tie to the data, so B's tombstone loses — and rung 7 then
     // drops the very record that beat it, because Food is no longer an expense. Writing
     // nothing would leave the merged book with no claim at all on that key: re-merging B
     // would adopt B's tombstone outright, so a merge that should be a no-op would hand
@@ -286,112 +290,230 @@ describe("mergeBooks repair ladder", () => {
     expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
   });
 
-  it("breaks a parent cycle by detaching its lowest-id member", () => {
-    const { book, groupId } = base();
-    const two = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
-    const otherId = two.accounts.find((x) => x.name === "Other")!.id;
+  it("breaks a parent cycle and hands the cut-loose member back its parent from outside it", () => {
+    const seeded = nested(["cyc:a", "cyc:b"]);
     // Each move is legal locally: wouldCreateCycle only ever sees one device's book.
-    const a = unwrap(updateAccount(two, { id: groupId, parentId: otherId }, T(1)));
-    const b = unwrap(updateAccount(two, { id: otherId, parentId: groupId }, T(1)));
+    const a = unwrap(updateAccount(seeded, { id: "cyc:a", parentId: "cyc:b" }, T(1)));
+    const b = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: "cyc:a" }, T(1)));
     const merged = mergedBothOrders(a, b);
-    const [low, high] = groupId < otherId ? [groupId, otherId] : [otherId, groupId];
-    expect(merged.accounts.find((x) => x.id === low)?.parentId).toBe(null);
-    expect(merged.accounts.find((x) => x.id === high)?.parentId).toBe(low);
+    // `cyc:a` is the lowest id, so it is the one cut loose. B still holds it under Nest,
+    // and that copy is the newest one that points outside the cycle, so back it goes.
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe("nest");
+    expect(merged.accounts.find((x) => x.id === "cyc:b")?.parentId).toBe("cyc:a");
+  });
+
+  it("sends a member whose every copy points into the cycle to the root of its type", () => {
+    const seeded = nested(["cyc:a", "cyc:b", "cyc:c"]);
+    // Both devices moved `cyc:a` under `cyc:b`, so no copy of it remembers a parent outside
+    // the cycle; the two different third edges are what close the ring.
+    let a = unwrap(updateAccount(seeded, { id: "cyc:a", parentId: "cyc:b" }, T(1)));
+    a = unwrap(updateAccount(a, { id: "cyc:b", parentId: "cyc:c" }, T(2)));
+    let b = unwrap(updateAccount(seeded, { id: "cyc:a", parentId: "cyc:b" }, T(1)));
+    b = unwrap(updateAccount(b, { id: "cyc:c", parentId: "cyc:a" }, T(2)));
+    const merged = mergedBothOrders(a, b);
+    // Not `nest`: nothing in the inputs says it belongs there any more.
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe(ROOT.expense);
   });
 
   it("breaks a cycle around the posting-holder instead of refusing, in both id orders", () => {
-    // The two repair rungs overlap here: a cycle whose members are one posted-to
-    // account and one plain group. Detaching a member clears its parent but leaves the
-    // other member pointing at it, so detaching the posted-to one hands rung 3 a
-    // children-and-postings pair and the whole merge refuses — which, under a
-    // lowest-id-only rule, is decided by nothing but how the two ULIDs happened to
-    // fall. Both arrangements are exercised, so neither draw can hide the other.
-    const runWith = (which: "low" | "high") => {
-      const { book, cashId, groupId } = base();
-      const two = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
-      const otherId = two.accounts.find((x) => x.name === "Other")!.id;
-      const [low, high] = groupId < otherId ? [groupId, otherId] : [otherId, groupId];
-      const poster = which === "low" ? low : high;
-      const free = which === "low" ? high : low;
-
+    // The two repair rungs overlap here: a cycle whose members are one posted-to account
+    // and one plain group. Detaching a member clears its parent but leaves the other member
+    // pointing at it, so cutting loose the posted-to one hands rung 3 a children-and-postings
+    // pair and the whole merge refuses. Which one is cut must therefore not depend on how the
+    // ids fall, so both arrangements are exercised.
+    const runWith = (poster: string) => {
+      const free = poster === "cyc:a" ? "cyc:b" : "cyc:a";
+      const seeded = nested(["cyc:a", "cyc:b"]);
       // A: the poster becomes a postable leaf, takes an entry, and moves under `free`.
-      let a = unwrap(updateAccount(two, { id: poster, isPlaceholder: false }, T(1)));
-      a = unwrap(
-        postEntry(a, {
-          date: "2026-01-10",
-          description: "x",
-          postings: [
-            { accountId: poster, side: "debit", amount: 100 },
-            { accountId: cashId, side: "credit", amount: 100 },
-          ],
-        }, T(2)),
-      );
+      let a = unwrap(updateAccount(seeded, { id: poster, isPlaceholder: false }, T(1)));
+      a = spend(a, "cash", poster, 100, T(2));
       a = unwrap(updateAccount(a, { id: poster, parentId: free }, T(3)));
       // B: `free` moves under the poster, which is still a placeholder over here.
-      const b = unwrap(updateAccount(two, { id: free, parentId: poster }, T(3)));
+      const b = unwrap(updateAccount(seeded, { id: free, parentId: poster }, T(3)));
 
       const merged = mergedBothOrders(a, b);
-      expect(merged.accounts.find((x) => x.id === free)?.parentId).toBe(null);
+      expect(merged.accounts.find((x) => x.id === free)?.parentId).toBe("nest");
       expect(merged.accounts.find((x) => x.id === poster)?.parentId).toBe(free);
       expect(merged.journal).toHaveLength(1);
       expect(unwrap(mergeBooks(merged, a))).toEqual(merged);
       expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
     };
 
-    runWith("low");
-    runWith("high");
+    runWith("cyc:a");
+    runWith("cyc:b");
   });
 
-  it("refuses, rather than leaving a leaf at the top level, when a detached group was posted to on a device that had not synced", () => {
-    // Rung 2 cuts a cycle member loose at the top level, where the child it still has keeps
-    // it a group. A device that had not seen that merge still holds the member where it
-    // was, and there it can move the child away, turn the member into a leaf and spend
-    // through it — every step legal on that book. Its copy of the member predates the
-    // detach, so the next merge keeps the top-level one, now childless and posted to.
-    // Forcing it off placeholder would hand the sync engine a top-level leaf, a book
-    // validateBook refuses; there is no parent to give it back, so the merge refuses.
+  it("repairs, instead of refusing, when a cut-loose group was posted to on a device that had not synced", () => {
+    // This is BL-080's `rootWithPostings` case, and this task is what closes it. Rung 2 used
+    // to park the cut-loose member at the top level; a device that had not seen that merge
+    // could move its child away, turn the member into a leaf and spend through it, and the
+    // next merge met a top-level account with postings — which rung 3 could only refuse,
+    // because there was no parent to give it. Now there is one.
     // Real-time order throughout: no device's clock runs ahead of another's.
-    const { book, cashId, groupId } = base();
-    const two = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
-    const [low, high] = [groupId, accountNamed(two, "Other").id].sort();
-    // A moves `high` under `low` and syncs. B, which has not seen that, moves `low` under
-    // `high` later and syncs too: the union is a cycle, and rung 2 detaches `low` — no
-    // entry posts to either — one tick past B's move.
-    const a1 = unwrap(updateAccount(two, { id: high, parentId: low }, T(1)));
-    const b1 = unwrap(updateAccount(two, { id: low, parentId: high }, T(4)));
-    const detached = mergedBothOrders(a1, b1);
-    expect(detached.accounts.find((x) => x.id === low)?.parentId).toBe(null);
-    // A, meanwhile and not yet synced again: `high` back under Expenses, then `low` made a
-    // leaf and spent through. Both before B's move, so both older than the detach.
-    let a2 = unwrap(updateAccount(a1, { id: high, parentId: ROOT.expense }, T(2)));
-    a2 = unwrap(updateAccount(a2, { id: low, isPlaceholder: false }, T(3)));
-    a2 = spend(a2, cashId, low, 100, T(3));
-    expect(unwrapErr(mergeBooks(detached, a2)).code).toBe("SYNC_MERGE_CONFLICT");
-    expect(unwrapErr(mergeBooks(a2, detached)).code).toBe("SYNC_MERGE_CONFLICT");
-    expect(unwrapErr(mergeBooks(detached, a2)).details).toEqual({ reason: "rootWithPostings" });
-    expect(unwrapErr(mergeBooks(a2, detached)).details).toEqual({ reason: "rootWithPostings" });
+    const seeded = nested(["cyc:a", "cyc:b"]);
+    const a1 = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: "cyc:a" }, T(1)));
+    const b1 = unwrap(updateAccount(seeded, { id: "cyc:a", parentId: "cyc:b" }, T(4)));
+    const repairedBook = mergedBothOrders(a1, b1);
+    expect(repairedBook.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe("nest");
+    // A, meanwhile and not yet synced again: `cyc:b` back under Nest, then `cyc:a` made a
+    // leaf and spent through. Both before B's move, so both older than the repair.
+    let a2 = unwrap(updateAccount(a1, { id: "cyc:b", parentId: "nest" }, T(2)));
+    a2 = unwrap(updateAccount(a2, { id: "cyc:a", isPlaceholder: false }, T(3)));
+    a2 = spend(a2, "cash", "cyc:a", 100, T(3));
+    const merged = mergedBothOrders(repairedBook, a2);
+    const member = merged.accounts.find((x) => x.id === "cyc:a");
+    expect(member?.parentId).toBe("nest");
+    expect(member?.isPlaceholder).toBe(false);
+    expect(merged.journal).toHaveLength(1);
   });
 
-  it("cascades the type onto accounts freed from a cycle", () => {
-    const { book, groupId } = base();
-    const two = unwrap(createAccount(book, { parentId: ROOT.expense, name: "Other", type: "expense", currency: "ILS", isPlaceholder: true }, T(0)));
-    const otherId = two.accounts.find((x) => x.name === "Other")!.id;
-    // A moves both under Income while they are still childless — in a real book a retype
-    // is a move — then parents Groups under Other. B only parents Other under Groups,
-    // keeping them expense. Each account's winner brings its own type, so the merged
-    // cycle is mistyped.
-    let a = unwrap(updateAccount(two, { id: groupId, type: "income", parentId: ROOT.income }, T(1)));
-    a = unwrap(updateAccount(a, { id: otherId, type: "income", parentId: ROOT.income }, T(1)));
-    a = unwrap(updateAccount(a, { id: groupId, parentId: otherId }, T(2)));
-    const b = unwrap(updateAccount(two, { id: otherId, parentId: groupId }, T(3)));
+  it("prefers a type-matching root over a differently-typed history candidate when freeing a cycle member", () => {
+    // Before BL-048's Finding 1, this rung took the newest outside-the-cycle history candidate
+    // regardless of type, which handed rung 4's cascade a reason to undo A's retype here (and,
+    // where a posted entry relied on the member, could turn that into a manufactured
+    // SYNC_MERGE_CONFLICT — see "keeps its type instead of retyping into a manufactured
+    // refusal" below). It now prefers a same-type answer first, so the retype survives and the
+    // cascade runs onto the sibling that still disagrees with it instead.
+    const seeded = nested(["cyc:a", "cyc:b"]);
+    // A moves both under Income while they are still childless — in a real book a retype is
+    // a move — then parents `cyc:a` under `cyc:b`. B only parents `cyc:b` under `cyc:a`,
+    // keeping both expense.
+    let a = unwrap(updateAccount(seeded, { id: "cyc:a", type: "income", parentId: ROOT.income }, T(1)));
+    a = unwrap(updateAccount(a, { id: "cyc:b", type: "income", parentId: ROOT.income }, T(1)));
+    a = unwrap(updateAccount(a, { id: "cyc:a", parentId: "cyc:b" }, T(2)));
+    const b = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: "cyc:a" }, T(3)));
     const merged = mergedBothOrders(a, b);
-    const [low, high] = groupId < otherId ? [groupId, otherId] : [otherId, groupId];
-    const detached = merged.accounts.find((x) => x.id === low);
-    const freed = merged.accounts.find((x) => x.id === high);
-    expect(detached?.parentId).toBe(null);
-    expect(freed?.parentId).toBe(low);
-    // The cascade only reaches `high` because the cycle was broken before it ran.
-    expect(freed?.type).toBe(detached?.type);
+    // `cyc:a` is cut loose; A's copy points into the cycle, so B's — still under Nest, still
+    // expense — is the only outside-the-cycle history candidate, and its type does not match
+    // `cyc:a`'s current type (income, from A's retype). The Income root is live, unposted and
+    // matches by construction, so it is preferred over that mismatched history candidate.
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe(ROOT.income);
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.type).toBe("income");
+    // The cascade still runs — just the other way: `cyc:b` still points at `cyc:a` (B's own
+    // edit), and now follows it from expense to income instead of the reverse.
+    expect(merged.accounts.find((x) => x.id === "cyc:b")?.type).toBe("income");
+  });
+
+  it("cascades onto a member actually freed from a cycle, when no type-root exists to prefer", () => {
+    // The test above shows the ladder now steering *away* from a cascade wherever a type-root
+    // is available, which leaves rung 4 retyping a member genuinely freed from a cycle (the
+    // third answer: a mismatched candidate accepted only because no root of that type exists)
+    // without a test anywhere in this file. Same setup as the test above, but both inputs have
+    // the Income root removed before merging — the "imported book" case the docstring already
+    // allows for the fourth answer, and it applies here too, one answer earlier. Nothing else
+    // in either book still points at that root: `cyc:a`'s own final parent is `cyc:b`, and the
+    // draft's `cyc:b` is B's record, which never left Nest.
+    const seeded = nested(["cyc:a", "cyc:b"]);
+    let a = unwrap(updateAccount(seeded, { id: "cyc:a", type: "income", parentId: ROOT.income }, T(1)));
+    a = unwrap(updateAccount(a, { id: "cyc:b", type: "income", parentId: ROOT.income }, T(1)));
+    a = unwrap(updateAccount(a, { id: "cyc:a", parentId: "cyc:b" }, T(2)));
+    const b = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: "cyc:a" }, T(3)));
+    const dropIncomeRoot = (book: Book): Book => ({
+      ...book,
+      accounts: book.accounts.filter((x) => x.id !== ROOT.income),
+    });
+    const merged = mergedBothOrders(dropIncomeRoot(a), dropIncomeRoot(b));
+    // `cyc:a` is cut loose exactly as above; its only outside-the-cycle candidate is B's, whose
+    // named parent (`nest`) is expense, mismatching `cyc:a`'s income — so the first answer is
+    // rejected. With the Income root gone, the second answer has nothing to offer either, so
+    // the third answer accepts that same mismatched candidate anyway, and rung 4 retypes
+    // `cyc:a` — a member actually freed from the cycle — back to expense to match `nest`.
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe("nest");
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.type).toBe("expense");
+    expect(merged.accounts.find((x) => x.id === "cyc:b")?.type).toBe("expense");
+  });
+
+  it("keeps the member's type instead of retyping it into a manufactured refusal", () => {
+    // BL-048's Finding 1: before this fix, `reattachTarget` took the newest outside-the-cycle
+    // history candidate regardless of type. Here that candidate (B's, still under Nest, still
+    // expense) mismatches `cyc:a`'s current type (income, from A's retype below), so rung 4's
+    // cascade retyped `cyc:a` and its posted leaf, and `entryMeaningBroken` then refused the
+    // whole merge for a type change no device actually made — although the pre-BL-048 rung,
+    // which never reattached at all and just parked the member, returned a book here, keeping
+    // the member's own (income) type. This rung must too.
+    const seeded = nested(["cyc:a", "cyc:b"]);
+    let a = unwrap(updateAccount(seeded, { id: "cyc:a", type: "income", parentId: ROOT.income }, T(1)));
+    a = unwrap(updateAccount(a, { id: "cyc:b", type: "income", parentId: ROOT.income }, T(1)));
+    a = unwrap(createAccount(a, { id: "cyc:a-leaf", parentId: "cyc:a", name: "Gift", type: "income", currency: "ILS", isPlaceholder: false }, T(2)));
+    a = unwrap(
+      postEntry(a, {
+        date: "2026-01-10",
+        description: "x",
+        postings: [
+          { accountId: "cyc:a-leaf", side: "credit", amount: 100 },
+          { accountId: "cash", side: "debit", amount: 100 },
+        ],
+      }, T(2)),
+    );
+    a = unwrap(updateAccount(a, { id: "cyc:a", parentId: "cyc:b" }, T(3)));
+    const b = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: "cyc:a" }, T(3)));
+
+    // Derived from the rule, not pasted from a run: `cyc:a`'s only outside-the-cycle history
+    // candidate mismatches its type, and the Income root is live and unposted, so — same as
+    // the test above, this time with a posted entry riding on the outcome — the root wins.
+    const merged = mergedBothOrders(a, b);
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe(ROOT.income);
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.type).toBe("income");
+    expect(merged.accounts.find((x) => x.id === "cyc:a-leaf")?.type).toBe("income");
+    expect(merged.journal).toHaveLength(1);
+  });
+
+  it("checks the candidate's parent by its draft type, not the snapshot's own stale type", () => {
+    // Finding 1's re-review: the type gate above compared the history snapshot's own `type`
+    // against the member's, but that is not what decides whether rung 4's cascade fires — the
+    // parent's *draft* type does, and a snapshot can be perfectly accurate about the member
+    // while the parent it names has since been retyped by the other device. Three groups this
+    // time, so the member's own snapshot can carry the *right* type while still pointing at a
+    // parent the other device retyped out from under it.
+    const seeded = nested(["g1", "g2", "g3"]);
+    // A: g1 under g2 (still expense on A throughout), a posted leaf under g1, then g3 under g1.
+    let a = unwrap(updateAccount(seeded, { id: "g1", parentId: "g2" }, T(1)));
+    a = unwrap(createAccount(a, { id: "g1-leaf", parentId: "g1", name: "Leaf", type: "expense", currency: "ILS", isPlaceholder: false }, T(2)));
+    a = spend(a, "cash", "g1-leaf", 100, T(2));
+    a = unwrap(updateAccount(a, { id: "g3", parentId: "g1" }, T(3)));
+    // B, unsynced from the same `seeded`: retypes the still-childless g2 to a liability (a
+    // retype is a move, so g2 goes to the Liabilities root with it), then moves g1 under g3.
+    let b = unwrap(updateAccount(seeded, { id: "g2", type: "liability", parentId: ROOT.liability }, T(4)));
+    b = unwrap(updateAccount(b, { id: "g1", parentId: "g3" }, T(5)));
+
+    // Derived from the rule: the union ties g1 <-> g3 (B's newer g1 points at g3; A's g3 still
+    // points at g1), so g1 — the lower id, and not posted itself — is cut loose. Its winning
+    // record is B's (expense, unretyped), and its only outside-the-cycle history candidate is
+    // A's own copy, which names g2 — live, unposted, not reachable from g1, so `usable`, and
+    // its *own* type field still reads expense. But g2's type in the draft is liability (B's
+    // retype won the union for g2), so the gate must reject this candidate on the parent's
+    // current type, not accept it on the snapshot's. With no other type-matching history
+    // candidate and no reason to reject the Expense root, that root is what g1 lands on.
+    const merged = mergedBothOrders(a, b);
+    expect(merged.accounts.find((x) => x.id === "g1")?.parentId).toBe(ROOT.expense);
+    expect(merged.accounts.find((x) => x.id === "g1")?.type).toBe("expense");
+    expect(merged.accounts.find((x) => x.id === "g1-leaf")?.type).toBe("expense");
+    expect(merged.journal).toHaveLength(1);
+  });
+
+  it("skips an outside parent the other device turned into a posted leaf, and falls through to the type root", () => {
+    // `cyc:b` leaves Nest and `cyc:a` moves under it, which empties Nest — legal on A, so A
+    // un-flags Nest and spends through it. B, unsynced, only swaps `cyc:a` and `cyc:b`'s
+    // places inside Nest. The union ties them into a cycle, and the only outside parent
+    // `cyc:a`'s history remembers is Nest — which by now holds a posting and so cannot also
+    // take a child. Handing `cyc:a` to it anyway would give Nest both a child and a posting,
+    // exactly the pair rung 3 refuses; the rule instead skips a posted candidate and falls
+    // through to the type root.
+    const seeded = nested(["cyc:a", "cyc:b"]);
+    let a = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: ROOT.expense }, T(1)));
+    a = unwrap(updateAccount(a, { id: "cyc:a", parentId: "cyc:b" }, T(2)));
+    a = unwrap(updateAccount(a, { id: "nest", isPlaceholder: false }, T(3)));
+    a = spend(a, "cash", "nest", 100, T(3));
+    const b = unwrap(updateAccount(seeded, { id: "cyc:b", parentId: "cyc:a" }, T(2)));
+
+    const merged = mergedBothOrders(a, b);
+    // Not "nest": posted, so unusable. Not null: the type root is live and takes no postings.
+    expect(merged.accounts.find((x) => x.id === "cyc:a")?.parentId).toBe(ROOT.expense);
+    expect(merged.accounts.find((x) => x.id === "cyc:b")?.parentId).toBe("cyc:a");
+    expect(merged.accounts.find((x) => x.id === "nest")?.isPlaceholder).toBe(false);
+    expect(merged.journal).toHaveLength(1);
+    expect(unwrap(mergeBooks(merged, a))).toEqual(merged);
+    expect(unwrap(mergeBooks(merged, b))).toEqual(merged);
   });
 
   it("refuses a currency change under an entry the other device posted", () => {

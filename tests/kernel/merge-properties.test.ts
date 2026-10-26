@@ -385,10 +385,16 @@ function seedBook(ids: RootIds = ROOT): Book {
  */
 const SEED = seedBook();
 
+/** Apply more commands to a book that already exists — a device that kept working after a
+ * merge it has not seen. `fork` is this, starting from the seed. */
+function advance(book: Book, ops: Op[]): Book {
+  let next = book;
+  for (const op of ops) next = applyOp(next, op);
+  return next;
+}
+
 function fork(ops: Op[]): Book {
-  let book = structuredClone(SEED);
-  for (const op of ops) book = applyOp(book, op);
-  return book;
+  return advance(structuredClone(SEED), ops);
 }
 
 /** Violations rather than a bare `false`, so a failure names the missing repair. */
@@ -536,6 +542,47 @@ describe("mergeBooks properties", () => {
         if (merged.ok) expect(violations(merged.value)).toEqual([]);
       }),
       { numRuns: 750 },
+    );
+  }, 30_000);
+
+  it("a repaired merge survives a device that kept editing the book it repaired", () => {
+    fc.assert(
+      fc.property(
+        fc.array(arbOp, { maxLength: 10 }),
+        fc.array(arbOp, { maxLength: 10 }),
+        fc.array(arbOp, { maxLength: 6 }),
+        (opsA, opsB, opsAfter) => {
+          ids.next = 1000; // same inputs => same ids, so a counterexample replays
+          const a = fork(opsA);
+          const b = fork(opsB);
+          const first = mergeBooks(a, b);
+          // A refusal is a legitimate outcome and the first property already covers it;
+          // this stage is about what happens to a merge that returned a book.
+          if (!first.ok) return;
+          // B never saw that merge and went on editing its own book — the records the
+          // repair rewrote are still live over there, at their pre-repair stamps.
+          const bLater = advance(b, opsAfter);
+          const ab = mergeBooks(first.value, bLater);
+          const ba = mergeBooks(bLater, first.value);
+          expect(ab.ok).toBe(ba.ok);
+          if (!ab.ok || !ba.ok) {
+            if (!ab.ok) expect(ab.error.code).toBe("SYNC_MERGE_CONFLICT");
+            if (!ba.ok) expect(ba.error.code).toBe("SYNC_MERGE_CONFLICT");
+            if (!ab.ok && !ba.ok) expect(ab.error).toEqual(ba.error);
+            return;
+          }
+          expect(ab.value).toEqual(ba.value);
+          expect(violations(ab.value)).toEqual([]);
+          expect(reinterpreted(ab.value, [first.value, bLater])).toEqual([]);
+          expect(vanished([first.value, bLater], ab.value)).toEqual([]);
+          expect(unwrap(mergeBooks(ab.value, ab.value))).toEqual(ab.value);
+          expect(unwrap(mergeBooks(ab.value, first.value))).toEqual(ab.value);
+          expect(unwrap(mergeBooks(ab.value, bLater))).toEqual(ab.value);
+        },
+      ),
+      // Three op arrays instead of two, so each scenario costs more than the first
+      // property's; this count keeps the file near the second it is budgeted for.
+      { numRuns: 500 },
     );
   }, 30_000);
 });

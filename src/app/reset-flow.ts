@@ -169,8 +169,8 @@ export type StartOverDeps = {
  * here. `startOver()` alone left it live: Continue then mints a seed, `book` goes
  * non-null, `SyncProvider`'s resume effect fires because the stored `connected` is still
  * true, and the engine's first cycle takes the union branch — the user's real book comes
- * back plus four duplicated root accounts, root ids being per-device. No choice screen,
- * no warning, and the spec's "merge is never offered when the local side holds no data"
+ * back, silently reviving the book the user meant to abandon. No choice screen, no
+ * warning, and the spec's "merge is never offered when the local side holds no data"
  * bypassed on the very path this screen was added for. The start-over warning even says
  * "connect Google Drive first", promising Drive is inert until you do.
  *

@@ -4,11 +4,13 @@ import { todayCalendarDate } from "../../service/dates";
 import { ChevronBack } from "../components/icons";
 import { DangerZone } from "../components/DangerZone";
 import { ImportBookButton } from "../components/ImportBookButton";
+import { LanguageChoice } from "../components/LanguageChoice";
+import { setLanguage } from "../i18n";
 import { SyncSection } from "../components/SyncSection";
 import { useLedger } from "../ledger-context";
 
 export function SettingsScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { book, app } = useLedger();
 
@@ -35,6 +37,17 @@ export function SettingsScreen() {
         </Link>
         <h1>{t("settings.title")}</h1>
       </div>
+
+      {/* Per-device, never part of the book: each family member on a shared book keeps
+          their own language. `useTranslation` re-renders on `languageChanged`, so the
+          checked row follows `setLanguage` without local state. */}
+      <h2 className="section-label">{t("settings.languageTitle")}</h2>
+      <LanguageChoice
+        name="settings-language"
+        value={i18n.language === "he" ? "he" : "en"}
+        onChange={setLanguage}
+      />
+      <p className="muted row-hint">{t("settings.languageHint")}</p>
 
       <ul className="settings-list group">
         <li className="settings-row">

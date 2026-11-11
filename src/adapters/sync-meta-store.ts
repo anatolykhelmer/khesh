@@ -1,4 +1,4 @@
-import { openDB, type IDBPDatabase } from "idb";
+import { createDbConnection } from "./idb-connection";
 
 export interface SyncMeta {
   connected: boolean;
@@ -32,23 +32,16 @@ const KEY = "current";
  * schema version stays untouched. Reads and writes are best effort: losing this
  * record only means reconnecting, never losing book data. */
 export function createSyncMetaStore(dbName = "khesh-sync"): SyncMetaStore {
-  let dbPromise: Promise<IDBPDatabase> | undefined;
-  const getDb = () => {
-    if (!dbPromise) {
-      dbPromise = openDB(dbName, 1, {
-        upgrade(db) {
-          if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
-        },
-      });
-    }
-    return dbPromise;
-  };
+  const withDb = createDbConnection(dbName, 1, (db) => {
+    if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+  });
 
   return {
     async load(): Promise<SyncMeta> {
       try {
-        const db = await getDb();
-        const value = (await db.get(STORE, KEY)) as Partial<SyncMeta> | undefined;
+        const value = (await withDb((db) => db.get(STORE, KEY))) as
+          | Partial<SyncMeta>
+          | undefined;
         return { ...EMPTY_SYNC_META, ...value };
       } catch {
         return EMPTY_SYNC_META;
@@ -56,9 +49,12 @@ export function createSyncMetaStore(dbName = "khesh-sync"): SyncMetaStore {
     },
     async save(patch: Partial<SyncMeta>): Promise<void> {
       try {
-        const db = await getDb();
-        const current = ((await db.get(STORE, KEY)) as Partial<SyncMeta> | undefined) ?? {};
-        await db.put(STORE, { ...EMPTY_SYNC_META, ...current, ...patch }, KEY);
+        // Read and write inside one `withDb` call, so a retry after a dead connection
+        // re-reads before it writes instead of putting a merge of a stale read.
+        await withDb(async (db) => {
+          const current = ((await db.get(STORE, KEY)) as Partial<SyncMeta> | undefined) ?? {};
+          await db.put(STORE, { ...EMPTY_SYNC_META, ...current, ...patch }, KEY);
+        });
       } catch {
         // best effort by design
       }

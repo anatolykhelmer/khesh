@@ -1,4 +1,4 @@
-import { openDB, type IDBPDatabase } from "idb";
+import { createDbConnection } from "./idb-connection";
 import { err, ok, type Result } from "../kernel/result";
 import type { Book } from "../kernel/types";
 import { validateBook } from "../kernel/validate";
@@ -9,27 +9,17 @@ const STORE = "books";
 const KEY = "current";
 
 export function createIndexedDbRepository(dbName = "khesh-ledger"): LedgerRepository {
-  let dbPromise: Promise<IDBPDatabase> | undefined;
-
-  const getDb = () => {
-    if (!dbPromise) {
-      dbPromise = openDB(dbName, 1, {
-        upgrade(db) {
-          if (!db.objectStoreNames.contains(STORE)) {
-            db.createObjectStore(STORE);
-          }
-        },
-      });
+  const withDb = createDbConnection(dbName, 1, (db) => {
+    if (!db.objectStoreNames.contains(STORE)) {
+      db.createObjectStore(STORE);
     }
-    return dbPromise;
-  };
+  });
 
   return {
     async load(): Promise<Result<Book | null>> {
       let value: unknown;
       try {
-        const db = await getDb();
-        value = await db.get(STORE, KEY);
+        value = await withDb((db) => db.get(STORE, KEY));
       } catch {
         return err("STORAGE_UNAVAILABLE", "Failed to read IndexedDB");
       }
@@ -54,8 +44,7 @@ export function createIndexedDbRepository(dbName = "khesh-ledger"): LedgerReposi
     },
     async save(book: Book): Promise<Result<void>> {
       try {
-        const db = await getDb();
-        await db.put(STORE, book, KEY);
+        await withDb((db) => db.put(STORE, book, KEY));
         return ok(undefined);
       } catch {
         return err("STORAGE_WRITE_FAILED", "Failed to write IndexedDB");
@@ -63,10 +52,9 @@ export function createIndexedDbRepository(dbName = "khesh-ledger"): LedgerReposi
     },
     async clear(): Promise<Result<void>> {
       try {
-        const db = await getDb();
         // One key, not deleteDB: deleting the database blocks while another tab holds
         // it open, which is exactly the case the BroadcastChannel wiring exists for.
-        await db.delete(STORE, KEY);
+        await withDb((db) => db.delete(STORE, KEY));
         return ok(undefined);
       } catch {
         return err("STORAGE_WRITE_FAILED", "Failed to clear IndexedDB");

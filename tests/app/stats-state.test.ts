@@ -81,12 +81,10 @@ describe("expenseRootId", () => {
   });
 
   it("prefers the root named Expenses when several exist", () => {
-    // A doubled book: a second top-level expense group beside the real `Expenses` root
-    // (the shape today's merge produces when two separately onboarded devices sync, and
-    // the one BL-048 is meant to repair), named "Bills" so it sorts *before*
-    // "Expenses" — the alphabetical fallback below would pick this account over the real
-    // root if the named-root preference were ever dropped, so this only passes because
-    // that preference is still there.
+    // A book with two top-level expense groups: the real `Expenses` root plus a second
+    // one, named "Bills" so it sorts *before* "Expenses" — the alphabetical fallback below
+    // would pick this account over the real root if the named-root preference were ever
+    // dropped, so this only passes because that preference is still there.
     let book = realBook();
     book = unwrap(
       createAccount(book, {
@@ -107,9 +105,9 @@ describe("expenseRootId", () => {
   });
 
   it("picks the first name when several roots exist and none is Expenses", () => {
-    // A doubled book whose user renamed the real expense root, so neither top-level
-    // expense group is named "Expenses" — a further-mangled version of the doubled roots
-    // today's merge produces, which BL-048 is meant to repair.
+    // A book with two top-level expense groups where the real root has been renamed away
+    // from "Expenses", so neither carries that name — exercises the first-name fallback
+    // `expenseRootId` uses once the named-root preference has nothing to match.
     let book = realBook();
     book = unwrap(updateAccount(book, { id: ROOT.expense, name: "Zoo" }, ISO_NOW));
     book = unwrap(

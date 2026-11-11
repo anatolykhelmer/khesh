@@ -132,7 +132,8 @@ async function connectedSession() {
  *
  * `local = "empty"` is deliberate: `firstConnectOptions("real", book)` offers all three,
  * which would leave the refusal tests below with nothing to be refused. Against an empty
- * local book `merge` is withheld — it is the case that doubles the root accounts (BL-048).
+ * local book `merge` is withheld — merging a seed adds nothing that `useRemote` doesn't
+ * already give (BL-048).
  *
  * Deviates from the brief the same way `connectedSession()` does: also seeds `repo`, not
  * just `session.setBook()`. Found by mutation-testing the refusal test below — with the
@@ -803,7 +804,8 @@ describe("sync session: applying a choice", () => {
   it("turns away a choice the live plan does not offer", async () => {
     // `choosingSession` plans against an empty local book, so the offer is
     // useRemote/replaceRemote and `merge` is withheld — running it anyway would perform
-    // the write the plan deliberately declined (BL-048's doubled roots).
+    // the write the plan deliberately declined (BL-048: merge adds nothing useRemote
+    // doesn't already give).
     const { session, meta } = await choosingSession();
     await session.applyChoice("merge");
     expect(meta.record.connected).toBe(false);

@@ -3,6 +3,7 @@ import i18n from "../../src/app/i18n";
 import { createMemoryRepository } from "../../src/adapters/memory-repository";
 import { holdsNoUserData } from "../../src/kernel/book-utils";
 import { validateBook } from "../../src/kernel";
+import { mergeBooks } from "../../src/kernel/merge";
 import { applyOption, EMPTY_ANSWERS } from "../../src/app/onboarding/questionnaire";
 import { planStarterBook, rootsPlan } from "../../src/service/starter-plan";
 import { createLedgerApp, HOUSEHOLD_BOOK_NAME, ROOT_SEEDS } from "../../src/service/ledger-app";
@@ -40,7 +41,8 @@ describe("LedgerApp boot + createHousehold", () => {
 
   /* The seed is what `localState` reads as "empty", and that reading is what keeps merge
    * away from a second device's first connect: local `"empty"` never offers it, because
-   * merging a seed against a real book doubles the roots (BL-048). `holdsNoUserData` has
+   * merging a seed against a real book adds nothing that `useRemote` doesn't already give
+   * (BL-048). `holdsNoUserData` has
    * its own suite, but every case there builds its book by hand — so a `createHousehold`
    * that grew a nested group or a non-placeholder root would make this false, bring merge
    * back to second-device setup, and leave that suite green. Assert the two together. */
@@ -156,5 +158,67 @@ describe("LedgerApp boot + createHousehold", () => {
     const cards = book.accounts.filter((a) => a.type === "liability" && !a.isPlaceholder);
     expect(cards).toHaveLength(3);
     expect(new Set(cards.map((a) => a.name)).size).toBe(3);
+  });
+
+  it("mints the four roots at ids two devices will agree on", async () => {
+    const app = createLedgerApp(createMemoryRepository(null));
+    const book = unwrap(await app.createHousehold("ILS"));
+    expect(book.accounts.map((a) => a.id).sort()).toEqual([
+      "seed:assets",
+      "seed:expenses",
+      "seed:income",
+      "seed:liabilities",
+    ]);
+  });
+
+  it("gives a starter leaf its currency and a starter group none", async () => {
+    const app = createLedgerApp(createMemoryRepository(null));
+    const answers = applyOption(applyOption(EMPTY_ANSWERS, "household", "solo", "ILS"), "money", "cash", "ILS");
+    const book = unwrap(await app.createHousehold("ILS", planStarterBook(answers, "ILS")));
+    expect(book.accounts.find((a) => a.id === "seed:cash:ILS")).toMatchObject({
+      parentId: "seed:assets",
+      isPlaceholder: false,
+    });
+    expect(book.accounts.find((a) => a.id === "seed:groceries:ILS")).toMatchObject({
+      parentId: "seed:expenses",
+      isPlaceholder: false,
+    });
+  });
+
+  it("two devices that answered the same questions merge to one tree", async () => {
+    const answers = applyOption(applyOption(EMPTY_ANSWERS, "household", "solo", "ILS"), "money", "cash", "ILS");
+    const plan = planStarterBook(answers, "ILS");
+    const a = unwrap(await createLedgerApp(createMemoryRepository(null)).createHousehold("ILS", plan));
+    const b = unwrap(await createLedgerApp(createMemoryRepository(null)).createHousehold("ILS", plan));
+    const merged = unwrap(mergeBooks(a, b));
+    expect(merged.accounts).toHaveLength(plan.length);
+    expect(merged.accounts.filter((x) => / \d+$/.test(x.name))).toEqual([]);
+    expect(validateBook(merged).ok).toBe(true);
+  });
+
+  it("two devices in different languages merge to one tree as well", async () => {
+    const answers = applyOption(applyOption(EMPTY_ANSWERS, "household", "solo", "ILS"), "money", "cash", "ILS");
+    const plan = planStarterBook(answers, "ILS");
+    const a = unwrap(await createLedgerApp(createMemoryRepository(null)).createHousehold("ILS", plan));
+    await i18n.changeLanguage("he");
+    const b = unwrap(await createLedgerApp(createMemoryRepository(null)).createHousehold("ILS", plan));
+    const merged = unwrap(mergeBooks(a, b));
+    expect(merged.accounts).toHaveLength(plan.length);
+    expect(merged.accounts.filter((x) => x.parentId === null)).toHaveLength(4);
+  });
+
+  it("two devices with different home currencies keep their leaves apart", async () => {
+    const answers = applyOption(applyOption(EMPTY_ANSWERS, "household", "solo", "ILS"), "money", "cash", "ILS");
+    const a = unwrap(await createLedgerApp(createMemoryRepository(null)).createHousehold("ILS", planStarterBook(answers, "ILS")));
+    const b = unwrap(await createLedgerApp(createMemoryRepository(null)).createHousehold("USD", planStarterBook(answers, "USD")));
+    const merged = unwrap(mergeBooks(a, b));
+    // The four groups unify — they hold no amounts. The leaves do not: unifying them would
+    // read one side's minor units in the other side's currency. Two leaves of one name under
+    // one parent is what the dedup rung renames, so `Cash` and `Cash 2` here is the correct
+    // outcome and not a regression of this change.
+    expect(merged.accounts.filter((x) => x.parentId === null)).toHaveLength(4);
+    expect(merged.accounts.filter((x) => x.id === "seed:cash:ILS")).toHaveLength(1);
+    expect(merged.accounts.filter((x) => x.id === "seed:cash:USD")).toHaveLength(1);
+    expect(validateBook(merged).ok).toBe(true);
   });
 });

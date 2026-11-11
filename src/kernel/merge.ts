@@ -1,6 +1,8 @@
+import { wouldCreateCycle } from "./book-utils";
 import { canonicalJson } from "./canonical-json";
 import { err, ok, type Result } from "./result";
-import { addTombstone, budgetKeyOf } from "./tombstones";
+import { isSeedAccountId } from "./seed-ids";
+import { addTombstone, budgetKeyOf, clearTombstone } from "./tombstones";
 import type {
   Account,
   Book,
@@ -93,18 +95,174 @@ function newerAccount(a: Account, b: Account): Account {
   return canonicalJson(a) >= canonicalJson(b) ? a : b;
 }
 
+/**
+ * Every input copy of each account, by id — the versions last-writer-wins discarded as well
+ * as the one it kept.
+ *
+ * `latestLiveAccounts` answers "what is the newest version of this record". Rung 2's
+ * re-attachment needs the opposite: a parent the winning version does *not* have, because
+ * the winning version is the one that points into the cycle. A tombstoned copy never shows
+ * up here — not because anything filters it out, but because this only reads `book.accounts`,
+ * which holds live records to begin with, so a deleted copy was never a candidate to send an
+ * account back to in the first place.
+ */
+function accountVersions(books: readonly Book[]): Map<string, Account[]> {
+  const versions = new Map<string, Account[]>();
+  for (const book of books) {
+    for (const account of book.accounts) {
+      versions.set(account.id, [...(versions.get(account.id) ?? []), account]);
+    }
+  }
+  return versions;
+}
+
+/**
+ * The parent a cut-loose cycle member goes back under, or null to leave it at the top level.
+ *
+ * Four answers, in order, and the first one whose parent still matches the member's current
+ * type wins outright — a mismatch is accepted only once every type-matching answer has been
+ * ruled out. "Matches" is checked against the *parent*'s type as it stands in the draft right
+ * now, never the snapshot's own `type` field: what actually decides whether rung 4's cascade
+ * fires is the type the named parent currently carries, and a snapshot's own type can still be
+ * accurate — the member really was that type, on that device, when it pointed there — while the
+ * parent it names has since been retyped by the *other* device. Comparing the snapshot's own
+ * type instead would accept a candidate whose parent no longer agrees with it, and the cascade
+ * would fire anyway.
+ *
+ * First, the parent it last had outside the cycle: the input copies are the history of where
+ * the account lived before the two devices tied the knot, and the newest of them that points
+ * outside the cycle *and can still take a child* is the last place a user actually put it.
+ * Among those, one whose named parent's draft type still matches the member's current type is
+ * tried before any whose named parent's type does not, newest first within each group. A
+ * parent that holds postings cannot take a child — handing the member to it would create
+ * exactly the children-and-postings pair rung 3 calls irreducible — so a candidate like that is
+ * skipped in favour of the next-newest (within its type group, then the other), and only once
+ * none of the input copies qualify does the ladder fall through.
+ *
+ * Second, the lowest-id top-level placeholder of the member's own type: ordinarily the category
+ * root. This is where the ladder turns to *before* accepting a differently-typed answer from the
+ * first: handing the member a mismatched parent would give rung 4's cascade a reason to retype
+ * the member (and its subtree) to match, and if a posted entry relies on any of it,
+ * `entryMeaningBroken` then refuses the whole merge for a type change no device actually made —
+ * this rung exists to repair the cycle without manufacturing that refusal, so a same-type root
+ * is preferred over a differently-typed history candidate rather than the other way around. A
+ * member cut loose from the same cycle usually does not linger here as a stand-in for it: this
+ * same loop re-attaches cut-loose members in id order, so a sibling with a lower id has usually
+ * already been sent to the type root by this same second answer before this member's lookup
+ * runs. That is not absolute, though — when the draft holds no root of that type at all (the
+ * imported-book case the fourth answer below contemplates), the lower-id sibling's own lookup
+ * falls all the way to park, and a parked account *is* a top-level placeholder of its type, so
+ * it remains exactly the kind of candidate this second answer looks for and a later member's
+ * lookup can still name it.
+ *
+ * Third, back to the first answer's own best candidate even though its named parent's type
+ * does not match — reached only when neither of the first two answers offered one that does.
+ * This is the one case where the result carries a type mismatch through to rung 4; it is still
+ * preferred over parking, since it keeps more of the account's history than starting it over at
+ * the top level.
+ *
+ * Fourth, null: park it, which is what this rung did for every member before BL-048. The fourth
+ * is reached only when a book holds no root of the member's type at all — which `createHousehold`
+ * cannot produce and an imported book can — or when every candidate, root included, already
+ * holds postings, which a valid book cannot produce (a posted account cannot be a placeholder,
+ * so it cannot be this member's outside parent either) but an imported or hand-edited one might.
+ *
+ * Every candidate is checked three ways: still live in the draft, not reachable *from* the
+ * member — re-attaching to a descendant would tie a fresh knot around the one just cut — and
+ * not posted to, since an account with postings cannot also take a child. `wouldCreateCycle`
+ * answers the second question against the draft as it stands, which is after the detach loop
+ * and therefore acyclic.
+ *
+ * The type preference — both within the first answer and between the first three answers — still
+ * agrees in both argument orders of `mergeBooks`, even though it now reads the draft rather than
+ * the candidate record alone: the draft it reads is the post-union, canonically sorted book that
+ * `repair` starts from, which is the same set of accounts with the same fields regardless of
+ * which side of `mergeBooks(a, b)` supplied `a` — `later`/`newerAccount` already agree in both
+ * orders, and rung 2's own detach loop mutates the same ids the same way whichever book was
+ * merged first (see its own comment above). So looking up a parent's current type in that draft,
+ * rather than trusting the candidate's own copy of it, is still a pure function of the two input
+ * books, never of `versions`' or an array's iteration order.
+ */
+function reattachTarget(
+  draft: Book,
+  member: Account,
+  cycle: ReadonlySet<string>,
+  versions: Map<string, Account[]>,
+  posted: ReadonlySet<string>,
+): string | null {
+  const draftById = new Map(draft.accounts.map((a) => [a.id, a]));
+  const usable = (parentId: string): boolean =>
+    parentId !== member.id &&
+    draftById.has(parentId) &&
+    !posted.has(parentId) &&
+    !wouldCreateCycle(draft, member.id, parentId);
+  // The parent's own draft type, not the snapshot's — see the doc comment above. Undefined
+  // for a parent no longer live, which only ever matters for a candidate `usable` excludes.
+  const draftType = (parentId: string): Account["type"] | undefined => draftById.get(parentId)?.type;
+
+  const outside = (versions.get(member.id) ?? [])
+    .filter(
+      (version): version is Account & { parentId: string } =>
+        version.parentId !== null && !cycle.has(version.parentId),
+    )
+    .sort((x, y) => {
+      const xMatches = draftType(x.parentId) === member.type;
+      const yMatches = draftType(y.parentId) === member.type;
+      if (xMatches !== yMatches) return xMatches ? -1 : 1;
+      return newerAccount(x, y) === x ? -1 : 1;
+    });
+  const reattachable = outside.find((version) => usable(version.parentId));
+  if (reattachable !== undefined && draftType(reattachable.parentId) === member.type) {
+    return reattachable.parentId;
+  }
+
+  const root = draft.accounts
+    .filter((a) => a.parentId === null && a.isPlaceholder && a.type === member.type)
+    .filter((a) => !a.id.startsWith("sys:") && usable(a.id))
+    .sort(byId)[0];
+  if (root !== undefined) return root.id;
+
+  if (reattachable !== undefined) return reattachable.parentId;
+  return null;
+}
+
 function byId<T extends { id: string }>(a: T, b: T): number {
   return compareStrings(a.id, b.id);
+}
+
+/** The top-level placeholder that survives a same-type collapse. A seed id wins outright:
+ * it is the id every newer build mints, so a book that predates them converges on it rather
+ * than dragging a device-local ULID forward. Otherwise `later`'s convention — greater
+ * `updatedAt`, then the canonically greater body — so both argument orders agree. */
+function betterRoot(a: Account, b: Account): Account {
+  const aSeed = isSeedAccountId(a.id);
+  const bSeed = isSeedAccountId(b.id);
+  if (aSeed !== bSeed) return aSeed ? a : b;
+  return newerAccount(a, b);
+}
+
+/** The newer of two budgets that collided on the same (accountId, period, currency) key
+ * after the root-collapse rung repointed one onto the other's account — `later`'s
+ * convention again: greater `updatedAt`, then the canonically greater body, so both
+ * argument orders agree. */
+function newerBudget(a: Budget, b: Budget): Budget {
+  if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
+  return canonicalJson(a) >= canonicalJson(b) ? a : b;
 }
 
 /**
  * Mutates `book`. Run before the repair ladder as well as after it, for two different
  * reasons. Going in: the draft is assembled in `Map` insertion order, which is argument
- * order, and rung 5 groups siblings by walking `accounts` — a canonical order there is
+ * order, and rung 6 groups siblings by walking `accounts` — a canonical order there is
  * what makes its grouping (and so its renames) independent of which book came first.
- * That is all the pre-sort guarantees: rung 1 appends restored accounts behind it, so
- * the arrays are no longer sorted by the time rungs 2-6 run. Coming out: the sort is
- * what puts the merged book itself in canonical order.
+ * Rung 5 above walks the same array to collect each type's top-level placeholders, but
+ * its winner is argument-order-independent for a different reason: `betterRoot` is a
+ * total order, so `reduce` picks the same winner no matter which book's copy the walk
+ * meets first. What the canonical walk still fixes is the renames rung 6 then applies to
+ * the children that reparenting hands it. That is all the pre-sort guarantees: rung 1
+ * appends restored accounts behind it, so the arrays are no longer sorted by the time
+ * every rung after the first runs. Coming out: the sort is what puts the merged book itself
+ * in canonical order.
  */
 function sortBook(book: Book): void {
   book.accounts.sort(byId);
@@ -237,7 +395,11 @@ type RepairFailure = "childrenAndPostings" | "rootWithPostings" | "missingTombst
 
 /** Deterministic repair of a merged draft. Mutates `draft`. Returns null when the draft
  * is repaired, or what made the conflict irreducible. */
-function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | null {
+function repair(
+  draft: Book,
+  restorable: Map<string, Account>,
+  versions: Map<string, Account[]>,
+): RepairFailure | null {
   // 1. Restore referenced accounts from tombstones, transitively (parents included).
   //    Every pass consumes at least one tombstone, so the loop cannot spin.
   for (;;) {
@@ -307,6 +469,13 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
   //    deterministic and the same in either argument order. When every member is posted
   //    to there is no such choice and rung 3 is right to refuse.
   //    Each pass clears one parentId, so the loop is bounded by the account count.
+  //
+  //    Two phases. The loop cuts every cycle exactly as before; the phase below then gives
+  //    each cut-loose member a parent again. They are separate because the loop's bound is
+  //    "each pass clears one parentId" — an attach inside it would feed the next findCycle
+  //    pass and lose that argument. The loop runs to completion first, and the phase then
+  //    attaches only to parents the member cannot reach, so the forest stays a forest.
+  const cutLoose = new Map<string, Set<string>>();
   for (;;) {
     const index = new Map(draft.accounts.map((a) => [a.id, a]));
     const cycle = findCycle(draft.accounts, index);
@@ -318,6 +487,29 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
     if (detached === undefined) break; // cycle ids come from index; unreachable
     detached.parentId = null;
     repaired(detached);
+    cutLoose.set(lowest, new Set(cycle));
+  }
+
+  //    Parking a member at the top level is a last resort, not the repair. An account left
+  //    there is a fifth category root the user cannot move back — `updateAccount` refuses any
+  //    move between the top level and a parent — and the root-collapse rung below would
+  //    dissolve it into the type's root, tombstoning a group somebody made. `id` order, so
+  //    two members cut loose in one repair are re-attached in the same sequence whichever
+  //    book was merged first. The member is stamped twice, once per change; the second stamp
+  //    is what the other device's copy of the re-attachment has to beat.
+  for (const id of [...cutLoose.keys()].sort()) {
+    const member = draft.accounts.find((a) => a.id === id);
+    if (member === undefined) continue; // nothing removes accounts here; unreachable
+    const parentId = reattachTarget(
+      draft,
+      member,
+      cutLoose.get(id) as Set<string>,
+      versions,
+      posted,
+    );
+    if (parentId === null) continue;
+    member.parentId = parentId;
+    repaired(member);
   }
 
   // 3. Placeholder consistency: children force it on; postings force it off; both is irreducible.
@@ -325,19 +517,20 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
   //    So is a top-level account with postings. Forcing it off placeholder would leave a
   //    top-level leaf, which validateBook rejects (a top-level account is a category root),
   //    and the other way out — hanging it under a parent — needs a parent the ladder does
-  //    not have: in the draft the account has none. Re-attaching it under the parent the
-  //    posting device had it under is BL-048's; until then the merge refuses, which reaches
-  //    the sync engine as a conflict the user resolves (SYNC_MERGE_CONFLICT) rather than as
-  //    a merged book that will not load.
+  //    not have: in the draft the account has none. BL-048 added that re-attachment, but in
+  //    rung 2 rather than here, so what reaches this check either came in already parked on
+  //    purpose or from outside the kernel, and refusing sends the sync engine a conflict the
+  //    user resolves (SYNC_MERGE_CONFLICT) instead of a merged book that will not load.
   //
-  //    Commands alone cannot set this up: updateAccount keeps every account at the level
-  //    it was created at, so without a merge in between an account is top-level on every
-  //    device that holds it or on none. Rung 2 is the exception. The member it detaches is
-  //    a group here — the child that still points at it keeps it one — and its top-level
-  //    copy is stamped one tick past both inputs' copies. A device that had not yet synced
-  //    that merge may, in its own book, have moved the child away, turned the member into a
-  //    leaf and posted to it — all older than the detach, so the next merge keeps the
-  //    detached copy, now childless and posted to.
+  //    This shape is rarer after BL-048, not impossible: rung 2's re-attachment can itself
+  //    leave a member parked, when the draft holds no placeholder root of its type to hand it
+  //    back to, and its detach loop can still cut loose a member that holds postings when every
+  //    member of a cycle does — either can land an account here with postings and no parent.
+  //    Commands alone still cannot set it up directly: updateAccount keeps every account at
+  //    the level it was created at and refuses a top-level leaf outright, so besides rung 2's
+  //    own park this reaches the kernel only from an import or a hand-edited file. Either way
+  //    the check guards the same invariant validateBook does, and the alternative to refusing
+  //    is a merged book that will not load.
   //
   //    Checked after children-and-postings, so an account that is both is still refused
   //    for that. Accounts are visited in the draft's order, which does not depend on which
@@ -381,7 +574,121 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
     cascade(root);
   }
 
-  // 5. Deduplicate sibling names: canonically greatest record keeps the name. The slot
+  // 5. One top-level placeholder per account type. Two live ones of a type mean the same
+  //    category root arriving from two devices: `createHousehold` is the only code that
+  //    creates a top-level account — `addAccount` requires a parent — and it marks all four
+  //    roots placeholders, so the shape has no other origin in a book this app produced.
+  //    Since BL-080 the kernel says the rest of it: a top-level account must be a
+  //    placeholder, refused by `createAccount`, `updateAccount` and `validateBook` alike, and
+  //    no edit moves an account between the top level and a parent. The `isPlaceholder`
+  //    clause below is therefore a guard on the draft rather than a filter on real books:
+  //    rung 3 forces the flag only where a child requires it or a posting forbids it, and a
+  //    member rung 2's last resort parks here childless and unposted trips neither, so it can
+  //    still reach this point carrying whatever flag it had before it was cut loose.
+  //
+  //    Ordering: after rung 1, because this drops accounts through `keepValid` and rung 1 is
+  //    the only consumer of account tombstones — earlier, and rung 1 would read the tombstone
+  //    straight back and resurrect the root. Before the dedup rung, because reparenting is
+  //    what creates the sibling-name clashes that rung exists to resolve; after it, the
+  //    clashes survive into a result `validateBook` rejects.
+  const roots = new Map<Account["type"], Account[]>();
+  for (const account of draft.accounts) {
+    if (account.parentId !== null || !account.isPlaceholder) continue;
+    if (account.id.startsWith("sys:")) continue;
+    roots.set(account.type, [...(roots.get(account.type) ?? []), account]);
+  }
+  // Loser id -> winner id. A map rather than a set of losers because the budget
+  // repointing below needs to know *where* to send a limit, not just that its account
+  // is going away.
+  const rootWinner = new Map<string, string>();
+  for (const group of roots.values()) {
+    if (group.length < 2) continue;
+    const winner = group.reduce(betterRoot);
+    for (const loser of group) {
+      if (loser === winner) continue;
+      rootWinner.set(loser.id, winner.id);
+      for (const child of draft.accounts) {
+        if (child.parentId !== loser.id) continue;
+        child.parentId = winner.id;
+        repaired(child);
+      }
+    }
+  }
+  draft.accounts = keepValid(
+    draft,
+    "account",
+    draft.accounts,
+    (account) => account.id,
+    (account) => !rootWinner.has(account.id),
+  );
+
+  //    A budget follows its account exactly as a child does. Nothing forbids one on a
+  //    top-level placeholder — `setBudget` and `validateBook` both refuse only
+  //    `type !== "expense"`, not a placeholder — so a limit can legally sit directly on
+  //    a category root, and rung 7 below would otherwise drop it for the wrong reason:
+  //    not because it stopped covering an expense account, but because its account just
+  //    disappeared out from under it.
+  //
+  //    A budget's key is its own account id, period and currency — unlike an account,
+  //    which keeps a stable id no matter where it moves, relocating a budget changes its
+  //    key outright. So this is a vacate-and-recreate, not a field edit in place: first
+  //    every budget on a loser is dropped through `keepValid`, exactly as any other rung
+  //    drops a record, which tombstones it at the key it is actually leaving — the loser
+  //    account's own — so a device that still holds that key does not hand it back on
+  //    the next sync.
+  //
+  //    Only then is a moved copy considered for the winner's key, which can already be
+  //    occupied two different ways — both real: the winner's own account can have had a
+  //    budget of its own before this merge, live or (`removeBudget`) deleted. A live one
+  //    is resolved by keeping the newer of the two by `later`'s own convention
+  //    (`newerBudget`) — greater `updatedAt`, then the canonically greater body — and
+  //    dropping the other, needing no tombstone of its own since its key was already
+  //    vacated above. A dead one is exactly as much a claim on that key as a live budget
+  //    is: pushing `moved` on top of it unconditionally is what `validateBook` calls a
+  //    tombstone shadowing a live record, and the claims union at the top of `mergeBooks`
+  //    would undo the push on the very next merge regardless, since a dead and
+  //    a live claim for the same key there resolve by the same rule. So this weighs
+  //    `moved` against the tombstone with `later` too: the tombstone wins outright if
+  //    it is newer (`moved` is dropped — its own key already carries the record of its
+  //    going), and otherwise `moved` wins, clearing the tombstone before it is pushed —
+  //    exactly what a fresh `setBudget` does when it resurrects a budget over one a
+  //    tombstone still names.
+  const relocated = draft.budgets.filter((b) => rootWinner.has(b.accountId));
+  draft.budgets = keepValid(
+    draft,
+    "budget",
+    draft.budgets,
+    budgetKeyOf,
+    (b) => !rootWinner.has(b.accountId),
+  );
+  for (const budget of relocated) {
+    const moved: Budget = {
+      ...structuredClone(budget),
+      accountId: rootWinner.get(budget.accountId) as string,
+    };
+    repaired(moved);
+    const key = budgetKeyOf(moved);
+    const tombstone = draft.tombstones.find((t) => t.kind === "budget" && t.key === key);
+    if (tombstone !== undefined) {
+      const verdict = later(
+        { alive: false, at: tombstone.deletedAt, stone: tombstone },
+        { alive: true, at: moved.updatedAt, record: moved },
+      );
+      if (verdict.alive) {
+        clearTombstone(draft, "budget", key);
+        draft.budgets.push(moved);
+      }
+      continue;
+    }
+    const incumbentIndex = draft.budgets.findIndex((b) => budgetKeyOf(b) === key);
+    if (incumbentIndex === -1) {
+      draft.budgets.push(moved);
+    } else if (newerBudget(draft.budgets[incumbentIndex], moved) === moved) {
+      draft.budgets[incumbentIndex] = moved;
+    }
+  }
+
+  // 6. Deduplicate sibling names: canonically greatest record keeps the name. The slot
   //    key is JSON-encoded rather than concatenated so a name containing the separator
   //    cannot masquerade as a different parent — ids never do, a hand-edited file might.
   const bySibling = new Map<string, Account[]>();
@@ -410,10 +717,13 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
     }
   }
 
-  // 6. A budget only makes sense on an expense account. Rung 1 has already restored
-  //    every account a budget references, so this drops exactly the limits whose
-  //    account was concurrently retyped away from expense — each one tombstoned by
-  //    `keepValid`, which is what keeps the merge idempotent.
+  // 7. A budget only makes sense on an expense account. Two rungs above have already
+  //    dealt with a budget's account disappearing: rung 1 restores one deleted on the
+  //    other device, and rung 5 relocates one that sat directly on a root the collapse
+  //    absorbed, onto the surviving root. So a budget's account is never simply missing
+  //    by the time this runs, and what this drops is exactly the limits whose account is
+  //    not an expense — ordinarily one a concurrent edit retyped away from it — each one
+  //    tombstoned by `keepValid`, which is what keeps the merge idempotent.
   const typeById = new Map(draft.accounts.map((a) => [a.id, a.type]));
   draft.budgets = keepValid(
     draft,
@@ -423,10 +733,10 @@ function repair(draft: Book, restorable: Map<string, Account>): RepairFailure | 
     (b) => typeById.get(b.accountId) === "expense",
   );
 
-  // 7. A recurrence is only postable while every account it touches is not a placeholder
+  // 8. A recurrence is only postable while every account it touches is not a placeholder
   //    and they all share one currency. Rung 1 has restored the accounts, so this drops
   //    exactly the rules a concurrent retype-to-placeholder or currency change made
-  //    impossible — the same treatment, tombstone included, rung 6 gives a budget whose
+  //    impossible — the same treatment, tombstone included, rung 7 gives a budget whose
   //    account stopped being an expense.
   const accountById = new Map(draft.accounts.map((a) => [a.id, a]));
   draft.recurrences = keepValid(
@@ -563,7 +873,7 @@ export function mergeBooks(a: Book, b: Book): Result<Book> {
   // `reason` names which of the refusals this is. The code is the same for all of them, so
   // without it a caller — or the symmetry property, which compares the whole error —
   // cannot tell an order-dependent choice *between* the reasons from agreement.
-  const unrepaired = repair(draft, latestLiveAccounts([a, b]));
+  const unrepaired = repair(draft, latestLiveAccounts([a, b]), accountVersions([a, b]));
   if (unrepaired !== null) {
     return err("SYNC_MERGE_CONFLICT", "Books conflict beyond automatic repair", {
       reason: unrepaired,

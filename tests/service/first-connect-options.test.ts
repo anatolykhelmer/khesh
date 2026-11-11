@@ -37,7 +37,7 @@ describe("firstConnectOptions — a local book that holds no data", () => {
     expect(firstConnectOptions("empty", EMPTY)).toEqual({ kind: "apply", choice: "replaceRemote" });
   });
 
-  it("never offers merge, because merging two seeds doubles the roots", () => {
+  it("never offers merge, because merging a seed into a real book adds nothing useRemote doesn't already give", () => {
     expect(firstConnectOptions("empty", BOOK)).toEqual({
       kind: "choose",
       choices: ["useRemote", "replaceRemote"],

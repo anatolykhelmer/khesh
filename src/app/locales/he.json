@@ -199,6 +199,8 @@
   },
   "settings": {
     "title": "הגדרות",
+    "languageTitle": "שפה",
+    "languageHint": "רק במכשיר הזה — כל מי שמשתף את הספר בוחר שפה משלו.",
     "exportButton": "ייצוא גיבוי",
     "exportHint": "מוריד את כל הספר כקובץ JSON.",
     "importButton": "ייבוא גיבוי",

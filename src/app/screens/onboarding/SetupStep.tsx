@@ -3,6 +3,7 @@ import type { CurrencyCode } from "../../../kernel";
 import { CURRENCIES } from "../../currencies";
 import { ConnectDrive } from "../../components/ConnectDrive";
 import { ImportBookButton } from "../../components/ImportBookButton";
+import { LanguageChoice } from "../../components/LanguageChoice";
 import type { AppLanguage } from "../../i18n";
 
 export function SetupStep({
@@ -33,21 +34,7 @@ export function SetupStep({
           choice (see `AccountKindChoice`). The heading carries the question; the legend
           names the group without repeating it, so nothing is announced twice. */}
       <h1>{t("onboarding.languageTitle")}</h1>
-      <fieldset className="currency-list group">
-        <legend className="visually-hidden">{t("onboarding.languageListLabel")}</legend>
-        {(["en", "he"] as const).map((l) => (
-          <label key={l} className={language === l ? "choice selected" : "choice"}>
-            <span>{t(l === "en" ? "onboarding.languageEnglish" : "onboarding.languageHebrew")}</span>
-            <input
-              type="radio"
-              name="onboarding-language"
-              checked={language === l}
-              disabled={busy}
-              onChange={() => onLanguage(l)}
-            />
-          </label>
-        ))}
-      </fieldset>
+      <LanguageChoice name="onboarding-language" value={language} disabled={busy} onChange={onLanguage} />
 
       <h1>{t("onboarding.currencyTitle")}</h1>
       <p className="muted">{t("onboarding.currencySubtitle")}</p>

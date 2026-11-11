@@ -196,6 +196,8 @@
   },
   "settings": {
     "title": "Settings",
+    "languageTitle": "Language",
+    "languageHint": "Only on this device — everyone on a shared book picks their own.",
     "exportButton": "Export backup",
     "exportHint": "Downloads your whole book as a JSON file.",
     "importButton": "Import backup",

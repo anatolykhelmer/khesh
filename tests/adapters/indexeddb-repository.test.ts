@@ -141,6 +141,52 @@ describe("IndexedDbRepository", () => {
     });
   });
 
+  // `forceCloseDatabase` dispatches `close` before the next call, so the cases above only
+  // reach `terminated`. These throw while the cached connection is still the one the call
+  // is about to use: the window where `close` has not been delivered yet, and the one retry
+  // is the only thing that can still complete the call.
+  describe("when a call hits a connection that is already closing", () => {
+    function throwInvalidState(): DOMException {
+      return new DOMException("The database connection is closing", "InvalidStateError");
+    }
+
+    it("load retries on a fresh connection and still finds the stored book", async () => {
+      const repo = createIndexedDbRepository("khesh-test-invalid-state-retry");
+      const book = realBook();
+      unwrap(await repo.save(book));
+      const original = IDBDatabase.prototype.transaction;
+      let calls = 0;
+      IDBDatabase.prototype.transaction = function (this: IDBDatabase, ...args) {
+        calls += 1;
+        if (calls === 1) throw throwInvalidState();
+        return original.apply(this, args as unknown as Parameters<IDBDatabase["transaction"]>);
+      } as IDBDatabase["transaction"];
+      try {
+        expect(unwrap(await repo.load())).toEqual(book);
+        expect(calls).toBe(2);
+      } finally {
+        IDBDatabase.prototype.transaction = original;
+      }
+    });
+
+    it("a second InvalidStateError is reported instead of retried again", async () => {
+      const repo = createIndexedDbRepository("khesh-test-invalid-state-once");
+      unwrap(await repo.save(realBook()));
+      const original = IDBDatabase.prototype.transaction;
+      let calls = 0;
+      IDBDatabase.prototype.transaction = function () {
+        calls += 1;
+        throw throwInvalidState();
+      } as IDBDatabase["transaction"];
+      try {
+        expect(unwrapErr(await repo.load()).code).toBe("STORAGE_UNAVAILABLE");
+        expect(calls).toBe(2);
+      } finally {
+        IDBDatabase.prototype.transaction = original;
+      }
+    });
+  });
+
   it("a failed open is not cached, so a later load can succeed", async () => {
     const name = "khesh-test-failed-open";
     await createAtVersion(name, 2);

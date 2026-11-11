@@ -29,6 +29,9 @@ export type WithDb = <T>(work: (db: IDBPDatabase) => Promise<T>) => Promise<T>;
  * drop the connection and run the work once more on a fresh one. Once, so a database that
  * keeps refusing reports its failure instead of looping. Only safe because every caller's
  * work is idempotent — a get, a put of a whole value under one key, a delete of one key.
+ * A transaction already under way when the browser force-closes the connection rejects with
+ * `AbortError`, and this retry does not catch it. By the next call `terminated` has dropped
+ * the cache. `AbortError` stays out of the retry: an ordinary abort uses the same name.
  */
 export function createDbConnection(
   name: string,

@@ -393,7 +393,8 @@
     "transfer": "Transfer",
     "opening": "Opening",
     "categoriesCount": "{{count}} categories",
-    "balanceAfter": "Balance:"
+    "balanceAfter": "Balance:",
+    "createdOutsideView": "Entry saved, but it falls outside this view."
   },
   "entryDetail": {
     "titleEntry": "Entry",

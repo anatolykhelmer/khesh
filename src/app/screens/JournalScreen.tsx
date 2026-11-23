@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
-import { useEffect, useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { JournalEntry } from "../../kernel";
 import { inferEntryLines } from "../../service/ledger-app";
 import { currentYearMonth, formatYearMonth, shiftYearMonth, todayCalendarDate } from "../../service/dates";
 import type { YearMonth } from "../../service/dates";
 import { AccountPicker } from "../components/AccountPicker";
+import { Banner } from "../components/Banner";
 import { ChevronBack, ChevronForward, ArrowForward } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { accountPathLabel, formatDate, formatMinor, formatRunningBalance, monthLabel } from "../format";
@@ -25,13 +26,19 @@ import {
   writeJournalView,
 } from "../journal-view-memory";
 import { journalRows } from "../journal-rows";
+import { readCreatedEntryId } from "../new-entry-return";
 import { useLedger } from "../ledger-context";
 
 export function JournalScreen() {
   const { t } = useTranslation();
   const { book, app } = useLedger();
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const stores = useMemo(browserStores, []);
+  // The entry a new-entry form just saved, captured on arrival: the URL rewrite below
+  // replaces the history entry, which drops its router state.
+  const [createdEntryId, setCreatedEntryId] = useState(() => readCreatedEntryId(location.state));
 
   // A query string naming a month or an account wins, so deep links (the account page's
   // "Entries") and the browser's Back behave as before; a bare /journal — the tab, an
@@ -55,6 +62,14 @@ export function JournalScreen() {
     const shown = toJournalParams(filter);
     if (shown.toString() !== "") setParams(shown, { replace: true });
   }, [explicit, filter, setParams]);
+
+  // Drop the arrival state from history too, so a reload does not announce the entry
+  // again. When the rewrite above is about to replace the entry, that drops it already.
+  useEffect(() => {
+    if (location.state == null || !filter) return;
+    if (!explicit && toJournalParams(filter).toString() !== "") return;
+    navigate({ search: location.search }, { replace: true, state: null });
+  }, [location.state, location.search, filter, explicit, navigate]);
 
   // Remember whatever is shown, however it was reached. A stale account id has already
   // been dropped by parseJournalFilter, so this also cleans it out of memory.
@@ -80,6 +95,8 @@ export function JournalScreen() {
   const currentFilter = filter;
 
   function writeParams(next: URLSearchParams) {
+    // The notice is about the view the entry was saved into; a new view retires it.
+    setCreatedEntryId(null);
     forgetIfBare(next, stores);
     setParams(next);
   }
@@ -116,6 +133,9 @@ export function JournalScreen() {
 
   const entries = listed.value;
   const rows = journalRows(entries, due, currentBook, listFilter);
+  const createdOutsideView =
+    createdEntryId !== null &&
+    !rows.some((row) => row.kind === "entry" && row.entry.id === createdEntryId);
   const scope = flowScope(currentBook, listFilter.accountId);
   // A running balance only means something for one account or group of assets or
   // liabilities: `scope` is empty for a category filter and is net worth when unfiltered.
@@ -231,6 +251,14 @@ export function JournalScreen() {
           </button>
         )}
       </div>
+
+      {createdOutsideView ? (
+        <Banner
+          tone="info"
+          message={t("journal.createdOutsideView")}
+          onDismiss={() => setCreatedEntryId(null)}
+        />
+      ) : null}
 
       {rows.length === 0 ? (
         <p className="muted">

@@ -396,7 +396,8 @@
     "transfer": "העברה",
     "opening": "פתיחה",
     "categoriesCount": "{{count}} קטגוריות",
-    "balanceAfter": "יתרה:"
+    "balanceAfter": "יתרה:",
+    "createdOutsideView": "התנועה נשמרה, אבל היא לא מופיעה בתצוגה הזו."
   },
   "entryDetail": {
     "titleEntry": "תנועה",

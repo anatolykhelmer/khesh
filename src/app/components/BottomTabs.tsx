@@ -1,10 +1,12 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { TabAccounts, TabHome, TabJournal, TabNew } from "./icons";
+import { newEntryLinkState } from "../new-entry-return";
 
 export function BottomTabs() {
   const { t } = useTranslation();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const cls = ({ isActive }: { isActive: boolean }) => (isActive ? "tab active" : "tab");
   return (
     <nav className="bottom-tabs" aria-label={t("nav.ariaLabel")}>
@@ -23,7 +25,8 @@ export function BottomTabs() {
         <TabJournal />
         {t("nav.journal")}
       </NavLink>
-      <NavLink to="/new" className={cls}>
+      {/* From the journal list, a new entry returns to that exact view once saved. */}
+      <NavLink to="/new" state={newEntryLinkState(location)} className={cls}>
         <TabNew />
         {t("nav.new")}
       </NavLink>

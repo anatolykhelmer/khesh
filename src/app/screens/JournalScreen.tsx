@@ -15,6 +15,7 @@ import {
   hasExplicitJournalView,
   isDefaultFilter,
   parseJournalFilter,
+  toJournalParams,
   toListJournalFilter,
 } from "../journal-filter";
 import {
@@ -47,14 +48,13 @@ export function JournalScreen() {
 
   // The address bar must describe the remembered view: if it stayed bare, Reset (which
   // writes empty parameters) would leave location.search unchanged and nothing would recompute.
+  // Built from the parsed filter, not from memory's raw query, so a broken month or an
+  // account the book no longer has never reaches the address bar.
   useEffect(() => {
     if (explicit || !filter) return;
-    const remembered = new URLSearchParams(effective);
-    // A remembered account the book no longer has was dropped by parseJournalFilter;
-    // keep it out of the address bar too.
-    if (filter.accountId === null) remembered.delete("account");
-    if (remembered.toString() !== "") setParams(remembered, { replace: true });
-  }, [explicit, effective, filter, setParams]);
+    const shown = toJournalParams(filter);
+    if (shown.toString() !== "") setParams(shown, { replace: true });
+  }, [explicit, filter, setParams]);
 
   // Remember whatever is shown, however it was reached. A stale account id has already
   // been dropped by parseJournalFilter, so this also cleans it out of memory.

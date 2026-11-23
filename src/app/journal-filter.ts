@@ -33,6 +33,14 @@ function parseAccountId(raw: string | null, book: Book): string | null {
   return book.accounts.some((a) => a.id === raw) ? raw : null;
 }
 
+/**
+ * Whether the query string chooses the view itself. Either parameter, with any value,
+ * counts: a bare /journal is the only case that falls back to the remembered view.
+ */
+export function hasExplicitJournalView(params: URLSearchParams): boolean {
+  return params.has("month") || params.has("account");
+}
+
 /** Build the argument for `app.listJournal`. */
 export function toListJournalFilter(state: JournalFilterState): {
   from?: string;

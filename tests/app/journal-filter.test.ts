@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createAccount } from "../../src/kernel/accounts";
 import {
+  hasExplicitJournalView,
   isDefaultFilter,
   parseJournalFilter,
   toListJournalFilter,
@@ -100,5 +101,18 @@ describe("isDefaultFilter", () => {
     expect(isDefaultFilter({ period: { year: 2026, month: 8 }, accountId: "abc" }, NOW)).toBe(
       false,
     );
+  });
+});
+
+describe("hasExplicitJournalView", () => {
+  it("is false for a bare query string and for unrelated parameters", () => {
+    expect(hasExplicitJournalView(new URLSearchParams())).toBe(false);
+    expect(hasExplicitJournalView(new URLSearchParams("utm_source=x"))).toBe(false);
+  });
+
+  it("is true when the month or the account is given, whatever its value", () => {
+    for (const raw of ["month=2026-03", "month=all", "month=", "account=abc", "month=all&account=abc"]) {
+      expect(hasExplicitJournalView(new URLSearchParams(raw)), raw).toBe(true);
+    }
   });
 });

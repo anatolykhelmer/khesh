@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { JournalEntry } from "../../kernel";
@@ -11,7 +11,18 @@ import { ChevronBack, ChevronForward, ArrowForward } from "../components/icons";
 import { Ltr } from "../components/Ltr";
 import { accountPathLabel, formatDate, formatMinor, formatRunningBalance, monthLabel } from "../format";
 import { entryFlow, flowScope, fxCounterpart, type EntryFlow } from "../entry-flow";
-import { isDefaultFilter, parseJournalFilter, toListJournalFilter } from "../journal-filter";
+import {
+  hasExplicitJournalView,
+  isDefaultFilter,
+  parseJournalFilter,
+  toListJournalFilter,
+} from "../journal-filter";
+import {
+  browserStores,
+  clearJournalView,
+  readJournalView,
+  writeJournalView,
+} from "../journal-view-memory";
 import { journalRows } from "../journal-rows";
 import { useLedger } from "../ledger-context";
 
@@ -19,8 +30,32 @@ export function JournalScreen() {
   const { t } = useTranslation();
   const { book, app } = useLedger();
   const [params, setParams] = useSearchParams();
+  const stores = useMemo(browserStores, []);
 
-  const filter = useMemo(() => (book ? parseJournalFilter(params, book) : null), [book, params]);
+  // A query string naming a month or an account wins; a bare /journal returns to the
+  // remembered view (spec: docs/superpowers/specs/2026-11-23-journal-view-memory-design.md).
+  const explicit = hasExplicitJournalView(params);
+  const effective = useMemo(
+    () => (explicit ? params : readJournalView(stores)),
+    [explicit, params, stores],
+  );
+  const filter = useMemo(
+    () => (book ? parseJournalFilter(effective, book) : null),
+    [book, effective],
+  );
+
+  // The address bar must describe the remembered view: if it stayed bare, Reset (which
+  // writes empty parameters) would leave location.search unchanged and nothing would recompute.
+  useEffect(() => {
+    if (!explicit && effective.toString() !== "") setParams(effective, { replace: true });
+  }, [explicit, effective, setParams]);
+
+  // Remember whatever is shown, however it was reached. A stale account id has already
+  // been dropped by parseJournalFilter, so this also cleans it out of memory.
+  useEffect(() => {
+    if (filter) writeJournalView(filter, stores);
+  }, [filter, stores]);
+
   const nodes = useMemo(() => {
     if (!book) return [];
     const tree = app.accountTree(book);
@@ -42,14 +77,15 @@ export function JournalScreen() {
     setParams(next);
   }
 
+  // Drafts start from the view on screen, which on a bare URL is the remembered one.
   function setPeriod(period: YearMonth | null) {
-    const draft = new URLSearchParams(params);
+    const draft = new URLSearchParams(effective);
     draft.set("month", period === null ? "all" : formatYearMonth(period));
     writeParams(draft);
   }
 
   function setAccount(id: string) {
-    const draft = new URLSearchParams(params);
+    const draft = new URLSearchParams(effective);
     if (id === "") draft.delete("account");
     else draft.set("account", id);
     writeParams(draft);
@@ -182,7 +218,11 @@ export function JournalScreen() {
           <button
             type="button"
             className="secondary"
-            onClick={() => writeParams(new URLSearchParams())}
+            onClick={() => {
+              // Forget first: the bare URL written next must find nothing to return to.
+              clearJournalView(stores);
+              writeParams(new URLSearchParams());
+            }}
           >
             {t("journal.reset")}
           </button>

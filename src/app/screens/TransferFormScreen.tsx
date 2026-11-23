@@ -1,6 +1,6 @@
 import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { EntryLine } from "../../service/ledger-app";
 import { inferEntryLines } from "../../service/ledger-app";
@@ -12,6 +12,12 @@ import { XMark } from "../components/icons";
 import { formatMinor, formatRate } from "../format";
 import { useLedger } from "../ledger-context";
 import { useLedgerMutation } from "../use-ledger-mutation";
+import {
+  addedEntryId,
+  afterCreatePath,
+  readReturnTo,
+  type CreatedEntryState,
+} from "../new-entry-return";
 import { AccountPicker } from "../components/AccountPicker";
 
 type LineDraft = { toAccountId: string; amount: string };
@@ -26,6 +32,7 @@ export function TransferFormScreen() {
     date?: string;
   }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { book, app, setError } = useLedger();
   const { busy, run } = useLedgerMutation();
 
@@ -203,6 +210,7 @@ export function TransferFormScreen() {
       lines: parsed,
     };
 
+    const creating = !entryId && !(ruleId && occurrenceDate);
     await run(
       () =>
         entryId
@@ -210,7 +218,16 @@ export function TransferFormScreen() {
           : ruleId && occurrenceDate
             ? app.postOccurrence(currentBook, ruleId, occurrenceDate, input)
             : app.addEntry(currentBook, input),
-      () => navigate("/journal"),
+      (next) => {
+        // An edit or a posted occurrence returns to the remembered journal view.
+        if (!creating) {
+          navigate("/journal");
+          return;
+        }
+        const createdEntryId = addedEntryId(currentBook, next);
+        const state: CreatedEntryState | undefined = createdEntryId ? { createdEntryId } : undefined;
+        navigate(afterCreatePath(readReturnTo(location.state), date), { state });
+      },
     );
   }
 

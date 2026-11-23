@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createAccount } from "../../src/kernel/accounts";
 import {
+  hasExplicitJournalView,
   isDefaultFilter,
   parseJournalFilter,
+  toJournalParams,
   toListJournalFilter,
 } from "../../src/app/journal-filter";
 import { NOW as ISO_NOW, unwrap } from "../helpers";
@@ -100,5 +102,43 @@ describe("isDefaultFilter", () => {
     expect(isDefaultFilter({ period: { year: 2026, month: 8 }, accountId: "abc" }, NOW)).toBe(
       false,
     );
+  });
+});
+
+describe("hasExplicitJournalView", () => {
+  it("is false for a bare query string and for unrelated parameters", () => {
+    expect(hasExplicitJournalView(new URLSearchParams())).toBe(false);
+    expect(hasExplicitJournalView(new URLSearchParams("utm_source=x"))).toBe(false);
+  });
+
+  it("is true when the month or the account is given, whatever its value", () => {
+    for (const raw of ["month=2026-03", "month=all", "month=", "account=abc", "month=all&account=abc"]) {
+      expect(hasExplicitJournalView(new URLSearchParams(raw)), raw).toBe(true);
+    }
+  });
+});
+
+describe("toJournalParams", () => {
+  it("writes a past month and an account", () => {
+    expect(
+      toJournalParams({ period: { year: 2026, month: 3 }, accountId: "abc" }, NOW).toString(),
+    ).toBe("month=2026-03&account=abc");
+  });
+
+  it("writes all time as month=all", () => {
+    expect(toJournalParams({ period: null, accountId: null }, NOW).toString()).toBe("month=all");
+  });
+
+  it("leaves the current month out, so the default view is a bare query string", () => {
+    expect(toJournalParams({ period: { year: 2026, month: 8 }, accountId: null }, NOW).toString()).toBe("");
+    expect(toJournalParams({ period: { year: 2026, month: 8 }, accountId: "abc" }, NOW).toString()).toBe(
+      "account=abc",
+    );
+  });
+
+  it("describes what parseJournalFilter made of a broken query, not the query itself", () => {
+    const { book } = bookWithAccount();
+    const parsed = parseJournalFilter(new URLSearchParams("month=garbage&account=gone"), book, NOW);
+    expect(toJournalParams(parsed, NOW).toString()).toBe("");
   });
 });

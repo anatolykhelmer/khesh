@@ -1,5 +1,5 @@
 import { currentYearMonth, formatYearMonth } from "../service/dates";
-import type { JournalFilterState } from "./journal-filter";
+import { hasExplicitJournalView, type JournalFilterState } from "./journal-filter";
 
 /**
  * How the journal was last being viewed, so a bare /journal can return to it.
@@ -97,6 +97,15 @@ export function writeJournalView(
 export function clearJournalView(stores: JournalViewStores): void {
   safeRemove(stores.local, JOURNAL_VIEW_KEY);
   safeRemove(stores.session, JOURNAL_MONTH_KEY);
+}
+
+/**
+ * Call before writing a query string. A bare one means "return to the remembered view",
+ * so a write that leaves it bare — Reset, or "All accounts" on ?account=X — must forget
+ * first, or memory would put the old view straight back.
+ */
+export function forgetIfBare(next: URLSearchParams, stores: JournalViewStores): void {
+  if (!hasExplicitJournalView(next)) clearJournalView(stores);
 }
 
 function storeOrNull(get: () => Storage | undefined): Storage | null {

@@ -19,7 +19,7 @@ import {
 } from "../journal-filter";
 import {
   browserStores,
-  clearJournalView,
+  forgetIfBare,
   readJournalView,
   writeJournalView,
 } from "../journal-view-memory";
@@ -47,8 +47,13 @@ export function JournalScreen() {
   // The address bar must describe the remembered view: if it stayed bare, Reset (which
   // writes empty parameters) would leave location.search unchanged and nothing would recompute.
   useEffect(() => {
-    if (!explicit && effective.toString() !== "") setParams(effective, { replace: true });
-  }, [explicit, effective, setParams]);
+    if (explicit || !filter) return;
+    const remembered = new URLSearchParams(effective);
+    // A remembered account the book no longer has was dropped by parseJournalFilter;
+    // keep it out of the address bar too.
+    if (filter.accountId === null) remembered.delete("account");
+    if (remembered.toString() !== "") setParams(remembered, { replace: true });
+  }, [explicit, effective, filter, setParams]);
 
   // Remember whatever is shown, however it was reached. A stale account id has already
   // been dropped by parseJournalFilter, so this also cleans it out of memory.
@@ -74,6 +79,7 @@ export function JournalScreen() {
   const currentFilter = filter;
 
   function writeParams(next: URLSearchParams) {
+    forgetIfBare(next, stores);
     setParams(next);
   }
 
@@ -218,11 +224,7 @@ export function JournalScreen() {
           <button
             type="button"
             className="secondary"
-            onClick={() => {
-              // Forget first: the bare URL written next must find nothing to return to.
-              clearJournalView(stores);
-              writeParams(new URLSearchParams());
-            }}
+            onClick={() => writeParams(new URLSearchParams())}
           >
             {t("journal.reset")}
           </button>

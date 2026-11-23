@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clearJournalView,
+  forgetIfBare,
   JOURNAL_MONTH_KEY,
   JOURNAL_VIEW_KEY,
   readJournalView,
@@ -158,5 +159,26 @@ describe("clearJournalView", () => {
   it("does not throw on stores that refuse", () => {
     const stores = { local: new BrokenStorage(), session: new BrokenStorage() };
     expect(() => clearJournalView(stores)).not.toThrow();
+  });
+});
+
+describe("forgetIfBare", () => {
+  // A bare /journal means "return to the remembered view", so a write that leaves the
+  // query string bare — Reset, or "All accounts" on ?account=X — must forget first, or
+  // memory puts the old view straight back.
+  it("forgets the view before a bare query string is written", () => {
+    const stores = freshStores();
+    writeJournalView({ period: MARCH, accountId: "cash" }, stores, NOW);
+    forgetIfBare(new URLSearchParams(), stores);
+    expect(readJournalView(stores).toString()).toBe("");
+  });
+
+  it("keeps the view when the query string still names a month or an account", () => {
+    for (const raw of ["month=2026-03", "account=cash", "month=all"]) {
+      const stores = freshStores();
+      writeJournalView({ period: MARCH, accountId: "cash" }, stores, NOW);
+      forgetIfBare(new URLSearchParams(raw), stores);
+      expect(readJournalView(stores).toString(), raw).toBe("month=2026-03&account=cash");
+    }
   });
 });

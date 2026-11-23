@@ -3,8 +3,10 @@ import { hasExplicitJournalView, type JournalFilterState } from "./journal-filte
 
 /**
  * How the journal was last being viewed, so a bare /journal can return to it.
- * The account and all-time mode live on the device; a specific month lives only as
- * long as the tab (spec: docs/superpowers/specs/2026-11-23-journal-view-memory-design.md).
+ * The account and all-time mode live on the device (localStorage), so a fresh launch
+ * keeps them. A specific month lives only as long as the tab (sessionStorage): browsing
+ * September today should not mean opening September next week. Not synced through the
+ * book — how one person browses is not a fact about the family's money.
  */
 export const JOURNAL_VIEW_KEY = "khesh:journal-view";
 export const JOURNAL_MONTH_KEY = "khesh:journal-month";

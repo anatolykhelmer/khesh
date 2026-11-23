@@ -32,8 +32,9 @@ export function JournalScreen() {
   const [params, setParams] = useSearchParams();
   const stores = useMemo(browserStores, []);
 
-  // A query string naming a month or an account wins; a bare /journal returns to the
-  // remembered view (spec: docs/superpowers/specs/2026-11-23-journal-view-memory-design.md).
+  // A query string naming a month or an account wins, so deep links (the account page's
+  // "Entries") and the browser's Back behave as before; a bare /journal — the tab, an
+  // entry's back link, the redirect after save — returns to the remembered view.
   const explicit = hasExplicitJournalView(params);
   const effective = useMemo(
     () => (explicit ? params : readJournalView(stores)),

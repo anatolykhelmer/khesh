@@ -200,7 +200,7 @@ describe("performStartOver", () => {
   });
 
   it("disconnects unconditionally, because the connection that matters is the stored one", async () => {
-    // The flag that brings the old book back with doubled roots is `meta.connected` in
+    // The flag that silently brings the old book back is `meta.connected` in
     // the sync-meta database, and `useSync()` does not report it here: the resume effect
     // is gated on `book !== null`, so it never runs while a book has failed to load and
     // `connected` stays false however the stored record reads. A `performReset`-style

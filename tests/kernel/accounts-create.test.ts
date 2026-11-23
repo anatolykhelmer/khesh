@@ -1,6 +1,7 @@
-import { createAccount } from "../../src/kernel/accounts";
+import { createAccount, deleteAccount } from "../../src/kernel/accounts";
 import { NOW, unwrap, unwrapErr } from "../helpers";
 import { accountNamed, realBook, rootAccounts, ROOT } from "../helpers/book";
+import { validateBook } from "../../src/kernel/validate";
 
 describe("createAccount", () => {
   it("creates a placeholder group and a child leaf", () => {
@@ -155,5 +156,40 @@ describe("createAccount", () => {
       }, NOW),
     );
     expect(book.accounts).toEqual(rootAccounts());
+  });
+
+  it("takes an explicit id, so a starter plan can mint its own", () => {
+    const next = unwrap(
+      createAccount(
+        realBook(),
+        { id: "seed:cash:ILS", parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false },
+        NOW,
+      ),
+    );
+    expect(accountNamed(next, "Cash").id).toBe("seed:cash:ILS");
+  });
+
+  it("refuses an explicit id that is already taken, which validateBook would reject too", () => {
+    const book = unwrap(
+      createAccount(realBook(), { id: "seed:cash:ILS", parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW),
+    );
+    expect(
+      unwrapErr(
+        createAccount(book, { id: "seed:cash:ILS", parentId: ROOT.asset, name: "Wallet", type: "asset", currency: "ILS", isPlaceholder: false }, NOW),
+      ).code,
+    ).toBe("ACCOUNT_ID_DUPLICATE");
+  });
+
+  it("clears a tombstone the explicit id would otherwise be shadowed by", () => {
+    let book = unwrap(
+      createAccount(realBook(), { id: "seed:cash:ILS", parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW),
+    );
+    book = unwrap(deleteAccount(book, "seed:cash:ILS", NOW));
+    expect(book.tombstones).toHaveLength(1);
+    const again = unwrap(
+      createAccount(book, { id: "seed:cash:ILS", parentId: ROOT.asset, name: "Cash", type: "asset", currency: "ILS", isPlaceholder: false }, NOW),
+    );
+    expect(again.tombstones).toHaveLength(0);
+    expect(validateBook(again).ok).toBe(true);
   });
 });

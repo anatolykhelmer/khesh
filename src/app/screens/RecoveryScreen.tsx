@@ -36,7 +36,7 @@ export function RecoveryScreen() {
   // which writes `connected: true` and starts the engine, so a `useRemote` still in
   // flight undoes the teardown `performStartOver` just performed — and onboarding's
   // Continue then mints a seed into a tab whose engine is armed at the real remote.
-  // That doubled-root resume is the failure start-over exists to close.
+  // That silent revival of the abandoned book is the failure start-over exists to close.
   const busy = startingOver || importing || sync.activity.blocking;
   // The ref is the guard and `startingOver` is what the UI reads: a second tap can arrive
   // before React re-renders — same pattern as `DangerZone`'s own `busyRef`.

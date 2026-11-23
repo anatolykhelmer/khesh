@@ -60,11 +60,16 @@ export function setBudget(
     clearTombstone(replaced, "budget", key);
     return ok(replaced);
   }
-  // Equal record. A tombstone with this key beside a live budget can only come out of a
-  // merge (the ladder consumes account tombstones alone); clearing it is a change. The
-  // record is re-stamped even though its content did not move, because the merge ladder
-  // claims a budget at `budget.updatedAt` (`merge.ts`): only a stamp newer than the remote
-  // tombstone's `deletedAt` keeps the next merge from resurrecting that deletion.
+  // Equal record, but the key still carries a tombstone — a live budget and a tombstone
+  // both claiming one key is exactly what `validateBook` calls a tombstone shadowing a
+  // live record, so `book` did not come from a real merge or an earlier call here: both
+  // keep this invariant themselves (`merge.ts`'s root-collapse rung clears the tombstone
+  // whenever it keeps a moved budget over one, the same way this function does below).
+  // What is left is a book from outside the kernel — an import, a hand-edited file —
+  // that reached this call already carrying the shadow. Clearing it is still a change,
+  // so the record is re-stamped even though its content did not move: a stamp newer than
+  // the tombstone's own `deletedAt` is what keeps a future merge from reading the
+  // tombstone as the newer claim and reintroducing the shadow it just cleared.
   if (!book.tombstones.some((t) => t.kind === "budget" && t.key === key)) return ok(book);
   const next = cloneBook(book);
   next.budgets[index] = budget;

@@ -9,7 +9,7 @@ import { useSync } from "../sync/sync-context";
  * words it the same way. */
 const CHOICE_KEYS: Record<FirstConnectChoice, { label: string; hint: string }> = {
   useRemote: { label: "sync.choiceUseRemote", hint: "sync.choiceUseRemoteHint" },
-  merge: { label: "sync.choiceMerge", hint: "sync.choiceMergeWarning" },
+  merge: { label: "sync.choiceMerge", hint: "sync.choiceMergeHint" },
   replaceRemote: { label: "sync.choiceReplaceRemote", hint: "sync.choiceReplaceRemoteHint" },
 };
 
